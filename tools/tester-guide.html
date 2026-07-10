@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root{
+    --purple:#534AB7; --purple-soft:#ECEBF7; --teal:#1D9E75;
+    --ink:#23222B; --muted:#6C6A7A; --line:#E4E2EF; --bg:#FFFFFF;
+    --warn-bg:#FFF6E9; --warn-line:#F0C784; --warn-ink:#7A5200;
+  }
+  body{ font-family:'Segoe UI',-apple-system,system-ui,sans-serif;
+        color:var(--ink); background:var(--bg); line-height:1.5;
+        font-size:11.2px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .page{ width:210mm; min-height:297mm; padding:20mm 18mm 16mm; position:relative; }
+  .page + .page{ page-break-before:always; }
+
+  /* ---- header ---- */
+  .brand{ display:flex; align-items:center; gap:12px; margin-bottom:6px; }
+  .logo{ width:44px; height:44px; border-radius:11px; background:var(--purple);
+         position:relative; flex:none; }
+  .logo .face{ position:absolute; inset:11px; border:2.4px solid #fff; border-radius:50%; }
+  .logo .h1{ position:absolute; left:22px; top:22px; width:9px; height:2.2px;
+             background:#fff; transform-origin:left center; transform:rotate(-28deg); border-radius:2px;}
+  .logo .h2{ position:absolute; left:22px; top:22px; width:7px; height:2.2px;
+             background:#fff; transform-origin:left center; transform:rotate(-150deg); border-radius:2px;}
+  .logo .tick{ position:absolute; right:6px; bottom:6px; width:12px; height:12px; }
+  h1{ font-size:23px; color:var(--purple); font-weight:700; letter-spacing:-.3px; }
+  .sub{ color:var(--muted); font-size:12px; margin-top:1px; }
+  .rule{ height:3px; background:linear-gradient(90deg,var(--purple),var(--teal)); border-radius:3px; margin:14px 0 18px; }
+
+  .lead{ font-size:12.5px; margin-bottom:16px; }
+  .lead b{ color:var(--purple); }
+
+  .keyrule{ background:var(--purple-soft); border-left:4px solid var(--purple);
+            border-radius:8px; padding:11px 14px; margin:0 0 20px; font-size:12px; }
+  .keyrule b{ color:var(--purple); }
+
+  h2{ font-size:14px; color:var(--purple); margin:20px 0 4px; display:flex; align-items:center; gap:8px; }
+  h2 .n{ display:inline-flex; align-items:center; justify-content:center;
+         width:22px; height:22px; border-radius:50%; background:var(--purple); color:#fff;
+         font-size:12px; font-weight:700; flex:none; }
+  .h2note{ color:var(--muted); font-size:10.5px; margin:0 0 10px 30px; }
+
+  ol.steps{ list-style:none; counter-reset:s; margin:6px 0 4px 30px; }
+  ol.steps > li{ counter-increment:s; position:relative; padding:2px 0 12px 26px; }
+  ol.steps > li::before{ content:counter(s); position:absolute; left:0; top:1px;
+      width:18px; height:18px; border-radius:50%; background:var(--teal); color:#fff;
+      font-size:10.5px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .steps b{ color:var(--ink); }
+  code{ font-family:'Consolas','SF Mono',monospace; background:#F3F2FA; color:var(--purple);
+        padding:1px 6px; border-radius:5px; font-size:10.5px; border:1px solid var(--line); }
+  .field{ display:inline-block; font-family:'Consolas',monospace; background:#fff; border:1.5px solid var(--purple);
+          color:var(--ink); padding:2px 9px; border-radius:6px; font-size:10.5px; }
+
+  .warn{ background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:9px;
+         padding:12px 14px 12px 42px; margin:14px 0; position:relative; font-size:11px; color:var(--warn-ink); }
+  .warn::before{ content:'!'; position:absolute; left:14px; top:11px; width:18px; height:18px; border-radius:50%;
+                 background:var(--warn-line); color:#5a3d00; font-weight:800; display:flex; align-items:center; justify-content:center; font-size:12px;}
+  .warn b{ color:#5a3d00; }
+
+  .foot{ position:absolute; left:18mm; right:18mm; bottom:12mm; border-top:1px solid var(--line);
+         padding-top:8px; color:var(--muted); font-size:9.5px; display:flex; justify-content:space-between; }
+
+  /* trouble table */
+  .trouble{ margin:6px 0 0; }
+  .trouble .row{ display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .trouble .row:last-child{ border-bottom:none; }
+  .trouble .q{ flex:0 0 44%; font-weight:600; color:var(--ink); font-size:11px; }
+  .trouble .a{ flex:1; color:var(--muted); font-size:10.8px; }
+  .trouble .q .tag{ display:block; color:var(--teal); font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin-bottom:1px;}
+
+  .heart{ color:var(--purple); }
+  .big{ font-size:12px; }
+  .callatt{ color:var(--teal); font-weight:700; }
+</style>
+</head>
+<body>
+
+<!-- ============ PAGE 1 ============ -->
+<div class="page">
+  <div class="brand">
+    <div class="logo">
+      <div class="face"></div><div class="h1"></div><div class="h2"></div>
+      <svg class="tick" viewBox="0 0 12 12"><path d="M1.5 6.5 L4 9 L10.5 2.5" fill="none" stroke="#1D9E75" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div>
+      <h1>TickTimer</h1>
+      <div class="sub">Getting started &mdash; a quick guide for testing</div>
+    </div>
+  </div>
+  <div class="rule"></div>
+
+  <p class="lead">Hi! You're helping test <b>TickTimer</b>, a little app for planning your day
+  and seeing how your time actually gets spent. Setting it up takes about five minutes, and this
+  guide walks you through every click. No technical knowledge needed.</p>
+
+  <div class="keyrule big">
+    <b>The one rule to remember:</b> TickTimer needs a <b>server</b> running before the app can log in
+    &mdash; a bit like an online game needing its server up before you can join. On your side you only
+    ever run the <b>app</b>; the server lives on your boyfriend's computer.
+  </div>
+
+  <h2><span class="n">1</span> Unzip the folder</h2>
+  <div class="h2note">You were sent a file called <code>TickTimer.zip</code>.</div>
+  <ol class="steps">
+    <li>Find <code>TickTimer.zip</code> wherever you saved it (probably Downloads).</li>
+    <li><b>Right-click it</b> &rarr; <b>Extract All&hellip;</b> &rarr; <b>Extract</b>. Windows makes a normal
+        folder called <b>TickTimer</b> next to the zip.</li>
+    <li>Open that <b>TickTimer</b> folder. You'll see a lot of files &mdash; that's normal.
+        You only care about one, coming up next.</li>
+  </ol>
+
+  <h2><span class="n">2</span> Open the app</h2>
+  <div class="h2note">The file named <b>TickTimer</b> (it may show as <code>TickTimer.bat</code>).</div>
+  <ol class="steps">
+    <li><b>Double-click <code>TickTimer</code>.</b> A login screen opens after a moment.</li>
+    <li>Windows may show a blue box: <b>&ldquo;Windows protected your PC.&rdquo;</b> This is normal for a
+        small app like ours &mdash; it just isn't a big commercial program Windows recognises.
+        Click <b>More info</b>, then <b>Run anyway</b>. It's safe; it's just us.</li>
+  </ol>
+
+  <div class="warn">
+    <b>If a firewall pop-up appears</b> asking whether to allow the app through &mdash; you can click
+    <b>Allow</b>, but it's harmless either way. (The firewall prompt that really matters is on your
+    boyfriend's computer, not yours.)
+  </div>
+
+  <div class="foot">
+    <span>TickTimer &mdash; getting started</span>
+    <span>Page 1 of 2</span>
+  </div>
+</div>
+
+<!-- ============ PAGE 2 ============ -->
+<div class="page">
+
+  <h2><span class="n">3</span> Point the app at the server</h2>
+  <div class="h2note">This is the only spot where you type something specific.</div>
+  <p style="margin:2px 0 10px 30px; font-size:11.2px;">
+    On the login screen there's a box labelled <b>Server</b>. It starts out saying
+    <span class="field">http://localhost:8080</span>. That address means &ldquo;this same computer&rdquo;
+    &mdash; but the server is on <i>your boyfriend's</i> computer, so you need to change it to <b>his</b> address.
+  </p>
+  <ol class="steps">
+    <li>Ask him for his server address. He can read it off his own server window &mdash; it's the line
+        that says <b>&ldquo;from another device.&rdquo;</b> It looks like this:
+        <div style="margin:7px 0 3px;"><span class="field">http://192.168.1.40:8080</span></div>
+    </li>
+    <li><b>Clear the Server box</b> and type his address in exactly. (If you forget the
+        <code>http://</code> part, don't worry &mdash; the app adds it for you.)</li>
+    <li>You both need to be on the <b>same Wi-Fi</b> for this to work. His computer and the server
+        also need to be <b>turned on and running</b> at the time.</li>
+  </ol>
+
+  <h2><span class="n">4</span> Make your account &amp; log in</h2>
+  <ol class="steps">
+    <li>Click <b>&ldquo;New here? Create an account.&rdquo;</b></li>
+    <li>Pick any <b>username</b> and <b>password</b> you like &mdash; they're yours, separate from his.</li>
+    <li>Click <b>Create account</b>. You should land straight in your own planner. That's it &mdash; you're in! <span class="heart">&#9829;</span></li>
+  </ol>
+
+  <h2><span class="n">5</span> Try &ldquo;Share &amp; compare&rdquo; together</h2>
+  <div class="h2note">The fun part &mdash; comparing your days side by side.</div>
+  <ol class="steps">
+    <li>In the app, click the <b>&#128101; Share</b> button.</li>
+    <li>Type <b>his</b> username and click <b>Share</b>. That lets him see your planner.</li>
+    <li>For him to appear on your side, <b>he shares with you too</b> (sharing is one-way, so you each
+        do it once). Then a <b>Compare</b> button shows up next to his name &mdash; click it to see both
+        your days next to each other.</li>
+  </ol>
+
+  <h2 style="margin-top:22px;"><span class="n" style="background:var(--teal);">?</span> If something doesn't work</h2>
+  <div class="trouble" style="margin-left:0;">
+    <div class="row">
+      <div class="q"><span class="tag">Most common</span>&ldquo;Can't reach the server.&rdquo;</div>
+      <div class="a">His server isn't running, you're on different Wi-Fi, or the <b>Server</b> address is typed wrong.
+        Ask him to check his black server window is open, and double-check the address.</div>
+    </div>
+    <div class="row">
+      <div class="q"><span class="tag">Blue box</span>&ldquo;Windows protected your PC.&rdquo;</div>
+      <div class="a">Expected &mdash; click <b>More info</b> &rarr; <b>Run anyway</b>. Totally safe.</div>
+    </div>
+    <div class="row">
+      <div class="q"><span class="tag">Wrong password?</span>Login is refused.</div>
+      <div class="a">Make sure you clicked <b>Create an account</b> the first time, not <b>Log in</b>.
+        Your account only exists after you've created it once.</div>
+    </div>
+    <div class="row">
+      <div class="q"><span class="tag">Still stuck</span>Anything else.</div>
+      <div class="a">Send him a screenshot of what you see &mdash; nine times out of ten it's the Wi-Fi
+        or the address, and it's a quick fix.</div>
+    </div>
+  </div>
+
+  <p style="margin-top:20px; font-size:11.5px; text-align:center; color:var(--muted);">
+    Thanks so much for testing &mdash; it really helps. <span class="heart" style="font-size:13px;">&#9829;</span>
+  </p>
+
+  <div class="foot">
+    <span>TickTimer &mdash; getting started</span>
+    <span>Page 2 of 2</span>
+  </div>
+</div>
+
+</body>
+</html>

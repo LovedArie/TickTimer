@@ -1,0 +1,22 @@
+@startuml example_class_diagram
+' Simple class diagram example.
+' Render with PlantUML: https://plantuml.com
+' VS Code: install the "PlantUML" extension to preview .puml files.
+
+' Reference: plantUML.pdf (the guide in your project knowledge)
+
+class Account {
+    - balance: double
+    - owner: String
+    + deposit(amount: double): void
+    + withdraw(amount: double): boolean
+}
+
+class Customer {
+    - name: String
+    - id: String
+}
+
+Customer "1" -- "*" Account : owns
+
+@enduml

@@ -1,0 +1,32 @@
+// ticktimer.rc — Windows resource for the desktop app.
+// (What a .rc is and why: see the original notes in git history / QB R3.)
+
+IDI_ICON1 ICON "ticktimer.ico"
+
+// The numbers below come from include/Version.h — the single source of
+// truth. Bump the version THERE; this file follows automatically. (windres
+// preprocesses quoted #includes relative to this file; RC_INVOKED inside
+// the header hides all the C++/Qt parts from the resource compiler.)
+#include "../include/Version.h"
+
+1 VERSIONINFO
+FILEVERSION    TICKTIMER_VERSION_MAJOR,TICKTIMER_VERSION_MINOR,TICKTIMER_VERSION_PATCH,0
+PRODUCTVERSION TICKTIMER_VERSION_MAJOR,TICKTIMER_VERSION_MINOR,TICKTIMER_VERSION_PATCH,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0" // US English, Unicode
+    BEGIN
+      VALUE "CompanyName",      "TickTimer"
+      VALUE "FileDescription",  "TickTimer - plan-vs-actual time tracker"
+      VALUE "FileVersion",      TICKTIMER_VERSION_STRING
+      VALUE "ProductName",      "TickTimer"
+      VALUE "ProductVersion",   TICKTIMER_VERSION_STRING
+      VALUE "OriginalFilename", "ticktimer.exe"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

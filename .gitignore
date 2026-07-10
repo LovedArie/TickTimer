@@ -1,0 +1,11 @@
+# Build output (any build dir name Qt Creator or the deploy script invents)
+build*/
+dist/
+installer/Output/
+
+# Qt Creator per-user state
+CMakeLists.txt.user*
+
+# Server runtime data (accounts, planners, grants) - never commit user data
+server_data*/
+Version/

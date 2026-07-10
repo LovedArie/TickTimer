@@ -1,0 +1,39 @@
+%% Update notices — one launch-time check, end to end.
+%% (design-addendum-update.md — render: mmdc -i update_check_sequence.mmd -o update_check_sequence.svg)
+%%
+%% Reading keys:
+%%  - fetch / judge / render are three separate layers: UpdateClient (wire),
+%%    version::decideBanner (pure), UpdateBanner (glass).
+%%  - every path except "Show" ends in deliberate silence.
+%%  - the server re-reads version.json PER REQUEST: announcing a release
+%%    is editing that file — no restart.
+
+sequenceDiagram
+    autonumber
+    participant MW as MainWindow<br/>(after login)
+    participant UC as UpdateClient<br/>(wire)
+    participant AS as AuthServer<br/>(/version, public)
+    participant VJ as version.json<br/>(operator-edited)
+    participant VD as version::decideBanner<br/>(pure)
+    participant UB as UpdateBanner<br/>(glass)
+
+    MW->>UC: checkForUpdate()
+    UC->>AS: GET /version   (no token)
+    AS->>VJ: read fresh, this request
+    alt file present
+        VJ-->>AS: {latest, url, notes}
+        AS-->>UC: 200 {ok, latest, url, notes}
+        UC-->>MW: Success
+        MW->>VD: decideBanner(current, latest, lastDismissed)
+        alt newer AND not dismissed
+            VD-->>MW: Show
+            MW->>UB: insert strip above header
+            Note over UB: "Get it" → browser opens URL<br/>✕ → QSettings lastDismissed = latest
+        else up to date / dismissed / garbage
+            VD-->>MW: Silent — nothing happens
+        end
+    else file absent
+        AS-->>UC: 404 not_configured
+        UC-->>MW: Unavailable — silence
+    end
+    Note over MW: NetworkError → silence too.<br/>Only "newer and unheard" may speak.

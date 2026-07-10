@@ -1,0 +1,40 @@
+%% Share & compare — the full journey of one "Compare" click.
+%% (design-addendum-share.md — render with: mmdc -i share_compare_sequence.mmd -o share_compare_sequence.svg)
+%%
+%% Reading keys:
+%%  - The permission check happens on the SERVER (ShareStore) — the client
+%%    only ever renders the verdict it was given.
+%%  - The blob crosses the wire opaque; understanding happens client-side:
+%%    JsonStore turns it into a snapshot AppData, and the SAME pure
+%%    stats::summarizeDay runs on both datasets.
+
+sequenceDiagram
+    autonumber
+    actor Iris
+    participant SD as SharingDialog<br/>(glass)
+    participant SC as ShareClient<br/>(wire)
+    participant AS as AuthServer<br/>(router)
+    participant SS as ShareStore<br/>(grants)
+    participant PS as PlannerStore<br/>(opaque blobs)
+    participant CD as CompareDialog<br/>(glass)
+    participant ST as stats::summarizeDay<br/>(pure)
+
+    Note over SS: earlier: henry POST /share {with: iris}<br/>→ ShareStore.grant("henry","iris")
+
+    Iris->>SD: click "Compare" next to henry
+    SD->>SC: fetchPeerPlanner("henry")
+    SC->>AS: GET /planner/henry<br/>Authorization: Bearer <token>
+    AS->>AS: token → "iris" (401 if unknown)
+    AS->>SS: canRead("iris", "henry")?
+    SS-->>AS: yes (grant exists)
+    Note right of AS: no grant → 403 Forbidden<br/>("I know who you are — no.")
+    AS->>PS: planner("henry")
+    PS-->>AS: {revision, data} — never parsed
+    AS-->>SC: 200 {ok, revision, data}
+    SC-->>SD: peerPlannerReady(Success, "henry", blob)
+    SD->>CD: open(myAppData*, "henry", blob)
+    CD->>CD: JsonStore::applyJsonObject<br/>→ private snapshot AppData
+    CD->>ST: summarizeDay(mine, day)
+    CD->>ST: summarizeDay(peerSnapshot, day)
+    ST-->>CD: two Totals → compare::delta → focusVerdict
+    CD-->>Iris: You vs henry — grid + gentle headline
