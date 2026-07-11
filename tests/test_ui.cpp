@@ -25,6 +25,8 @@
 // ---------------------------------------------------------------------------
 
 #include "ActivitiesPage.h"
+#include "AgendaWidget.h"
+#include "ArchivePage.h"
 #include "AppData.h"
 #include "CompareDialog.h"
 #include "EventDialog.h"
@@ -33,6 +35,7 @@
 #include "LoginDialog.h"
 #include "UpdateBanner.h"
 #include "TrackerService.h"
+#include "UpcomingPage.h"
 
 #include <QLabel>
 #include <QPlainTextEdit>
@@ -40,6 +43,7 @@
 
 #include <QLineEdit>
 #include <QSettings>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QtTest>
 
@@ -282,9 +286,22 @@ private slots:
         const QJsonObject blob = JsonStore::toJsonObject(peerSource);
 
         AppData* minePtr = &mine;
-        CompareDialog dialog(minePtr, "mom", blob);
+        TrackerService tracker(minePtr); // real service — the dialog wires
+                                         // EventDialog and live paint to it
+        CompareDialog dialog(minePtr, &tracker, "mom", blob);
         dialog.showDay(day); // pin the date — never trust "today" in a test
         dialog.show();
+
+        // v2 is a planning screen: two REAL agendas exist, and exactly one
+        // of them is deaf to the mouse — the peer's. That attribute IS the
+        // read-only design, so it's pinned here by name.
+        const auto agendas = dialog.findChildren<AgendaWidget*>();
+        QCOMPARE(agendas.size(), 2);
+        int untouchable = 0;
+        for (AgendaWidget* a : agendas)
+            if (a->testAttribute(Qt::WA_TransparentForMouseEvents))
+                ++untouchable;
+        QCOMPARE(untouchable, 1);
 
         // Read what a user would read: 1h vs 25m, and a +35m focus delta.
         QStringList texts;
@@ -385,6 +402,86 @@ private slots:
                  QStringLiteral("20.0.0"));
 
         QSettings().remove("update/lastDismissed"); // leave no trace
+    }
+
+    void archivePageRestoresWhatItHolds()
+    {
+        // The archive round-trip through REAL widgets: archive a done task
+        // and an in-use activity, see them greyed on the page, click
+        // Restore, watch them leave. The page derives everything from
+        // AppData — this test proves the loop closes.
+        AppData data;
+        const QString c = data.addCategory("School", QColor("#4C6FE0"));
+        const QString a = data.addActivity("Old course", c);
+        const QString t = data.addTask("Old lab", c, QDate(2026, 8, 1));
+        data.setTaskDone(t, true);
+        data.setTaskArchived(t, true);
+        data.setActivityArchived(a, true);
+
+        ArchivePage page(&data);
+        page.show();
+
+        // Both retired things are visible on the page…
+        QStringList texts;
+        for (QLabel* l : page.findChildren<QLabel*>())
+            texts << l->text();
+        QVERIFY(texts.contains(QStringLiteral("Old lab")));
+        QVERIFY(texts.contains(QStringLiteral("Old course")));
+
+        // …and Restore actually restores (both buttons — task first, then
+        // the activity's; the rebuild between clicks means we re-find).
+        for (int pass = 0; pass < 2; ++pass) {
+            QPushButton* restore = nullptr;
+            for (QPushButton* b : page.findChildren<QPushButton*>())
+                if (b->text() == QStringLiteral("Restore"))
+                    restore = b;
+            QVERIFY(restore);
+            restore->click();
+            QCoreApplication::processEvents(); // let deleteLater settle
+        }
+        QVERIFY(data.archivedTasks().isEmpty());
+        QVERIFY(data.archivedActivities().isEmpty());
+        // Restored, not resurrected-blank: the task kept its done state.
+        QVERIFY(!data.upcomingTasks().contains(nullptr));
+    }
+
+    void upcomingLensesFilterByPriority()
+    {
+        AppData data;
+        const QString c = data.addCategory("School", QColor("#4C6FE0"));
+        const QString urgent = data.addTask("Fire", c, QDate(2026, 8, 1));
+        data.addTask("Someday", c, QDate(2026, 8, 2)); // stays Medium
+        data.setTaskPriority(urgent, Task::Priority::Urgent);
+
+        UpcomingPage page(&data);
+        page.show();
+
+        const auto visibleTitles = [&]() {
+            QStringList titles;
+            for (QPushButton* b : page.findChildren<QPushButton*>()) {
+                if (b->text() == QStringLiteral("Fire")
+                    || b->text() == QStringLiteral("Someday"))
+                    titles << b->text();
+            }
+            return titles;
+        };
+
+        // The All lens shows both…
+        QCOMPARE(visibleTitles().size(), 2);
+
+        // …the Urgent lens shows exactly the urgent one. Tabs are
+        // QToolButtons (the nav idiom); find by label, click, re-read.
+        QToolButton* urgentTab = nullptr;
+        for (QToolButton* b : page.findChildren<QToolButton*>())
+            if (b->text() == QStringLiteral("Urgent"))
+                urgentTab = b;
+        QVERIFY(urgentTab);
+        urgentTab->click();
+        QCoreApplication::processEvents();
+
+        const QStringList filtered = visibleTitles();
+        QCOMPARE(filtered.size(), 1);
+        QCOMPARE(filtered.first(), QStringLiteral("Fire"));
     }
 };
 

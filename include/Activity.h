@@ -27,4 +27,11 @@ struct Activity
     QString id;
     QString name;        // e.g. "Study Math"
     QString categoryId;  // exactly ONE category (design-doc §3.7 — v1 rule)
+
+    // v7: retirement without amnesia. An activity that appears in past
+    // events can NEVER be deleted (removeActivity refuses — history would
+    // dangle), but life moves on and "Study CS101" shouldn't clutter every
+    // picker forever. Archived = hidden from lists and pickers, still
+    // resolvable by id, so every old day keeps its name and colour.
+    bool archived = false;
 };

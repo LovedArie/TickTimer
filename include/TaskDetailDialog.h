@@ -45,6 +45,7 @@ public:
     // truth; the dialog never reaches back into the task after that.
     TaskDetailDialog(const QString& title, const QString& description,
                      QDate dueDate, Task::Repeat repeat,
+                     Task::Priority priority = Task::Priority::Medium,
                      QWidget* parent = nullptr);
 
     // Valid only after exec() returned Accepted.
@@ -52,11 +53,13 @@ public:
     QString      chosenDescription() const;
     QDate        chosenDueDate() const;   // invalid == "no due date" (TBD)
     Task::Repeat chosenRepeat() const;
+    Task::Priority chosenPriority() const;
 
 private:
     QLineEdit*      m_title    = nullptr;
     QPlainTextEdit* m_notes    = nullptr;
     QDateEdit*      m_date     = nullptr;
     QCheckBox*      m_noDate   = nullptr;
+    QComboBox*      m_priority = nullptr;
     QComboBox*      m_repeat   = nullptr;
 };

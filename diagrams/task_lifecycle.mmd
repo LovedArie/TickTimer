@@ -1,0 +1,37 @@
+%% The three life stages of a Task (daily-driver addendum §B) — and the
+%% Activity's two. Done and Archived are SEPARATE statements: "I finished
+%% this" vs "stop showing me this". Nothing here loses history.
+
+stateDiagram-v2
+    direction LR
+
+    state "Task" as task {
+        [*] --> Open : addTask (born Medium priority)
+        Open --> Done : checkbox ✓
+        Done --> Open : uncheck (it happens)
+        Done --> Archived : "Archive" button<br/>(appears only when done)
+        Archived --> Open : Restore (Archive page)
+        Archived --> [*] : delete forever<br/>(Archive page only — tasks reference nothing)
+        note right of Done
+            still VISIBLE on lists —
+            today's victories belong
+            on today's list
+        end note
+        note right of Archived
+            hidden from Upcoming,
+            Activities, due strips;
+            lives on the Archive page
+        end note
+    }
+
+    state "Activity" as act {
+        [*] --> Active : addActivity
+        Active --> Retired : "Archive"<br/>(the ONLY exit while in use)
+        Retired --> Active : Restore
+        Active --> [*] : delete ✕<br/>(refused if any event uses it)
+        note right of Retired
+            gone from pickers & lists,
+            still resolvable by id —
+            old days keep their names
+        end note
+    }

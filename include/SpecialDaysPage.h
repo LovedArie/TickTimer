@@ -11,6 +11,8 @@
 // rebuild; only the day itself (title, date, repeats-yearly) is a fact.
 // ---------------------------------------------------------------------------
 
+#include "SpecialDay.h"
+
 #include <QWidget>
 
 class AppData;
@@ -27,6 +29,8 @@ public slots:
     void rebuild();
 
 private:
+    void editDay(const SpecialDay& snapshot); // item 8 — the edit dialog
+
     QWidget* buildContent();
 
     AppData*     m_data;

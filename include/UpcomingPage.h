@@ -37,4 +37,7 @@ private:
 
     AppData*     m_data;
     QScrollArea* m_scroll = nullptr;
+    // The active urgency filter: -1 = All, else int(Task::Priority).
+    // A VIEW state, not data — it lives here and dies with the page.
+    int          m_filter = -1;
 };

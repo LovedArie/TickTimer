@@ -14,10 +14,13 @@
 // ---------------------------------------------------------------------------
 
 #include <QDialog>
+#include <QVBoxLayout>
 
 class AppData;
 class TrackerService;
 class QLabel;
+class QComboBox;
+class QTimeEdit;
 class QPlainTextEdit;
 class QPushButton;
 class PvaBar;
@@ -40,6 +43,8 @@ private slots:
     void deleteEvent();
 
 private:
+    void rebuildSegmentList(); // the tracked-time editor rows (item 2)
+
     AppData*        m_data;
     TrackerService* m_tracker;
     QString m_eventId;
@@ -54,6 +59,15 @@ private:
     QLabel*      m_taskLine  = nullptr;     // "Linked task: Lab 4 · due Aug 8"
     QPushButton* m_unlinkBtn = nullptr;
     QPlainTextEdit* m_note = nullptr;
+
+    // Tracked-time editor (item 2): the segments list rebuilt on refresh,
+    // plus the add-a-fact row. The VBox is a member so rebuilds can empty it.
+    QVBoxLayout* m_segList   = nullptr;
+    int          m_renderedSegments = -1; // -1 = never rendered -> first
+                                          // refresh always builds the rows
+    QComboBox*   m_segKind   = nullptr;
+    QTimeEdit*   m_segStart  = nullptr;
+    QTimeEdit*   m_segEnd    = nullptr;
     QPushButton* m_focusBtn = nullptr;
     QPushButton* m_breakBtn = nullptr;
     QPushButton* m_distractedBtn = nullptr;

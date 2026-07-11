@@ -162,6 +162,8 @@ void PickActivityDialog::buildChoiceList()
         };
 
         for (const Activity& a : m_data->activities()) {
+            if (a.archived)
+                continue; // retired types never appear in the picker (item 3)
             if (a.categoryId != c.id)
                 continue;
             ensureHeader();

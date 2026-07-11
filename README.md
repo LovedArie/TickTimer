@@ -4,7 +4,7 @@
 > into a colour-coded record and reveals real productivity versus
 > anxiety-driven procrastination.
 
-*Status: **v19 — working desktop app, Android-ready, distributable, with accounts, device sync, share & compare, and update notices.** Daily **and weekly**
+*Status: **v19.1 — working desktop app, Android-ready, distributable, with accounts, device sync, share & compare (now with side-by-side schedules), update notices, task priorities, and an archive.** Daily **and weekly**
 planner with live focus tracking (focus / break / **distracted**),
 **drag-to-resize** blocks, **blocks that say what they are** (labels, task
 blocks, spontaneous blocks — with task notes and column-flowed text), tasks &
@@ -72,6 +72,12 @@ people whose focus is easily derailed by anxiety-driven procrastination.
   break, distracted, total, with a gentle who's-ahead headline. Permissions
   are enforced by the server; the comparison runs entirely on your device.
   See [docs/design-addendum-share.md](docs/design-addendum-share.md).
+- **Task priorities & the Archive** — rank tasks urgent/medium/low and view
+  Upcoming through four lenses; archive finished tasks and retired
+  activities to a quiet page (hidden everywhere, restorable any time,
+  history intact). Fix your tracked time by hand — add the focus block you
+  forgot to start, retract the timer you left running.
+  See [docs/design-addendum-daily-driver.md](docs/design-addendum-daily-driver.md).
 - **Update notices** — the app checks your server on launch and shows a
   quiet, dismissible banner when a newer release exists (dismissing one
   version never silences the next). Announcing a release is editing one
@@ -244,6 +250,7 @@ kept separate. See **[docs/SERVER.md](docs/SERVER.md)** for hosting details.
 - [x] Cross-device sync
 - [x] Share & compare planners
 - [x] Update notices (networked arc complete)
+- [x] Task priority + archive + honest-tracking editor (daily-driver pass)
 
 ## License
 

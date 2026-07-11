@@ -5,54 +5,60 @@
 #include <QDate>
 #include <QDialog>
 #include <QJsonObject>
+#include <QVBoxLayout>
 
+class AgendaWidget;
 class QLabel;
+class TrackerService;
 
 // ---------------------------------------------------------------------------
-// CompareDialog — one day, two planners, side by side.
+// CompareDialog v2 — no longer a scoreboard: a PLANNING screen.
 //
-// Where the pieces come from is the whole story of this feature:
-//   - MY numbers: stats::summarizeDay over the live AppData (borrowed,
-//     const — comparing must not mutate).
-//   - THEIR numbers: the peer's blob, fetched over the wire, poured into a
-//     PRIVATE AppData via JsonStore::applyJsonObject — the same deserializer
-//     the app has trusted since v1 — then through the very same
-//     stats::summarizeDay. One summarizer, two datasets; the numbers are
-//     comparable BECAUSE the code path is identical.
+// Two real AgendaWidgets side by side in ONE shared scroll (same widget, same
+// kSlotHeight — the rows align to the pixel, so "are we both free at 7?" is
+// answered by your eyes). The stats ride in a side column.
 //
-// The peer AppData is a value member owned by the dialog: a snapshot, born
-// when the dialog opens, gone when it closes. It is wired to nothing —
-// no store, no tracker, no signals — because it isn't "the app's data",
-// it's a document we're reading. That distinction (live aggregate vs
-// loaded snapshot) is the C++ lesson of this dialog.
+// The asymmetry is the design:
+//   - YOUR side is fully live: click a free slot to plan (the same
+//     PickActivityDialog → three-doors recipe as PlannerPage), click a block
+//     to open EventDialog, drag an edge to resize. Same signals, same domain
+//     doors, same guards — this screen adds ZERO new mutation paths.
+//   - THEIR side is a snapshot painted by the identical widget, made
+//     untouchable with WA_TransparentForMouseEvents: it LOOKS the same and
+//     ignores the mouse entirely. Read-only by physics, not by discipline.
 //
-// The date arrows re-summarize on every step — derive, don't store (§3.5),
-// at dialog scale: no cached rows to go stale, just recompute (microseconds).
+// (History note: v1 held `const AppData*` so the compiler enforced
+// look-don't-touch. The requirement changed — comparing turned out to be
+// PLANNING, and planning means editing your own day right here. The const
+// didn't vanish; it moved to where it still belongs: the peer snapshot and
+// the AgendaWidget's own const view of both.)
 // ---------------------------------------------------------------------------
 
 class CompareDialog : public QDialog
 {
     Q_OBJECT
 public:
-    CompareDialog(const AppData* mine, const QString& peerName,
-                  const QJsonObject& peerBlob, QWidget* parent = nullptr);
+    CompareDialog(AppData* mine, TrackerService* tracker,
+                  const QString& peerName, const QJsonObject& peerBlob,
+                  QWidget* parent = nullptr);
 
-    // The refresh is public + parameterless so the UI test can drive the
-    // dialog to a KNOWN date and read the labels — same reason MainWindow
-    // grew showPage() for the screenshot tool.
+    // Public + parameterless-refresh entry so tests can drive the dialog to
+    // a KNOWN date and read the labels — never trust "today" in a test.
     void showDay(const QDate& day);
 
 private:
     void refresh();
+    void planAt(QDate date, int slotIndex); // PlannerPage's recipe, reused
 
-    const AppData* m_mine;   // borrowed — the live planner
-    AppData        m_peer;   // owned — a read-only snapshot of theirs
-    QString        m_peerName;
-    QDate          m_day;
+    AppData*        m_mine;    // live and editable — that's the point now
+    TrackerService* m_tracker; // for EventDialog (timers keep working here)
+    AppData         m_peer;    // owned snapshot — read-only forever
+    QString         m_peerName;
+    QDate           m_day;
 
-    QLabel* m_dayLabel  = nullptr;
-    QLabel* m_headline  = nullptr;
-    // value cells [row][col]: rows focus/break/distracted/total,
-    // cols me/them/delta. Filled by refresh().
-    QLabel* m_cells[4][3] = {};
+    AgendaWidget* m_myAgenda   = nullptr;
+    AgendaWidget* m_peerAgenda = nullptr;
+    QLabel*       m_dayLabel   = nullptr;
+    QLabel*       m_headline   = nullptr;
+    QLabel*       m_cells[4][3] = {};
 };

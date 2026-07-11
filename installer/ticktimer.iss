@@ -20,7 +20,7 @@
 ; does" goal better than a generated one you can't inspect.
 
 #define AppName        "TickTimer"
-#define AppVersion     "0.19.0"   ; keep in sync with include/Version.h (the .iss preprocessor cannot include C headers)
+#define AppVersion     "0.19.1"   ; keep in sync with include/Version.h (the .iss preprocessor cannot include C headers)
 #define AppPublisher   "TickTimer"
 #define DistDir        "..\dist\TickTimer"   ; produced by deploy-windows.bat
 

@@ -61,7 +61,8 @@ Type it in, create your account, log in. Done.
 Once you're both logged in against the same server: in the app, click the
 **👥 Share** button, type the other person's username, and hit Share. Then
 they'll see a **Compare** button next to your name — click it to see both
-your days side by side. Sharing is one-way, so you each share with the other
+your days side by side: the time totals AND each person's schedule for the
+day (handy for spotting when you're both free). Sharing is one-way, so you each share with the other
 if you both want to see.
 
 Thanks for testing! 💜

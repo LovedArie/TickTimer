@@ -5,6 +5,8 @@
 #include "Widgets.h"
 
 #include <QCheckBox>
+#include <QColorDialog>
+#include <QDialog>
 #include <QDateEdit>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -114,11 +116,15 @@ QWidget* SpecialDaysPage::buildContent()
         const QDate  next = day->nextOccurrence(today);
         const qint64 in   = today.daysTo(next);
 
-        // Accent + countdown colour by urgency: today is the focus green,
-        // the next week warms up, everything further out stays calm.
-        const QString accent = (in == 0) ? theme::focus().name()
-                             : (in <= 7)  ? QStringLiteral("#D9873B")
-                                          : QStringLiteral("#B7BEC6");
+        // Accent colour: the OWNER'S choice wins when one was made (item 8);
+        // otherwise the old urgency colouring stands — today green, this
+        // week warm, later calm. A valid QColor IS the "choice was made"
+        // state, the same absence-as-default trick as the TBD due date.
+        const QString accent =
+            day->color.isValid() ? day->color.name()
+            : (in == 0)          ? theme::focus().name()
+            : (in <= 7)          ? QStringLiteral("#D9873B")
+                                 : QStringLiteral("#B7BEC6");
 
         auto* card = new QFrame(panel);
         card->setObjectName("dayCard");
@@ -170,9 +176,23 @@ QWidget* SpecialDaysPage::buildContent()
         connect(x, &QPushButton::clicked, this,
                 [this, dayId]() { m_data->removeSpecialDay(dayId); });
 
+        // Edit (item 8): name, date, yearly, colour — one dialog, one
+        // updateSpecialDay. Snapshot by value first: `day` points into the
+        // vector, and the edit's rebuild moves the ground under it.
+        auto* edit = new QPushButton(tr("Edit"), card);
+        edit->setCursor(Qt::PointingHandCursor);
+        edit->setStyleSheet(
+            "background:#EEF0ED; border:none; border-radius:8px; "
+            "padding:5px 10px; color:#616974; font-weight:600;");
+        const SpecialDay snapshot = *day;
+        connect(edit, &QPushButton::clicked, this, [this, snapshot]() {
+            editDay(snapshot);
+        });
+
         cardRow->addWidget(dot);
         cardRow->addLayout(textCol, 1);
         cardRow->addWidget(countdown);
+        cardRow->addWidget(edit);
         cardRow->addWidget(x);
 
         layout->addSpacing(4);
@@ -181,4 +201,74 @@ QWidget* SpecialDaysPage::buildContent()
 
     layout->addStretch(1);
     return wrapLeft(panel);
+}
+
+
+void SpecialDaysPage::editDay(const SpecialDay& snapshot)
+{
+    // A pure-question dialog, the house contract: gather answers, mutate
+    // nothing; ONE updateSpecialDay on accept. Built inline because this
+    // page is its only caller (no speculative dialog class).
+    QDialog dialog(window()); // window-parented: the save rebuilds this page
+    dialog.setWindowTitle(tr("Edit special day"));
+    auto* form = new QVBoxLayout(&dialog);
+    form->setSpacing(8);
+
+    auto* name = new QLineEdit(snapshot.title, &dialog);
+    auto* date = new QDateEdit(snapshot.date, &dialog);
+    date->setCalendarPopup(true);
+    auto* yearly = new QCheckBox(tr("repeats yearly"), &dialog);
+    yearly->setChecked(snapshot.repeatsYearly);
+
+    // The colour: a swatch button opening QColorDialog, plus "automatic"
+    // to hand colouring back to the urgency rules (invalid QColor).
+    QColor chosen = snapshot.color;
+    auto* colorBtn = new QPushButton(&dialog);
+    const auto paintSwatch = [&]() {
+        colorBtn->setText(chosen.isValid() ? tr("Colour: %1").arg(chosen.name())
+                                           : tr("Colour: automatic"));
+        colorBtn->setStyleSheet(
+            chosen.isValid()
+                ? QStringLiteral("background:%1; color:white; border:none; "
+                                 "border-radius:8px; padding:6px 10px; "
+                                 "font-weight:600;").arg(chosen.name())
+                : QStringLiteral("background:#EEF0ED; border:none; "
+                                 "border-radius:8px; padding:6px 10px; "
+                                 "color:#616974; font-weight:600;"));
+    };
+    paintSwatch();
+    connect(colorBtn, &QPushButton::clicked, &dialog, [&]() {
+        const QColor picked =
+            QColorDialog::getColor(chosen.isValid() ? chosen : QColor("#534AB7"),
+                                   &dialog, tr("Pick a colour"));
+        if (picked.isValid()) { chosen = picked; paintSwatch(); }
+    });
+    auto* autoBtn = new QPushButton(tr("Back to automatic"), &dialog);
+    autoBtn->setFlat(true);
+    autoBtn->setCursor(Qt::PointingHandCursor);
+    connect(autoBtn, &QPushButton::clicked, &dialog, [&]() {
+        chosen = QColor(); // invalid = "no choice" = urgency colours again
+        paintSwatch();
+    });
+
+    auto* buttons = new QHBoxLayout;
+    auto* cancel = new QPushButton(tr("Cancel"), &dialog);
+    auto* save   = new QPushButton(tr("Save"), &dialog);
+    save->setObjectName("primary");
+    connect(cancel, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(save,   &QPushButton::clicked, &dialog, &QDialog::accept);
+    buttons->addStretch(1);
+    buttons->addWidget(cancel);
+    buttons->addWidget(save);
+
+    form->addWidget(name);
+    form->addWidget(date);
+    form->addWidget(yearly);
+    form->addWidget(colorBtn);
+    form->addWidget(autoBtn, 0, Qt::AlignLeft);
+    form->addLayout(buttons);
+
+    if (dialog.exec() == QDialog::Accepted)
+        m_data->updateSpecialDay(snapshot.id, name->text(), date->date(),
+                                 yearly->isChecked(), chosen);
 }

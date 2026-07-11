@@ -923,6 +923,118 @@ private slots:
         QCOMPARE(int(decideBanner("19.0.0", "newest!!", "")),
                  int(Banner::Silent));
     }
+
+    // ---- v7: archive, priority, honest tracking, editable days ------------
+
+    void archivedThingsVanishFromEveryListButSurviveTheFile()
+    {
+        AppData data;
+        const QString c = data.addCategory("School", QColor("#4C6FE0"));
+        const QString a = data.addActivity("Old course", c);
+        const QString t = data.addTask("Old lab", c, QDate(2026, 8, 1));
+
+        QVERIFY(data.setActivityArchived(a, true));
+        QVERIFY(data.setTaskArchived(t, true));
+
+        // Gone from the living views…
+        QVERIFY(data.upcomingTasks().isEmpty());
+        QVERIFY(data.tasksDueOn(QDate(2026, 8, 1)).isEmpty());
+        // …present in the archive's own queries…
+        QCOMPARE(data.archivedTasks().size(), 1);
+        QCOMPARE(data.archivedActivities().size(), 1);
+
+        // …and the flags SURVIVE the disk (the whole point: hide, never
+        // forget). Round-trip through the same JSON path sync uses.
+        AppData reloaded;
+        JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
+                                   false);
+        QCOMPARE(reloaded.archivedTasks().size(), 1);
+        QCOMPARE(reloaded.archivedActivities().size(), 1);
+
+        // Restore is one flag flip away — archive is a door, not a grave.
+        QVERIFY(reloaded.setTaskArchived(t, false));
+        QCOMPARE(reloaded.upcomingTasks().size(), 1);
+    }
+
+    void taskPriorityDefaultsToMediumAndRoundTrips()
+    {
+        AppData data;
+        const QString c = data.addCategory("School", QColor("#4C6FE0"));
+        const QString t = data.addTask("Lab", c, QDate(2026, 8, 1));
+
+        // Born Medium — an unranked task is ordinary, not urgent.
+        QCOMPARE(int(data.upcomingTasks().first()->priority),
+                 int(Task::Priority::Medium));
+
+        QVERIFY(data.setTaskPriority(t, Task::Priority::Urgent));
+        AppData reloaded;
+        JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
+                                   false);
+        QCOMPARE(int(reloaded.upcomingTasks().first()->priority),
+                 int(Task::Priority::Urgent));
+
+        // The string mapping fails SAFE: unknown text reads as Medium —
+        // a v6 file (no priority key at all) must load as all-ordinary.
+        QCOMPARE(int(priorityFromString("critical!!")),
+                 int(Task::Priority::Medium));
+        QCOMPARE(int(priorityFromString("")),
+                 int(Task::Priority::Medium));
+    }
+
+    void removeSegmentRetractsExactlyOneFact()
+    {
+        AppData data;
+        const QString c = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString a = data.addActivity("Study", c);
+        const QString e = data.addEvent(QDate(2026, 7, 6), 540, 720, a);
+        data.appendSegment(e, makeSegment(SegmentKind::Focus, kT0, 30));
+        data.appendSegment(e, makeSegment(SegmentKind::Break,
+                                          kT0.addSecs(1800), 10));
+
+        // Out-of-range is REFUSED, never clamped — a retraction must name
+        // exactly the fact it retracts.
+        QVERIFY(!data.removeSegment(e, 2));
+        QVERIFY(!data.removeSegment(e, -1));
+        QVERIFY(!data.removeSegment("no-such-event", 0));
+
+        QVERIFY(data.removeSegment(e, 0)); // the focus segment, by position
+        const stats::Totals totals =
+            stats::summarizeDay(data, QDate(2026, 7, 6)).totals;
+        QCOMPARE(totals.focusSeconds, qint64(0));       // retracted
+        QCOMPARE(totals.breakSeconds, qint64(10 * 60)); // untouched
+    }
+
+    void specialDayEditKeepsBirthRulesAndColorRoundTrips()
+    {
+        AppData data;
+        const QString id =
+            data.addSpecialDay("Birthday", QDate(2026, 3, 14), true);
+
+        // Same birth rules on edit: no empty names, no invalid dates.
+        QVERIFY(!data.updateSpecialDay(id, "  ", QDate(2026, 3, 14), true,
+                                       QColor()));
+        QVERIFY(!data.updateSpecialDay(id, "Birthday", QDate(), true,
+                                       QColor()));
+
+        QVERIFY(data.updateSpecialDay(id, "Maman's birthday",
+                                      QDate(2026, 3, 15), true,
+                                      QColor("#D4589C")));
+        AppData reloaded;
+        JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
+                                   false);
+        QCOMPARE(reloaded.specialDays().first().title,
+                 QStringLiteral("Maman's birthday"));
+        QCOMPARE(reloaded.specialDays().first().color, QColor("#D4589C"));
+
+        // Invalid colour = "back to automatic", and it round-trips as
+        // absence — the same trick as the TBD due date.
+        QVERIFY(data.updateSpecialDay(id, "Maman's birthday",
+                                      QDate(2026, 3, 15), true, QColor()));
+        AppData again;
+        JsonStore::applyJsonObject(again, JsonStore::toJsonObject(data),
+                                   false);
+        QVERIFY(!again.specialDays().first().color.isValid());
+    }
 };
 
 QTEST_GUILESS_MAIN(TestDomain)

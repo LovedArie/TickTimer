@@ -1178,6 +1178,102 @@ releases — future work, consciously deferred.
 
 ---
 
+## T. The daily-driver pass (design-addendum-daily-driver)
+
+**T1 `[MC]`** Why is *archive* a separate action from *done*, instead of
+done tasks auto-hiding? (a) simpler code, (b) they're different statements,
+(c) undo would be harder?
+**A:** **(b).** Done = "I finished this" — today's victories belong on
+today's list (and the strike-through is the reward). Archived = "stop
+showing me this," a deliberate second decision. Auto-hiding on done would
+make checking a box *feel like deletion* — the model gained a third life
+stage (open → done → archived) precisely so the two statements stay
+separate.
+
+**T2 `[T/F]`** Archiving an activity is a soft delete — old events show
+"(unknown activity)" afterwards.
+**A:** **False — that's the whole point.** Archived activities stay in the
+data, resolvable by id; every past event keeps its name and colour. Only
+*lists and pickers* skip them. That's why archive is the ONLY retirement
+path for an in-use activity: `removeActivity` refuses those (history would
+dangle), and the Archive page doesn't even offer a delete button the
+domain would bounce.
+
+**T3 `[MC]`** New tasks are born `Priority::Medium`. Why not Urgent?
+**A:** An urgent-by-default world makes "urgent" meaningless within a week
+— rank is only information when it's *rare*. Same reasoning drives the
+display rule: Medium shows no chip at all (chips must stay rare to stay
+readable); Urgent gets the danger hue, Low a grey whisper.
+
+**T4 `[HANDS-ON]`** A v6 file (no `priority` key) loads in v19.1. What
+priority does every task get, and which line of code guarantees it?
+**A:** Medium — `priorityFromString("")` (a missing JSON key reads as an
+empty string) falls through to the Medium default, exactly like
+`repeatFromString("")` → None before it. Additive growth, seventh format
+version, still zero migration branches. There's a test pinning
+`priorityFromString("critical!!")` → Medium too: unknown strings fail
+*safe*, never loud.
+
+**T5 `[MC]`** The owner reported "false data" from studying longer than
+scheduled or forgetting to press focus. Which half was actually a bug?
+**A:** Only the second. Running long while the timer runs is captured
+fine — segments are real timestamps, overflow included. The hole was the
+**missing fact** (studied, never pressed focus) and its mirror, the
+**false fact** (timer left running into lunch). Hence the fix: a segment
+*editor*, not a timer change — add the fact, or retract it.
+
+**T6 `[T/F]`** Manually added segments are marked in the data so stats can
+treat them differently from timer-tracked ones.
+**A:** **False, deliberately.** A manual segment enters through the SAME
+door (`appendSegment`) and looks identical — a fact is a fact, whoever
+typed it. Marking them would create two classes of truth and invite every
+reader to special-case one. (Related honesty: `removeSegment` refuses
+out-of-range indices rather than clamping — a retraction must name exactly
+the fact it retracts.)
+
+**T7 `[HANDS-ON]`** Compare v2 shows two live-looking agendas side by side
+with almost no new machinery. Which THREE old decisions paid for it?
+**A:** (1) Sharing ships the WHOLE planner as an opaque blob — the peer's
+events were already crossing the wire. (2) The blob becomes a full snapshot
+`AppData`, so every query answers for the peer exactly as for you. (3)
+`AgendaWidget` takes a `const AppData*` and only ever REPORTS via signals —
+it never cared whose data it paints, so the same painter serves the live
+side and the snapshot side, rows aligned by the shared `kSlotHeight`.
+
+**T7-b `[MC]`** The peer's agenda is made read-only how — and why isn't
+"just don't connect the edit signals" enough? (a) setEnabled(false),
+(b) WA_TransparentForMouseEvents, (c) a ReadOnly flag on AgendaWidget?
+**A:** **(b).** `setEnabled(false)` greys the whole column — the peer's day
+would look broken, not read-only. And skipping connections isn't enough
+because drag-resize *feedback* is handled inside the widget: a block that
+wiggles when dragged but never saves is a lie. Transparent-for-mouse means
+events never reach the widget at all — read-only by physics, not
+discipline. (A ReadOnly flag would also work but adds a mode to a widget
+that doesn't need one; the attribute already exists.)
+
+**T8-bug `[SPOT THE BUG]`** The first draft called `rebuildSegmentList()`
+unconditionally inside `EventDialog::refresh()`. Tests passed. What goes
+wrong at runtime, and what's the fix?
+**A:** `refresh()` also fires on every live-timer tick — once per second.
+Rebuilding the rows at 1 Hz means visible flicker, a deleteLater queue
+growing sixty widgets a minute, and a ✕ button destroyed and recreated
+under the cursor mid-click. The fix: a fingerprint (`m_renderedSegments`,
+the segment count — sufficient because segments only append/remove, and
+each mutation triggers its own refresh) so rows rebuild only when they
+CHANGED. The lesson: "connected to changed()" and "connected to a timer"
+are different contracts, and code sitting on both must respect the faster
+one.
+
+**T8 `[MC]`** `SpecialDay.color` uses an *invalid* QColor to mean "no
+choice made." Where has this trick appeared twice before?
+**A:** The invalid `QDate` as "DATE TBD" on tasks, and the empty string /
+missing key throughout the JSON layer. Absence-as-default: the type's own
+"not valid" state IS the answer, so no parallel `bool hasColor` exists to
+disagree with it. Automatic urgency colouring resumes the moment the
+colour is invalid — and "back to automatic" is a first-class button.
+
+---
+
 *Add to this as we build. Every new feature should be able to contribute at
 least one `[MC]`/`[T/F]` and one `[HANDS-ON]` question — if it can't, you may not
 yet understand it well enough to teach it.*

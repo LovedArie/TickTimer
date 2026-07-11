@@ -99,7 +99,7 @@ QVector<const Task*> AppData::upcomingTasks() const
 {
     QVector<const Task*> result;
     for (const Task& task : m_tasks)
-        if (!task.done && task.dueDate.isValid())
+        if (!task.done && !task.archived && task.dueDate.isValid())
             result.append(&task);
 
     std::sort(result.begin(), result.end(),
@@ -119,7 +119,7 @@ QVector<const Task*> AppData::tasksDueOn(QDate date) const
     // one date, so there is nothing else to sort by).
     QVector<const Task*> result;
     for (const Task& task : m_tasks)
-        if (!task.done && task.dueDate == date)
+        if (!task.done && !task.archived && task.dueDate == date)
             result.append(&task);
 
     std::sort(result.begin(), result.end(), [](const Task* a, const Task* b) {
@@ -485,6 +485,17 @@ bool AppData::appendSegment(const QString& eventId, const Segment& segment)
     return true;
 }
 
+bool AppData::removeSegment(const QString& eventId, int index)
+{
+    Event* e = mutableEventById(eventId);
+    if (!e || index < 0 || index >= e->segments.size())
+        return false; // out-of-range is refused, never clamped — a retraction
+                      // must name exactly the fact it retracts
+    e->segments.removeAt(index);
+    emit changed();
+    return true;
+}
+
 QString AppData::addTask(const QString& title, const QString& categoryId,
                          QDate dueDate)
 {
@@ -502,6 +513,68 @@ QString AppData::addTask(const QString& title, const QString& categoryId,
 
     emit changed();
     return task.id;
+}
+
+bool AppData::setActivityArchived(const QString& id, bool archived)
+{
+    Activity* a = findById(m_activities, id);
+    if (!a)
+        return false;
+    if (a->archived == archived)
+        return true; // idempotent, no changed() storm
+    a->archived = archived;
+    emit changed();
+    return true;
+}
+
+bool AppData::setTaskArchived(const QString& id, bool archived)
+{
+    Task* task = findById(m_tasks, id);
+    if (!task)
+        return false;
+    if (task->archived == archived)
+        return true;
+    task->archived = archived;
+    emit changed();
+    return true;
+}
+
+bool AppData::setTaskPriority(const QString& id, Task::Priority priority)
+{
+    Task* task = findById(m_tasks, id);
+    if (!task)
+        return false;
+    if (task->priority == priority)
+        return true;
+    task->priority = priority;
+    emit changed();
+    return true;
+}
+
+QVector<const Task*> AppData::archivedTasks() const
+{
+    QVector<const Task*> result;
+    for (const Task& task : m_tasks)
+        if (task.archived)
+            result.append(&task);
+    std::sort(result.begin(), result.end(),
+              [](const Task* a, const Task* b) {
+                  return a->title.localeAwareCompare(b->title) < 0;
+              });
+    return result;
+}
+
+QVector<const Activity*> AppData::archivedActivities() const
+{
+    QVector<const Activity*> result;
+    for (const Activity& a : m_activities)
+        if (a.archived)
+            result.append(&a);
+    std::sort(result.begin(), result.end(),
+              [](const Activity* a, const Activity* b) {
+                  return a->name.localeAwareCompare(b->name) < 0;
+              });
+    return result;
 }
 
 bool AppData::setTaskDone(const QString& id, bool done)
@@ -568,7 +641,7 @@ bool AppData::removeTask(const QString& id)
 
 bool AppData::updateTask(const QString& id, const QString& title,
                          const QString& description, QDate dueDate,
-                         Task::Repeat repeat)
+                         Task::Repeat repeat, Task::Priority priority)
 {
     Task* task = findById(m_tasks, id);
     if (!task)
@@ -583,6 +656,7 @@ bool AppData::updateTask(const QString& id, const QString& title,
                                     // intentional blank lines — leave as-is
     task->dueDate     = dueDate;     // invalid QDate == "TBD", first-class
     task->repeat      = repeat;
+    task->priority    = priority;    // v7: the urgency rank rides the same edit
     emit changed();  // ONE mutation, ONE repaint — see the header's rationale
     return true;
 }
@@ -662,6 +736,24 @@ QString AppData::addSpecialDay(const QString& title, QDate date,
 
     emit changed();
     return day.id;
+}
+
+bool AppData::updateSpecialDay(const QString& id, const QString& title,
+                               QDate date, bool repeatsYearly,
+                               const QColor& color)
+{
+    SpecialDay* day = findById(m_specialDays, id);
+    if (!day)
+        return false;
+    const QString trimmed = title.trimmed();
+    if (trimmed.isEmpty() || !date.isValid())
+        return false; // a day keeps a real name and a real date — birth rules
+    day->title         = trimmed;
+    day->date          = date;
+    day->repeatsYearly = repeatsYearly;
+    day->color         = color; // invalid = back to automatic urgency colours
+    emit changed();
+    return true;
 }
 
 bool AppData::removeSpecialDay(const QString& id)

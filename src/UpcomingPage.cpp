@@ -5,12 +5,15 @@
 #include "Theme.h"
 #include "Widgets.h"
 
+#include <algorithm>
+
 #include <QCheckBox>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 UpcomingPage::UpcomingPage(AppData* data, QWidget* parent)
@@ -66,13 +69,54 @@ QWidget* UpcomingPage::buildContent()
     layout->addWidget(title);
     layout->addWidget(sub);
 
+    // ---- the four views (item 7): All / Urgent / Medium / Low --------------
+    // Tabs, not four side-by-side lists: same cards, one lens at a time —
+    // a laptop screen breathes, and the buckets below (overdue / this week
+    // / later) keep working inside whichever lens is on. checkable +
+    // autoExclusive QToolButtons = the nav rail's radio idiom, reused.
+    auto* tabs = new QHBoxLayout;
+    tabs->setSpacing(6);
+    const struct { QString label; int filter; } lenses[] = {
+        {tr("All"), -1},
+        {tr("Urgent"), int(Task::Priority::Urgent)},
+        {tr("Medium"), int(Task::Priority::Medium)},
+        {tr("Low"),    int(Task::Priority::Low)},
+    };
+    for (const auto& lens : lenses) {
+        auto* b = new QToolButton(panel);
+        b->setObjectName("nav");
+        b->setText(lens.label);
+        b->setCheckable(true);
+        b->setAutoExclusive(true);
+        b->setChecked(m_filter == lens.filter);
+        b->setCursor(Qt::PointingHandCursor);
+        const int f = lens.filter;
+        connect(b, &QToolButton::clicked, this, [this, f]() {
+            m_filter = f;
+            rebuild(); // the data didn't change — only the lens did
+        });
+        tabs->addWidget(b);
+    }
+    tabs->addStretch(1);
+    layout->addSpacing(6);
+    layout->addLayout(tabs);
+
     const QDate today = QDate::currentDate();
-    const auto tasks = m_data->upcomingTasks();
+    auto tasks = m_data->upcomingTasks();
+    if (m_filter >= 0)
+        tasks.erase(std::remove_if(tasks.begin(), tasks.end(),
+                        [this](const Task* t) {
+                            return int(t->priority) != m_filter;
+                        }),
+                    tasks.end());
 
     if (tasks.isEmpty()) {
         auto* empty = new QLabel(
-            tr("Nothing on the horizon. Give tasks a due date in the "
-               "Activities tab and they'll line up here."),
+            m_filter >= 0
+                ? tr("Nothing at this urgency. Set a task's priority from "
+                     "its detail panel (click its title).")
+                : tr("Nothing on the horizon. Give tasks a due date in the "
+                     "Activities tab and they'll line up here."),
             panel);
         empty->setObjectName("encourage");
         empty->setWordWrap(true);
@@ -167,11 +211,13 @@ QWidget* UpcomingPage::buildTaskCard(const Task* task, QWidget* parent)
         // destroyed as its child mid-scope, then again on the stack unwind —
         // the double-free we fixed once already. The window outlives it.
         TaskDetailDialog dialog(snapshot.title, snapshot.description,
-                                snapshot.dueDate, snapshot.repeat, window());
+                                snapshot.dueDate, snapshot.repeat,
+                                snapshot.priority, window());
         if (dialog.exec() == QDialog::Accepted)
             m_data->updateTask(taskId, dialog.chosenTitle(),
                                dialog.chosenDescription(),
-                               dialog.chosenDueDate(), dialog.chosenRepeat());
+                               dialog.chosenDueDate(), dialog.chosenRepeat(),
+                               dialog.chosenPriority());
     });
 
     QString subText = category ? category->name : tr("(no area)");
@@ -204,6 +250,21 @@ QWidget* UpcomingPage::buildTaskCard(const Task* task, QWidget* parent)
     countdown->setStyleSheet(QStringLiteral(
         "font-size:13px; font-weight:800; color:%1;").arg(whenColor.name()));
 
+    // The urgency chip. Medium stays silent — it's the default, and a chip
+    // on every card would make all of them invisible. Urgent shouts in the
+    // danger hue; Low whispers in grey.
+    QLabel* prio = nullptr;
+    if (task->priority != Task::Priority::Medium) {
+        prio = new QLabel(priorityLabel(task->priority).toUpper(), card);
+        const QString c = task->priority == Task::Priority::Urgent
+                              ? theme::danger().name()
+                              : QStringLiteral("#8A93A0");
+        prio->setStyleSheet(QStringLiteral(
+            "font-size:10px; font-weight:800; letter-spacing:1px; "
+            "color:%1; border:1px solid %1; border-radius:8px; "
+            "padding:2px 7px;").arg(c));
+    }
+
     auto* x = new QPushButton(QStringLiteral("\u00D7"), card);
     x->setObjectName("danger");
     x->setFixedSize(26, 26);
@@ -214,6 +275,8 @@ QWidget* UpcomingPage::buildTaskCard(const Task* task, QWidget* parent)
     row->addWidget(check);
     row->addWidget(dot);
     row->addLayout(textCol, 1);
+    if (prio)
+        row->addWidget(prio);
     row->addWidget(countdown);
     row->addWidget(x);
     return card;

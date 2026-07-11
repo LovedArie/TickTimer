@@ -104,6 +104,15 @@ inline QString appStyleSheet()
             border-radius: 10px;
         }
         QWidget#updateBanner QLabel { color: #3E3A73; font-weight: 600; }
+        /* The dismiss must be FINDABLE (owner feedback: the bare ✕ hid).
+           A bordered quiet button reads as clickable without shouting. */
+        QWidget#updateBanner QPushButton#quiet {
+            border: 1px solid rgba(83,74,183,0.35); border-radius: 8px;
+            color: #534AB7; font-weight: 700; padding: 4px 0;
+        }
+        QWidget#updateBanner QPushButton#quiet:hover {
+            background: rgba(83,74,183,0.12);
+        }
 
         /* Buttons */
         QPushButton {

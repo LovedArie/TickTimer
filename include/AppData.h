@@ -89,6 +89,9 @@ public:
     // most urgent first. A query, not a table — nothing here is stored
     // (addendum §3.13; derive-don't-store §3.5).
     QVector<const Task*> upcomingTasks() const;
+    // The Archive page's two lists — everything the rest of the app hides.
+    QVector<const Task*>     archivedTasks() const;
+    QVector<const Activity*> archivedActivities() const;
     // Every undone task whose due date IS this exact day — what the Calendar
     // shows as "due today". A query, same discipline as upcomingTasks():
     // derived on demand, never stored.
@@ -139,6 +142,10 @@ public:
 
     QString addActivity(const QString& name, const QString& categoryId);
     bool    removeActivity(const QString& id);          // fails if any Event uses it
+    // Archive = hide, never forget. The complement of removeActivity's
+    // refusal: an in-use activity CAN'T be deleted, so this is its only
+    // retirement path — out of the pickers, still owning its history.
+    bool    setActivityArchived(const QString& id, bool archived);
 
     // Three creation doors, one per block identity (block-labels addendum).
     // Three NAMED functions instead of one addEvent(activityId, taskId,
@@ -174,6 +181,12 @@ public:
     bool    setEventTask(const QString& id, const QString& taskId);
     bool    removeEvent(const QString& id);
     bool    appendSegment(const QString& eventId, const Segment& segment);
+    // Honest tracking works both ways: appendSegment adds a fact the timer
+    // missed (you studied, forgot to press focus); removeSegment retracts a
+    // fact that was never true (pressed the wrong button, left it running).
+    // By index within the event — segments have no ids, and the editor
+    // shows them as a positional list.
+    bool    removeSegment(const QString& eventId, int index);
 
     QString addTask(const QString& title, const QString& categoryId,
                     QDate dueDate = QDate());   // invalid date = "TBD"
@@ -190,7 +203,10 @@ public:
     // keep a real name); an empty description is fine.
     bool    updateTask(const QString& id, const QString& title,
                        const QString& description, QDate dueDate,
-                       Task::Repeat repeat);
+                       Task::Repeat repeat,
+                       Task::Priority priority = Task::Priority::Medium);
+    bool    setTaskArchived(const QString& id, bool archived);
+    bool    setTaskPriority(const QString& id, Task::Priority priority);
 
     QString addFolder(const QString& name);
     bool    renameFolder(const QString& id, const QString& name);
@@ -200,6 +216,12 @@ public:
 
     QString addSpecialDay(const QString& title, QDate date, bool repeatsYearly);
     bool    removeSpecialDay(const QString& id);
+    // One coarse edit, like updateTask: the edit dialog is one deliberate
+    // action, so it is one mutation and one changed(). Invalid color =
+    // "back to automatic" (urgency colouring), a real answer as always.
+    bool    updateSpecialDay(const QString& id, const QString& title,
+                             QDate date, bool repeatsYearly,
+                             const QColor& color);
 
     // ---- live-timer crash insurance ---------------------------------------
     const std::optional<RunningState>& running() const { return m_running; }

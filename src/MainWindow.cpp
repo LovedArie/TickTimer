@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "ActivitiesPage.h"
+#include "ArchivePage.h"
 #include "PlannerPage.h"
 #include "SpecialDaysPage.h"
 #include "UpcomingPage.h"
@@ -140,6 +141,7 @@ MainWindow::MainWindow(const QString& username)
     m_pages->addWidget(new ActivitiesPage(&m_data, m_pages));
     m_pages->addWidget(new SpecialDaysPage(&m_data, m_pages));
     m_pages->addWidget(new PomodoroPage(m_pages));
+    m_pages->addWidget(new ArchivePage(&m_data, m_pages)); // index 5 — the quiet room
 
     const char* navNames[] = {"Calendar", "Upcoming", "Activities",
                               "Special days", "Pomodoro"};
@@ -158,6 +160,21 @@ MainWindow::MainWindow(const QString& username)
         navLayout->addWidget(b);
     }
     navLayout->addStretch(1);
+
+    // Archive sits BELOW the stretch, with Sync/Share: furniture, not a
+    // destination (items 3–5). It's checkable + autoExclusive like its
+    // siblings so the rail's radio behaviour keeps working when you're in it.
+    auto* archiveBtn = new QToolButton(nav);
+    archiveBtn->setObjectName("nav");
+    archiveBtn->setText(tr("🗄  Archive"));
+    archiveBtn->setCheckable(true);
+    archiveBtn->setAutoExclusive(true);
+    archiveBtn->setCursor(Qt::PointingHandCursor);
+    archiveBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(archiveBtn, &QToolButton::clicked, this,
+            [this]() { m_pages->setCurrentIndex(5); });
+    m_navButtons.append(archiveBtn);
+    navLayout->addWidget(archiveBtn);
 
     bodyLayout->addWidget(nav);
     bodyLayout->addWidget(m_pages, 1);
@@ -235,7 +252,7 @@ void MainWindow::enableSync(const QString& serverUrl, const QString& token)
     shareBtn->setCursor(Qt::PointingHandCursor);
     shareBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(shareBtn, &QToolButton::clicked, this, [this]() {
-        SharingDialog dialog(m_shareClient, &m_data, this);
+        SharingDialog dialog(m_shareClient, &m_data, &m_tracker, this);
         dialog.exec();
     });
     m_navLayout->addWidget(shareBtn);

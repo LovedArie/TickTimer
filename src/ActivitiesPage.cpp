@@ -426,9 +426,12 @@ QWidget* ActivitiesPage::buildDetailContent()
     addTaskRow->addWidget(addTaskBtn);
     layout->addLayout(addTaskRow);
 
-    for (const Task* task : m_data->tasksIn(categoryId))
+    for (const Task* task : m_data->tasksIn(categoryId)) {
+        if (task->archived)
+            continue; // archived tasks live on the Archive page now (item 4)
         layout->addWidget(new TaskRow(m_data, *task,
                                       /*showCategoryDot=*/false, content));
+    }
 
     // ---- ACTIVITIES: the reusable types — no checkbox, ever (§3.9) ---------
     auto* actsTitle = new QLabel(tr("ACTIVITIES"), content);
@@ -452,8 +455,8 @@ QWidget* ActivitiesPage::buildDetailContent()
     layout->addLayout(addActRow);
 
     for (const Activity& a : m_data->activities()) {
-        if (a.categoryId != categoryId)
-            continue;
+        if (a.categoryId != categoryId || a.archived)
+            continue; // archived activities: Archive page only (item 3)
         auto* row = new QHBoxLayout;
         row->setSpacing(9);
         auto* aDot = new QLabel(content);
@@ -467,6 +470,19 @@ QWidget* ActivitiesPage::buildDetailContent()
             auto* tag = new QLabel(tr("in use (%1)").arg(used), content);
             tag->setStyleSheet("color:#616974; font-size:11px;");
             row->addWidget(tag);
+            // In-use = undeletable (history would dangle), which used to
+            // mean UNRETIRABLE. Archive is the missing exit (item 3):
+            // gone from every list and picker, history intact, reversible.
+            auto* arch = new QPushButton(tr("Archive"), content);
+            arch->setCursor(Qt::PointingHandCursor);
+            arch->setStyleSheet(
+                "background:#EEF0ED; border:none; border-radius:8px; "
+                "padding:4px 9px; color:#616974; font-weight:600;");
+            const QString activityId = a.id;
+            connect(arch, &QPushButton::clicked, this, [this, activityId]() {
+                m_data->setActivityArchived(activityId, true);
+            });
+            row->addWidget(arch);
         } else {
             auto* x = new QPushButton(QStringLiteral("\u00D7"), content);
             x->setObjectName("danger");

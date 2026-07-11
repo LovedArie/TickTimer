@@ -8,4 +8,3 @@ CMakeLists.txt.user*
 
 # Server runtime data (accounts, planners, grants) - never commit user data
 server_data*/
-Version/

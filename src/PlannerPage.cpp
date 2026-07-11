@@ -413,12 +413,13 @@ void PlannerPage::rebuildDueStrip()
                 [this, taskId, snapshot]() {
                     TaskDetailDialog dialog(snapshot.title, snapshot.description,
                                             snapshot.dueDate, snapshot.repeat,
-                                            this);
+                                            snapshot.priority, this);
                     if (dialog.exec() == QDialog::Accepted)
                         m_data->updateTask(taskId, dialog.chosenTitle(),
                                            dialog.chosenDescription(),
                                            dialog.chosenDueDate(),
-                                           dialog.chosenRepeat());
+                                           dialog.chosenRepeat(),
+                                           dialog.chosenPriority());
                 });
 
         row->addWidget(dot);

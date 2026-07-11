@@ -8,11 +8,12 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-SharingDialog::SharingDialog(ShareClient* client, const AppData* myData,
-                             QWidget* parent)
+SharingDialog::SharingDialog(ShareClient* client, AppData* myData,
+                             TrackerService* tracker, QWidget* parent)
     : QDialog(parent)
     , m_client(client)
     , m_myData(myData)
+    , m_tracker(tracker)
 {
     setWindowTitle(tr("Share & compare"));
     setModal(true);
@@ -207,6 +208,6 @@ void SharingDialog::openCompare(const QString& user,
 {
     // Stack dialog parented to US — we outlive its exec() by definition
     // (the A1 rule: a stack dialog's parent must be guaranteed to survive it).
-    CompareDialog dialog(m_myData, user, peerBlob, this);
+    CompareDialog dialog(m_myData, m_tracker, user, peerBlob, this);
     dialog.exec();
 }

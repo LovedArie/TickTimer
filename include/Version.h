@@ -17,9 +17,9 @@
 // ---------------------------------------------------------------------------
 
 #define TICKTIMER_VERSION_MAJOR  19
-#define TICKTIMER_VERSION_MINOR  0
+#define TICKTIMER_VERSION_MINOR  1
 #define TICKTIMER_VERSION_PATCH  0
-#define TICKTIMER_VERSION_STRING "19.0.0"
+#define TICKTIMER_VERSION_STRING "19.1.0"
 
 #ifndef RC_INVOKED
 

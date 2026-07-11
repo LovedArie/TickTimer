@@ -105,6 +105,7 @@ set(UI_SOURCES
     src/CompareDialog.cpp
     src/UpdateClient.cpp
     src/UpdateBanner.cpp
+    src/ArchivePage.cpp
     include/AuthClient.h
     include/LoginDialog.h
     include/SyncClient.h
@@ -116,6 +117,7 @@ set(UI_SOURCES
     include/Compare.h
     include/UpdateClient.h
     include/UpdateBanner.h
+    include/ArchivePage.h
     include/Version.h
 )
 

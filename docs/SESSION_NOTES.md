@@ -1,8 +1,10 @@
 # Session Notes — TickTimer (C++/Qt mentorship)
 
 *Running record. Used to decide what to quiz and where to pick up. Updated at
-the end of the v19 session (update notices — networked arc part 4: ARC
-COMPLETE — plus Windows deployment: portable folder, installer, icons).*
+the end of the v19.1 session — the DAILY-DRIVER pass: the first session built
+entirely from the owner's own usage feedback (archive, priority, honest
+tracking, schedule compare — upgraded mid-session to an editable two-agenda
+planning screen on owner feedback — editable special days).*
 
 ---
 
@@ -12,10 +14,11 @@ COMPLETE — plus Windows deployment: portable folder, installer, icons).*
 tracker that credits every life area (work, health, relationships, rest), built
 especially for people whose focus is derailed by anxiety-driven procrastination.
 
-- **State:** **v19.0.0** (now a real, load-bearing number: `include/Version.h`
-  is the single source of truth feeding the code, both Windows exes, and the
-  update check), data format **v6**, **79 tests green** (42 domain + 9 UI +
-  19 auth + 9 live end-to-end), clean warning-free build against Qt 6
+- **State:** **v19.1.0** (`include/Version.h`, the single source of truth
+  feeding the code, both Windows exes, and the update check), data format
+  **v7** (v6 + archived/priority/day-colour, all additive), **85 tests
+  green** (46 domain + 11 UI + 19 auth + 9 live end-to-end), clean
+  warning-free build against Qt 6
   (CMake + QTest, headless); **Android-ready** (`docs/ANDROID.md`);
   **Windows-distributable** — a one-double-click `deploy-windows.bat` bundles
   both exes with their Qt DLLs into a portable folder, plus an Inno Setup

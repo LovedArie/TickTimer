@@ -111,11 +111,25 @@ if errorlevel 1 ( echo   [X] Build failed. & popd & pause & exit /b 1 )
 
 REM --- Assemble dist\TickTimer --------------------------------------------
 set "DIST=%ROOT%\dist\TickTimer"
-if exist "%DIST%" rmdir /s /q "%DIST%"
+if exist "%DIST%" rmdir /s /q "%DIST%" 2>nul
+REM If the folder is still there, something running from it holds the files
+REM open — Windows will not delete or replace a loaded exe/DLL. Continuing
+REM would silently ship the OLD build, so this is a hard stop with the fix.
+if exist "%DIST%" (
+    echo.
+    echo   [X] Can't rebuild the package: files in dist\TickTimer are IN USE.
+    echo       Close TickTimer and the black server window - anything that
+    echo       was started from the dist folder - then run me again.
+    popd
+    pause
+    exit /b 1
+)
 mkdir "%DIST%"
 
 copy /y "build-release\ticktimer.exe"        "%DIST%\" >nul
+if errorlevel 1 ( echo   [X] Couldn't copy ticktimer.exe into dist. & popd & pause & exit /b 1 )
 copy /y "build-release\ticktimer-server.exe" "%DIST%\" >nul
+if errorlevel 1 ( echo   [X] Couldn't copy ticktimer-server.exe into dist. & popd & pause & exit /b 1 )
 
 echo.
 echo   Bundling Qt runtime (windeployqt)...

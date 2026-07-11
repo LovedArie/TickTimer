@@ -6,6 +6,7 @@
 
 class AppData;
 class QLabel;
+class TrackerService;
 class QLineEdit;
 class QPushButton;
 class QVBoxLayout;
@@ -21,18 +22,20 @@ class QVBoxLayout;
 // only honest place for it — a permission checked only in the UI isn't a
 // permission, it's a suggestion.
 //
-// It holds a const AppData* — MY data — purely to hand it onward to the
-// CompareDialog, which needs both sides of the comparison. const because a
-// sharing screen has no business mutating the planner; the compiler enforces
-// what the design intends (the A2 lesson, applied again).
+// It carries the live AppData* and the TrackerService onward to
+// CompareDialog. (v1 held a const pointer — "a sharing screen has no
+// business mutating the planner" — and that was true until comparing
+// turned out to BE planning. The requirement moved; the const moved with
+// it, to the peer snapshot where it still tells the truth. Constness is a
+// design statement, and design statements get revised like any other.)
 // ---------------------------------------------------------------------------
 
 class SharingDialog : public QDialog
 {
     Q_OBJECT
 public:
-    SharingDialog(ShareClient* client, const AppData* myData,
-                  QWidget* parent = nullptr);
+    SharingDialog(ShareClient* client, AppData* myData,
+                  TrackerService* tracker, QWidget* parent = nullptr);
 
 private:
     void refresh();                 // ask the server for both lists
@@ -41,8 +44,9 @@ private:
     void openCompare(const QString& user, const QJsonObject& peerBlob);
     static void clearLayout(QVBoxLayout* layout);
 
-    ShareClient*   m_client;
-    const AppData* m_myData;
+    ShareClient*     m_client;
+    AppData*         m_myData;  // live: CompareDialog v2 PLANS on it
+    TrackerService*  m_tracker; // rides along for EventDialog inside compare
 
     QLineEdit*   m_nameEdit    = nullptr;
     QPushButton* m_shareBtn    = nullptr;

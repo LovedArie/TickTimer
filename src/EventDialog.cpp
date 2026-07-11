@@ -7,7 +7,9 @@
 #include "TrackerService.h"
 
 #include <QHBoxLayout>
+#include <QComboBox>
 #include <QLabel>
+#include <QTimeEdit>
 #include <QPainter>
 #include <QAbstractItemView>
 #include <QCompleter>
@@ -227,6 +229,37 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
         tr("A quick note… (how did it go? did anxiety creep in?)"));
     m_note->setFixedHeight(64);
 
+    // ---- tracked time — the honest-tracking editor (item 2) ----------------
+    // The timers write facts; this section lets the HUMAN write them too.
+    // Forgot to press focus? Add the 9:00–9:45 you really studied. Left the
+    // timer running into lunch? Retract it and add the true one. The domain
+    // treats a manual segment exactly like a timer's (appendSegment is the
+    // same door) — a fact is a fact, whoever typed it. Stats, glance, and
+    // compare all update instantly because they derive, never store.
+    auto* segCaption = new QLabel(tr("TRACKED TIME"), this);
+    segCaption->setStyleSheet(
+        "color:#616974; font-size:10px; font-weight:700; letter-spacing:1px;");
+    m_segList = new QVBoxLayout;
+    m_segList->setSpacing(2);
+
+    auto* addSegRow = new QHBoxLayout;
+    m_segKind = new QComboBox(this);
+    m_segKind->addItem(tr("Focus"));       // == SegmentKind::Focus (0)
+    m_segKind->addItem(tr("Break"));       // == SegmentKind::Break (1)
+    m_segKind->addItem(tr("Distracted"));  // == SegmentKind::Distracted (2)
+    m_segStart = new QTimeEdit(this);
+    m_segEnd   = new QTimeEdit(this);
+    m_segStart->setDisplayFormat(QStringLiteral("HH:mm"));
+    m_segEnd->setDisplayFormat(QStringLiteral("HH:mm"));
+    auto* addSegBtn = new QPushButton(tr("Add"), this);
+    addSegBtn->setCursor(Qt::PointingHandCursor);
+    addSegRow->addWidget(m_segKind);
+    addSegRow->addWidget(m_segStart);
+    addSegRow->addWidget(new QLabel(QStringLiteral("→"), this));
+    addSegRow->addWidget(m_segEnd);
+    addSegRow->addWidget(addSegBtn);
+    addSegRow->addStretch(1);
+
     auto* deleteBtn = new QPushButton(tr("Delete this block"), this);
     deleteBtn->setObjectName("danger");
     deleteBtn->setCursor(Qt::PointingHandCursor);
@@ -241,6 +274,9 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     layout->addWidget(m_legend);
     layout->addWidget(m_stateLabel);
     layout->addLayout(btnRow);
+    layout->addWidget(segCaption);
+    layout->addLayout(m_segList);
+    layout->addLayout(addSegRow);
     layout->addWidget(m_note);
     layout->addWidget(deleteBtn, 0, Qt::AlignLeft);
 
@@ -255,6 +291,20 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
             [this]() { m_tracker->startDistracted(m_eventId); });
     connect(m_stopBtn, &QPushButton::clicked,
             m_tracker, &TrackerService::stop);
+    connect(addSegBtn, &QPushButton::clicked, this, [this]() {
+        const Event* e = m_data->eventById(m_eventId);
+        if (!e)
+            return;
+        Segment seg;
+        seg.kind  = static_cast<SegmentKind>(m_segKind->currentIndex());
+        // The times are ON THE BLOCK'S DATE — you're correcting that day's
+        // record, so the dialog never asks which day (it knows).
+        seg.start = QDateTime(e->date, m_segStart->time());
+        seg.end   = QDateTime(e->date, m_segEnd->time());
+        // appendSegment refuses end <= start (zero/negative facts are
+        // noise); the UI simply relays reality, it doesn't pre-argue.
+        m_data->appendSegment(m_eventId, seg);
+    });
     connect(m_note, &QPlainTextEdit::textChanged,
             this, &EventDialog::saveNote);
     // Commit on focus-out (LabelEdit's callback), NOT per keystroke: the
@@ -285,6 +335,13 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
             this, &EventDialog::refresh); // live numbers every second
     connect(m_data, &AppData::changed,
             this, &EventDialog::refresh);
+
+    // Seed the add-time row from the PLAN — the likeliest correction is
+    // "I did what I planned, the timer just wasn't running."
+    if (const Event* e0 = m_data->eventById(m_eventId)) {
+        m_segStart->setTime(QTime(0, 0).addSecs(e0->plannedStartMinutes * 60));
+        m_segEnd->setTime(QTime(0, 0).addSecs(e0->plannedEndMinutes * 60));
+    }
 
     // Seed the note ONCE — refresh() never touches it again, or every
     // keystroke would trigger changed() -> refresh() -> setPlainText() and
@@ -444,6 +501,17 @@ void EventDialog::refresh()
     m_distractedBtn->setEnabled(live && !(trackingThis
         && m_tracker->state() == TrackerService::State::Distracted));
     m_stopBtn->setEnabled(trackingThis);
+    // Rebuild the tracked-time rows ONLY when the segment list actually
+    // changed — refresh() also fires on every live-timer tick (once per
+    // second), and rebuilding widgets at 1 Hz means flicker, a growing
+    // deleteLater queue, and a ✕ button replaced under the cursor
+    // mid-click. Size is a sufficient fingerprint here because segments
+    // only ever get appended or removed, and each mutation emits its own
+    // changed() → its own refresh().
+    if (e->segments.size() != m_renderedSegments) {
+        m_renderedSegments = e->segments.size();
+        rebuildSegmentList();
+    }
 }
 
 void EventDialog::moveBySlots(int deltaSlots)
@@ -568,5 +636,64 @@ void PvaBar::paintEvent(QPaintEvent*)
         // real time that ate into the plan, shown honestly as lost.
         p.setBrush(theme::danger());
         p.drawRect(QRect(fw + bw, 0, dw, height()));
+    }
+}
+
+void EventDialog::rebuildSegmentList()
+{
+    // Empty-and-refill, the UpcomingPage idiom: rows are cheap, bookkeeping
+    // isn't. deleteLater because the × that triggered this rebuild is one
+    // of the widgets being discarded (the J-section rule, once more).
+    while (QLayoutItem* item = m_segList->takeAt(0)) {
+        if (QWidget* w = item->widget())
+            w->deleteLater();
+        delete item;
+    }
+
+    const Event* e = m_data->eventById(m_eventId);
+    if (!e)
+        return;
+
+    if (e->segments.isEmpty()) {
+        auto* none = new QLabel(
+            tr("Nothing tracked yet — the timers write here, and so can "
+               "you (forgot to press focus? add the time below)."),
+            this);
+        none->setStyleSheet("color:#8A9098; font-size:11px;");
+        none->setWordWrap(true);
+        m_segList->addWidget(none);
+        return;
+    }
+
+    const QString kindNames[] = {tr("Focus"), tr("Break"), tr("Distracted")};
+    for (int i = 0; i < e->segments.size(); ++i) {
+        const Segment& seg = e->segments[i];
+        auto* row = new QWidget(this);
+        auto* h = new QHBoxLayout(row);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(8);
+
+        auto* text = new QLabel(
+            QStringLiteral("%1  %2 → %3   (%4)")
+                .arg(kindNames[int(seg.kind)],
+                     seg.start.time().toString(QStringLiteral("HH:mm")),
+                     seg.end.time().toString(QStringLiteral("HH:mm")),
+                     stats::formatSeconds(seg.seconds())),
+            row);
+        text->setStyleSheet("font-size:12px; color:#4A505A;");
+
+        auto* x = new QPushButton(QStringLiteral("\u00D7"), row);
+        x->setObjectName("danger");
+        x->setFixedWidth(22);
+        x->setCursor(Qt::PointingHandCursor);
+        x->setToolTip(tr("This never happened — remove it"));
+        const int index = i;
+        connect(x, &QPushButton::clicked, this, [this, index]() {
+            m_data->removeSegment(m_eventId, index);
+        });
+
+        h->addWidget(text, 1);
+        h->addWidget(x);
+        m_segList->addWidget(row);
     }
 }

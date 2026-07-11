@@ -25,7 +25,8 @@ QLabel* caption(const QString& text, QWidget* parent)
 
 TaskDetailDialog::TaskDetailDialog(const QString& title,
                                    const QString& description, QDate dueDate,
-                                   Task::Repeat repeat, QWidget* parent)
+                                   Task::Repeat repeat,
+                                   Task::Priority priority, QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle(tr("Task details"));
@@ -90,6 +91,19 @@ TaskDetailDialog::TaskDetailDialog(const QString& title,
     m_repeat->setCurrentIndex(static_cast<int>(repeat));
     layout->addWidget(m_repeat);
 
+    // ---- priority (v7) ------------------------------------------------------
+    // Same combo-index-equals-enum-value trick as repeat: the item order IS
+    // the enum order, so the mapping is one static_cast each way and there
+    // is no translation table to fall out of sync.
+    layout->addSpacing(4);
+    layout->addWidget(caption(tr("PRIORITY"), this));
+    m_priority = new QComboBox(this);
+    m_priority->addItem(tr("Urgent — do this first"));   // Priority::Urgent == 0
+    m_priority->addItem(tr("Medium — the default"));     // Priority::Medium == 1
+    m_priority->addItem(tr("Low — when there's time"));  // Priority::Low    == 2
+    m_priority->setCurrentIndex(static_cast<int>(priority));
+    layout->addWidget(m_priority);
+
     // ---- buttons -----------------------------------------------------------
     layout->addSpacing(8);
     auto* buttons = new QHBoxLayout;
@@ -122,6 +136,11 @@ QDate TaskDetailDialog::chosenDueDate() const
 {
     // The checkbox is the source of truth for "has a date at all".
     return m_noDate->isChecked() ? QDate() : m_date->date();
+}
+
+Task::Priority TaskDetailDialog::chosenPriority() const
+{
+    return static_cast<Task::Priority>(m_priority->currentIndex());
 }
 
 Task::Repeat TaskDetailDialog::chosenRepeat() const

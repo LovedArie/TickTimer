@@ -148,6 +148,17 @@ into three honest layers.
 | `UpdateClient` | the fourth wire sibling — the family recipe now writes itself; every failure mapped to deliberate silence |
 | `UpdateBanner` + `version::decideBanner` | fetch / judge / render as three layers; the non-nag rule (newer AND not dismissed) as a pure, table-tested function |
 
+**The daily-driver pass** (`design-addendum-daily-driver.md` — the first session built from the owner's own usage feedback):
+
+| File | What it teaches |
+|---|---|
+| `Task.h` / `Activity.h` | a third life stage (open → done → archived) as ONE flag, not a state machine; enum-with-safe-default string mapping, third time (`priorityFromString("") == Medium`) |
+| `ArchivePage` | a page that derives everything and owns nothing; deliberately NOT offering buttons the domain would refuse (no activity-delete) |
+| `EventDialog` (tracked time) | facts editable by their owner — manual segments enter the SAME door as the timer's; retract-by-exact-index (refuse, don't clamp); rebuild-only-on-change vs a 1 Hz refresh (the flicker bug that almost shipped) |
+| `UpcomingPage` (lenses) | view-state vs data (the filter dies with the page); tabs as checkable QToolButtons — the nav idiom, reused |
+| `CompareDialog` (schedules) | the snapshot-AppData design paying rent: `eventsOn()` answers for a peer exactly as for you |
+| `SpecialDaysPage` (edit) | invalid QColor as "no choice made" — absence-as-default, third appearance (after TBD dates and missing JSON keys) |
+
 ### Part 7 — the build (`CMakeLists.txt`)
 Read the comments: what CMake *is*, why headers are listed (AUTOMOC), and
 how the test target doubles as an architecture check (domain must build

@@ -47,6 +47,7 @@ static QJsonObject toJson(const Activity& a)
         {"id",         a.id},
         {"name",       a.name},
         {"categoryId", a.categoryId},
+        {"archived",   a.archived}, // v7
     };
 }
 
@@ -56,6 +57,7 @@ static Activity activityFromJson(const QJsonObject& o)
     a.id         = o["id"].toString();
     a.name       = o["name"].toString();
     a.categoryId = o["categoryId"].toString();
+    a.archived   = o["archived"].toBool(); // missing key (pre-v7) -> false
     return a;
 }
 
@@ -117,6 +119,9 @@ static QJsonObject toJson(const SpecialDay& day)
         {"title",         day.title},
         {"date",          day.date.toString(Qt::ISODate)},
         {"repeatsYearly", day.repeatsYearly},
+        // v7: an invalid colour serialises to "" and parses back invalid —
+        // "no colour chosen" round-trips for free, like the TBD date.
+        {"color",         day.color.isValid() ? day.color.name() : QString()},
     };
 }
 
@@ -127,6 +132,7 @@ static SpecialDay specialDayFromJson(const QJsonObject& o)
     day.title         = o["title"].toString();
     day.date          = QDate::fromString(o["date"].toString(), Qt::ISODate);
     day.repeatsYearly = o["repeatsYearly"].toBool();
+    day.color         = QColor(o["color"].toString()); // "" -> invalid
     return day;
 }
 
@@ -144,6 +150,9 @@ static QJsonObject toJson(const Task& task)
         // file with neither key loads without complaint.
         {"description", task.description},
         {"repeat",      repeatToString(task.repeat)},
+        // v7 additions: the archive stage and the urgency rank.
+        {"archived",    task.archived},
+        {"priority",    priorityToString(task.priority)},
     };
 }
 
@@ -161,6 +170,8 @@ static Task taskFromJson(const QJsonObject& o)
     // "additive growth" buys: no migration branch, just sane defaults.
     task.description = o["description"].toString();
     task.repeat      = repeatFromString(o["repeat"].toString());
+    task.archived    = o["archived"].toBool();                    // v7
+    task.priority    = priorityFromString(o["priority"].toString()); // v7
     return task;
 }
 
@@ -398,7 +409,7 @@ QJsonObject JsonStore::toJsonObject(const AppData& data)
         // additive (old files still load — see the loader), but bumping
         // costs nothing and lets any future reader that must care tell
         // the files apart.
-        {"version",     6}, // v6: + Event.taskId / Event.title (additive, tolerant read)
+        {"version",     7}, // v7: + archived (Task, Activity), Task.priority, SpecialDay.color
         {"categories",  categories},
         {"activities",  activities},
         {"events",      events},

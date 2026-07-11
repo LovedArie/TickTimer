@@ -43,11 +43,24 @@ struct Task
     // invalid QDate for TBD instead of a bool.
     enum class Repeat { None, Daily, Weekly, Monthly, Yearly };
 
+    // How much this task matters — a small, closed set, so an enum again.
+    // Medium is the default: an unranked task is ordinary, not urgent (an
+    // urgent-by-default world makes "urgent" meaningless within a week).
+    enum class Priority { Urgent, Medium, Low };
+
     QString id;
     QString title;        // "Lab 4 — Exigences contractuelles (5%)"
     QString categoryId;   // belongs to a life area DIRECTLY (§3.10)
     bool    done = false;
     QDate   dueDate;      // default-constructed = invalid = "DATE TBD"
+
+    // v7 additions (daily-driver addendum). ARCHIVED is the third life
+    // stage: open -> done -> archived. Done tasks stay visible (today's
+    // victories belong on today's list); ARCHIVING is the deliberate "get
+    // it out of my sight" that moves them to the Archive page. Never
+    // deletion — history stays intact.
+    bool     archived = false;
+    Priority priority = Priority::Medium;
 
     QString description;              // free-text notes; empty is normal
     Repeat  repeat = Repeat::None;    // recurrence hint (stored + shown)
@@ -85,6 +98,35 @@ inline Task::Repeat repeatFromString(const QString& s)
     if (s == QLatin1String("monthly")) return Task::Repeat::Monthly;
     if (s == QLatin1String("yearly"))  return Task::Repeat::Yearly;
     return Task::Repeat::None; // covers "none", "", and any unknown value
+}
+
+// ---- Priority <-> text, colours, and ordering ------------------------------
+
+inline QString priorityToString(Task::Priority p)
+{
+    switch (p) {
+    case Task::Priority::Urgent: return QStringLiteral("urgent");
+    case Task::Priority::Low:    return QStringLiteral("low");
+    case Task::Priority::Medium: break;
+    }
+    return QStringLiteral("medium");
+}
+
+inline Task::Priority priorityFromString(const QString& s)
+{
+    if (s == QLatin1String("urgent")) return Task::Priority::Urgent;
+    if (s == QLatin1String("low"))    return Task::Priority::Low;
+    return Task::Priority::Medium; // covers "medium", "", unknowns — v6 files
+}
+
+inline QString priorityLabel(Task::Priority p)
+{
+    switch (p) {
+    case Task::Priority::Urgent: return QStringLiteral("Urgent");
+    case Task::Priority::Low:    return QStringLiteral("Low");
+    case Task::Priority::Medium: break;
+    }
+    return QStringLiteral("Medium");
 }
 
 // For the UI: a display word, or empty for None (so the row shows no chip).

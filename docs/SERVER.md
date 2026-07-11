@@ -94,6 +94,9 @@ and logging in again (which the app does every launch) mints a new one.
 
 ## Where the data lives
 
+*(Since v19.1 the server prints this data folder on startup — no more
+guessing where these files live.)*
+
 - **Accounts** → `<server data dir>/accounts.json`, passwords stored as
   salted, stretched hashes (`pbkdf2$...`) — never plaintext.
 - **Sharing grants** → `<server data dir>/shares.json` — who may *read*

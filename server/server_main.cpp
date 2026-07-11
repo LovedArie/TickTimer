@@ -1,7 +1,9 @@
 #include "AuthServer.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QStandardPaths>
+#include <QTextStream>
 
 // The server is a QCoreApplication, not a QApplication: no GUI, no widgets,
 // just an event loop pumping network I/O. That's the right base class for a
@@ -28,6 +30,13 @@ int main(int argc, char* argv[])
     AuthServer server(dataDir);
     if (!server.start(port))
         return 1; // couldn't bind the port — message already printed
+
+    // A service should ANNOUNCE where its state lives. This line exists
+    // because it once didn't: configuring version.json meant spelunking
+    // through AppData guessing at Qt's default paths. Never again —
+    // accounts.json, shares.json, and version.json are all in this folder.
+    QTextStream(stdout) << "Data folder (accounts, shares, version.json):\n"
+                        << "  " << QDir(dataDir).absolutePath() << "\n\n";
 
     return app.exec(); // block in the event loop, serving requests
 }

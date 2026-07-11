@@ -68,13 +68,28 @@ TaskRow::TaskRow(AppData* data, const Task& task, bool showCategoryDot,
                 // window outlives the dialog, so ownership stays sane.
                 TaskDetailDialog dialog(snapshot.title, snapshot.description,
                                         snapshot.dueDate, snapshot.repeat,
-                                        window());
+                                        snapshot.priority, window());
                 if (dialog.exec() == QDialog::Accepted)
                     data->updateTask(taskId, dialog.chosenTitle(),
                                      dialog.chosenDescription(),
                                      dialog.chosenDueDate(),
-                                     dialog.chosenRepeat());
+                                     dialog.chosenRepeat(),
+                                     dialog.chosenPriority());
             });
+
+    // The urgency chip (v7). Medium is silent — chips must stay rare to
+    // stay readable. Urgent in the danger hue, Low in quiet grey.
+    QLabel* prioChip = nullptr;
+    if (task.priority != Task::Priority::Medium) {
+        const QString c = task.priority == Task::Priority::Urgent
+                              ? QStringLiteral("#C25B54")
+                              : QStringLiteral("#8A93A0");
+        prioChip = new QLabel(priorityLabel(task.priority).toUpper(), this);
+        prioChip->setStyleSheet(QStringLiteral(
+            "font-size:10px; font-weight:800; letter-spacing:1px; "
+            "color:%1; border:1px solid %1; border-radius:8px; "
+            "padding:2px 7px;").arg(c));
+    }
 
     // A recurrence chip, only when there is one to show. repeatLabel returns
     // "" for None, but we gate on the enum directly for clarity.
@@ -120,6 +135,21 @@ TaskRow::TaskRow(AppData* data, const Task& task, bool showCategoryDot,
             data->setTaskDueDate(taskId, dialog.chosenDate());
     });
 
+    // Archive appears the moment a task is DONE (item 4): "get this victory
+    // off my list" — one click, reversible from the Archive page. Deleting
+    // stays available too, but archive is the gentle default for finished
+    // work: out of sight, never out of history.
+    QPushButton* archive = nullptr;
+    if (task.done) {
+        archive = new QPushButton(tr("Archive"), this);
+        archive->setCursor(Qt::PointingHandCursor);
+        archive->setStyleSheet(
+            "background:#EEF0ED; border:none; border-radius:8px; "
+            "padding:5px 10px; color:#616974; font-weight:600;");
+        connect(archive, &QPushButton::clicked, this,
+                [data, taskId]() { data->setTaskArchived(taskId, true); });
+    }
+
     auto* x = new QPushButton(QStringLiteral("\u00D7"), this);
     x->setObjectName("danger");
     x->setFixedWidth(24);
@@ -128,10 +158,14 @@ TaskRow::TaskRow(AppData* data, const Task& task, bool showCategoryDot,
             [data, taskId]() { data->removeTask(taskId); });
 
     row->addWidget(title, 1);
+    if (prioChip)
+        row->addWidget(prioChip);
     if (repeatChip)
         row->addWidget(repeatChip);
     if (noteCue)
         row->addWidget(noteCue);
     row->addWidget(dateBtn);
+    if (archive)
+        row->addWidget(archive);
     row->addWidget(x);
 }
