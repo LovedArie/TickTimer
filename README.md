@@ -8,16 +8,16 @@
 planner with live focus tracking (focus / break / **distracted**),
 **drag-to-resize** blocks, **blocks that say what they are** (labels, task
 blocks, spontaneous blocks — with task notes and column-flowed text), tasks &
-deadlines, folders, special days, and week/month reviews. **367 tests across
-six QTest suites** — domain (156), headless UI regression (93), NLP +
-provider + chat (68), model/view (20), auth (17) and live end-to-end (13);
-re-derived at v29.1.0 with `test_<suite> -functions`, after the previous
-figure (379, over a breakdown that summed to 326) turned out to have been
-carried forward rather than counted.
-`ctest` reports a higher number than that, because QTest counts each class's
-`initTestCase`/`cleanupTestCase` too; run it — or the one-line loop in
-`tests/README.md` — for the figure of the day
-rather than trusting a number typed into a README. Login is handled by a small self-hosted server (`ticktimer-server`) you run
+deadlines, folders, special days, and week/month reviews. **379 tests across
+six QTest suites** — domain (158), headless UI regression (95), NLP +
+provider + chat (70), model/view (22), auth (19) and live end-to-end (15),
+all green at v29.1.0.
+That is QTest's own total, which counts each class's
+`initTestCase`/`cleanupTestCase` alongside its test functions; counting test
+*functions* alone gives **367**, and `ctest` answers **6**, because it counts
+suites. Three conventions, one fact, and the reason a number here has drifted
+before — `tests/README.md` carries the command for each, which is the only
+honest way to quote one. Login is handled by a small self-hosted server (`ticktimer-server`) you run
 on your own machine — no Google, no cloud. (Formerly "Time & Focus Tracker".)*
 
 ![TickTimer — the daily planner](docs/screenshot.png)
@@ -274,8 +274,8 @@ stored as Qt's opaque blob rather than four numbers.
 
 - **C++17** and **Qt 6 Widgets** — no dependencies beyond Qt itself; all
   charts are custom-painted.
-- **CMake** builds; **QTest** suites: six of them, 367 tests (measured at
-  v29.1.0 — `tests/README.md` has the counting loop), all
+- **CMake** builds; **QTest** suites: six of them, 379 tests (green at
+  v29.1.0 — `tests/README.md` explains that figure and how to re-derive it), all
   headless (real widgets on Qt's offscreen platform — no display needed, so
   they run the same on your laptop and in CI).
 - Storage: versioned **JSON** (**format v13**), migrating to **SQLite** as data grows.

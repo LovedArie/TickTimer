@@ -172,10 +172,12 @@ per-service decision for whenever a recipe needs it, not a default.
 ## The automated suites (unchanged home)
 
 `ctest` in the build directory runs all six: domain, taskmodel, nlp, ui,
-auth, login_live — **367 test functions at v29.1.0** (ctest's own total is
-higher: it counts each class's `initTestCase`/`cleanupTestCase` too).
+auth, login_live — **379 tests, all green at v29.1.0**. That is the sum of
+the suites' own `Totals:` lines, which count each class's
+`initTestCase`/`cleanupTestCase` as cases; there are 367 test *functions*,
+and `ctest`'s summary says 6, because it counts suites.
 `docs/RUNNING.md` covers building; `tests/README.md` covers what lives in
-which suite and why — including the loop that re-derives that count. The
+which suite and why — including the command behind each of those figures. The
 rule that keeps this file honest: anything a recipe above presses is also
 pinned by a test — the panel is glass over tested seams, never a second
 implementation of them.

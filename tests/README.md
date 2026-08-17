@@ -68,23 +68,47 @@ default platform plugin aborts on a machine with no display.
 
 ## Counting them honestly
 
-`-functions` lists a suite's test slots and excludes `initTestCase` /
-`cleanupTestCase`, which makes it the number to quote:
+**There are three defensible numbers, and mixing them is how this repo's
+counts drifted.** All three are correct; each answers a different question.
+
+| figure | at v29.1.0 | what it counts | how to get it |
+|---|---|---|---|
+| **379** | the headline | QTest cases — test functions **plus** each class's `initTestCase`/`cleanupTestCase` | sum the suites' own `Totals:` lines |
+| **367** | test functions | the slots you actually wrote | `-functions`, which omits init/cleanup |
+| **6** | suites | one per `add_test()` | `ctest`'s summary line |
+
+379 − 367 = 12 = two fixture slots × six suites. Per suite, QTest totals:
+domain 158, ui 95, nlp 70, taskmodel 22, auth 19, login_live 15 — against
+156 / 93 / 68 / 20 / 17 / 13 test functions.
 
 ```sh
+# test functions per suite
 for t in domain taskmodel nlp ui auth login_live; do
     printf '%s: %s\n' "$t" "$(./build/test_$t -functions | wc -l)"
 done
 ```
 
-Measured at **v29.1.0**: domain 156, ui 93, nlp 68, taskmodel 20, auth 17,
-login_live 13 — **367 test functions**.
+```powershell
+# QTest cases per suite — the 379 figure (PowerShell; see the gotcha below)
+foreach ($t in @("domain","taskmodel","nlp","ui","auth","login_live")) {
+    & ".\build-release\test_$t.exe" | Where-Object { $_ -like "Totals:*" }
+}
+```
 
-`ctest` reports a larger figure, because QTest counts each class's
-`initTestCase` and `cleanupTestCase` as cases too. Neither number is wrong;
-they count different things. Run the loop above for the figure of the day
-rather than trusting a number typed into a document — counts in this repo have
-drifted before, in both directions.
+Quote a number only with the convention beside it. The figure that went stale
+here was never the total — it was the per-suite breakdown, which sat at a
+v28.3.2 snapshot summing to 326 while the headline stayed right.
+
+### Gotcha: the suites print nothing through Git Bash
+
+On Windows, running a test binary from Git Bash (MSYS) yields **zero bytes**
+on stdout and exit code 0 — the run genuinely happened, but its output is
+lost to console attachment. `-functions` prints fine, which makes the failure
+look selective and easy to misread as "the suite produced no output."
+
+Use **PowerShell** or `cmd` to read the `Totals:` lines, and `ctest` for
+pass/fail — ctest judges by exit code, so its verdict is trustworthy from any
+shell. This is why `tools/run-tests.bat` is a `.bat`.
 
 ## The layering guarantee
 
