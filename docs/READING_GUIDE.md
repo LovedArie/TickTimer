@@ -5,8 +5,12 @@ its own and the one professional developers use most. This guide gives you
 the reading order, tells you what each file is trying to teach you, and
 lists the honest deviations from the design docs that implementation forced.
 
-Budget: the whole codebase is ~2,600 lines. Read it in the order below,
-one sitting per part. Every file opens with a banner comment explaining
+Budget: ~32,000 lines across `src/` + `include/` + `server/`, and ~10,000
+more in `tests/` — measured, not remembered:
+`cat src/*.cpp include/*.h server/* | wc -l`. (This line read "~2,600 lines"
+from v2 until v29.1. It was true when written and had been wrong for twenty
+versions; the order below matters far more than the total.) Read it in the
+order below, one sitting per part. Every file opens with a banner comment explaining
 *why it exists* — read those banners first, on a single pass through all
 files, before reading any function bodies. That top-down pass is how
 developers approach any unfamiliar codebase.
@@ -107,6 +111,11 @@ tested (domain + storage, headless, milliseconds) and what isn't (widgets)
 | `PlannerPage.h/.cpp` | a coordinator class; UC1's whole click chain |
 | `PomodoroPage.h/.cpp` | a second state machine (countdown-driven) to compare with the tracker (command-driven) |
 | `MainWindow.h/.cpp` | composition root; ownership diagram; member declaration order = destruction order; the one autosave `connect`; `enableSync` — a capability the window *gains* after login, not a constructor concern |
+| `AssistantVerbs.h/.cpp` | v29.0 — the write boundary's heart: the per-role closed verb set (one screen = the whole security review), fail-safe HandleMap, validate/apply with the additive rule and re-validation at the tap; the header comment is the design abstract |
+| `ProposalCard.h/.cpp` | v29.0 — §B stage 3 as a widget; glass (shows, emits, decides nothing); summary composed from the request's own fields, never the proposer's prose |
+| `Intake.h` + `Intake.cpp` / `IntakeExtract.cpp` | v29.1 — one header, TWO translation units split by dependency group (the linker's lesson, addendum §H): the interview's C++ brain (guess, triage, question, crisp parser) compiles with the domain; the pure extraction (`intake::llm`, values-only prompt) sits with the nlp sources |
+| `IntakeClient.h/.cpp` | v29.1 — the interview's wire; LlmQuickAddClient's twin with the forcing hook honoured from birth |
+| `DebugPanel.h/.cpp` | v28.10 — "seams only tests can reach are half a seam": pure glass over the v28 services' injection seams (Ctrl+Shift+D); the header's three WHYs are the whole design; recipes in `docs/TESTING.md` |
 | `main.cpp` | why main() stays tiny; the login gate before the window; the token handover |
 
 ### Part 6 — the networked arc (client + server)
@@ -223,9 +232,13 @@ Deliberate simplifications (candidates for your first solo features):
 - Saving on every `changed()` includes **every keystroke in a note** —
   correct but chatty. A debounce timer (coalesce saves 500 ms apart) is a
   tidy exercise in `MainWindow`.
-- UI updates are **rebuild/derive-on-change**, not Qt model/view
-  (`QAbstractItemModel`). At this data size rebuilding is simpler and
-  cannot go stale; model/view is the planned next-level lesson.
+- UI updates are **rebuild/derive-on-change** on most pages — simple at this
+  data size, and impossible to leave stale. The two task lists are the
+  exception: Upcoming (v20.0) and the Activities task pane (v20.2) went
+  **Qt model/view** (`QAbstractListModel` + custom delegates), sharing one
+  diff in `TaskSnapshotModel` (v20.3). Read `design-addendum-model-view.md`
+  and compare a converted page with an unconverted one — the contrast *is*
+  the lesson.
 - SQLite storage stays future work by design (design-doc §4).
 
 ---
@@ -242,6 +255,21 @@ Deliberate simplifications (candidates for your first solo features):
   (`ReviewWidgets.cpp::refresh`).
 - Default fonts can be pixel-sized (`pointSizeF() == -1`) → `scaledFont`
   (`Widgets.h`).
+- **QSS is CSS-*shaped*, not CSS**: a `border-radius` larger than half the
+  widget's height is silently *dropped* (no clamp, no warning) — pin the
+  height in code so the radius is lawful by construction
+  (`CatchUpCard.cpp`, the pill coats; catch-up Coda 2 + V161/V164).
+- `QScrollArea::sizeHint` is a **cached guess** — neutralise it on *every
+  axis it can lie on*: give it the stretch horizontally, cap it to its
+  body's hint vertically (`GlancePanel.cpp` review row +
+  `NeedsBlockCard.cpp` HEIGHT HONESTY; Codas 2 & 4, V165/V167).
+- `parentWidget()` as an implicit dependency breaks silently on
+  re-parenting — **inject** hosts and collaborators instead
+  (`setDrawerHost`; Coda 3, V166).
+- Fingerprint-cached rebuilds: **any async handler that mutates rendering
+  state must invalidate the print** (a drawer's `closed()`, a panel-side
+  veto) or the widget freezes on stale state (`setSuppressed`, the
+  drawer-reopen fix; V158/V168).
 - `AppDataLocation` = `<org>/<app>` → setting both to the same string
   doubles the folder (`main.cpp`).
 - Qt themes through TWO layers — stylesheet AND QPalette. Pinning only
@@ -302,3 +330,57 @@ Deliberate simplifications (candidates for your first solo features):
 - **`tests/test_login_live.cpp`** — the first end-to-end test: real server
   process, real socket, a two-'device' conflict playbook. Reserved, like
   the UI suite, for bugs that only exist in the seam between two programs.
+
+## 7. New since v20 — the model/view, AI, and hierarchy arcs' landmarks
+
+*(Added in the v27.0 docs audit — this guide had stopped at the networked
+arc while five more shipped. Same rule as every section above: one
+landmark per idea, the file that teaches it best.)*
+
+- **`TaskSnapshotModel` → `TaskListModel` / `CategoryTaskModel`** — the
+  deferred Qt lesson, done properly: snapshot + granular diff instead of
+  reset-the-world. `design-addendum-model-view.md`.
+- **`QuickAddParser` + `nlp::llm`** (`ParsedTask`) — one vendor-neutral
+  contract, three capture surfaces, and an LLM fallback that is fully
+  testable offline because the wire (`LlmQuickAddClient`) holds nothing
+  but POST and timeouts. `design-addendum-quickadd.md`.
+- **`LlmProvider.h`** — the whole provider layer in one header: Provider =
+  base URL + dialect + model + key; two dialects cover the world. Then
+  §L (reasoning models: the `<think>` scrub and the silence fallback —
+  V72's bug class on the other path) and §M (per-role routing: silence
+  falls through, speech does not; the breaker; migration by derivation).
+  `design-addendum-provider.md`.
+- **`ChatSession.h`** — a conversation as a value: the transcript, the
+  send-window budget, local-only turns the model never sees, and (v25.3)
+  the four-band prompt — contract → floors → persona → context, two bands
+  locked. `design-addendum-chat.md`, esp. §K.
+- **`AppData::addSubtask` and the five query policies** — one field
+  (`parentId`), five per-query decisions, a no-auto-complete roll-up, and
+  an archive cascade that must be its own inverse.
+  `design-addendum-subtasks.md`; diagram `subtask_policies.*`.
+- **`tests/test_nlp.cpp`** — where the pure AI layer lives its offline
+  life: forged reply bytes, breaker clocks passed in by hand, and the
+  `TICKTIMER_AI_DOWN` hook driving real fall-through with no network.
+
+## 8. New since v26 — the settings-nav and catch-up arcs' landmarks
+
+- **`SettingsPages.h` / `SettingsDialog.h`** — the junk-drawer refactor:
+  a shell that knows no concrete page, `save()` as a four-line loop, and
+  the receipt cashed one version later when `CatchUpSettingsPage` cost one
+  class and one line. `design-addendum-settings-nav.md`.
+- **`MissedBlocks.h`** — the smallest complete example of *derive the
+  judgement, store the decision*: a missed block is a pure function, a
+  skipped one is a fact. Read it next to `Event::BlockOutcome`.
+- **`Reschedule.h`** — a proposer that returns a **ranked list and is
+  allowed to return nothing**: the five-rung ladder, planning against the
+  shortfall, and the empty hand as an honest answer. Diagram
+  `catch_up_ladder.puml`.
+- **`CatchUpCard.h`** — a chip with three intensities driving a
+  `SlidePanel` drawer; the one *persistent* widget (restyled, never
+  rebuilt) that makes the v22.2 bug class impossible; snooze as
+  de-emphasis, never a lock. Diagram `catch_up_chip_states.puml`.
+- **`design-addendum-catch-up.md` §L** — read this one *for the process*:
+  how a two-slice side feature became twelve versions once real usage
+  arrived, what each round taught, and when derailing from the roadmap is
+  the right call. The most portfolio-worthy pages in the repo.
+

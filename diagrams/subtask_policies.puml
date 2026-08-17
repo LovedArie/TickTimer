@@ -1,0 +1,42 @@
+@startuml subtask_policies
+' ---------------------------------------------------------------------------
+' subtask_policies — the v28.3 feature in one picture: ONE piece, and the
+' five query policies that project it differently ON PURPOSE.
+'
+' Read it left to right: the flat m_tasks vector holds a parent and its
+' piece (the link is parentId, pointing UP); each query on the right
+' answers a DIFFERENT question, so each treats the piece differently —
+' the design's whole point (design-addendum-subtasks.md §D). The dashed
+' box at the bottom is what never happens: completion roll-up.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+skinparam rectangleFontSize 12
+
+rectangle "**AppData::m_tasks**  (one flat vector)" as store {
+  rectangle "**Lab 4**\n(parent · due Aug 8\nestimate 120 min)" as parent #E8F0EC
+  rectangle "**Marc's section**\n(piece · due Aug 4\nestimate 25 min)" as piece #FFFFFF
+}
+piece -up-> parent : parentId\n(one level,\ndoor-enforced)
+
+rectangle "**upcomingTasks() / tasksIn()**\n« workload — parents only »\nshows: Lab 4" as workload #E8F0EC
+rectangle "**tasksDueOn(Aug 4)**\n« that day's obligations »\nshows: Marc's section" as dueon #E8F0EC
+rectangle "**taskCountIn(School)**\n« the deletion guard »\ncounts: 2 (everything)" as guard #FDF3F2
+rectangle "**pieceProgress(Lab 4)**\n« the card's ☑ chip »\nanswers: 0 / 1" as chip #E8F0EC
+
+parent --> workload
+piece -[#C25B54,dashed]-> workload : filtered out\n(double-counts\nthe parent)
+piece --> dueon : dated → a real\nobligation that day
+parent --> guard
+piece --> guard : counted —\nundercounting\ndeletes data
+piece --> chip
+
+rectangle "**what never happens**\nticking every piece does NOT complete the parent —\nthe tick is the reward, in both directions" as rollup #FFFFFF
+parent -[#616974,dotted]- rollup
+
+legend bottom
+  One fact, five truthful projections: the queries **disagree on purpose**
+  because they answer different questions. Archive cascades both directions;
+  delete cascades with title-demotion; spawn keeps parentId + size.
+endlegend
+@enduml

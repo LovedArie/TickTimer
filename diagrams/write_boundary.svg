@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="1001px" preserveAspectRatio="none" style="width:761px;height:1001px;" version="1.1" viewBox="0 0 761 1001" width="761px" zoomAndPan="magnify"><defs/><g><text fill="#2A2E33" font-family="Segoe UI" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="462" x="153" y="12.9951">The write boundary (v29.0) — nothing left of the tap can touch data</text><!--MD5=[4e01875a56aa21ce1aba72102ce81a73]
+entity proposer--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="232" x="227.5" y="24.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="66" x="237.5" y="45.4355">PROPOSER</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="174" x="237.5" y="59.4043">(Slice 1: the debug injector.</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="159" x="237.5" y="73.373">Slice 2: the intake model.</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="212" x="237.5" y="87.3418">Either way: outside the boundary)</text><!--MD5=[ceed9cf64a42b7fee3f84b7ad1570c25]
+entity proposal--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="185" x="251" y="174.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="97" x="261" y="195.4355">verbs::Proposal</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="153" x="261" y="209.4043">closed verb set, per-role</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="159" x="261" y="223.373">(Intake → SetTaskDetails;</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="165" x="261" y="237.3418">Nudge/CheckIn → nothing)</text><!--MD5=[86a7a29771d38ab3905b6299f3124dfc]
+entity handles--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="155" x="471" y="181.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="135" x="481" y="202.4355">HandleMap (per turn)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="116" x="481" y="216.4043">[T1] → id, invented</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="112" x="481" y="230.373">handles die to \"\"</text><!--MD5=[136d01a28cf56b86decf41e29156d7e8]
+entity validate--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="196" x="348.5" y="324.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="59" x="358.5" y="345.4355">validate()</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="176" x="358.5" y="359.4043">role ∧ handle ∧ open target</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="126" x="358.5" y="373.373">∧ additive ∧ sane —</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="152" x="358.5" y="387.3418">reason in owner's words</text><!--MD5=[0568ea600d1c2ace8679ac75c80dfc89]
+entity card--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="157" x="368" y="487.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="84" x="378" y="508.4355">ProposalCard</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="92" x="378" y="522.4043">Apply / Discard</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="137" x="378" y="536.373">summary from FIELDS,</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="136" x="378" y="550.3418">never proposer prose</text><!--MD5=[30e63bd7edb8438bb4e813e1dd0d6680]
+entity aside--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="163" x="236" y="637.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="143" x="246" y="658.4355">data.json copied aside</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="111" x="246" y="672.4043">(.pre-apply — §B's</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="110" x="246" y="686.373">cheap insurance)</text><!--MD5=[e8537d5e5f1d0d4ae978cdca80426525]
+entity apply--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="205" x="215" y="760.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="43" x="225" y="781.4355">apply()</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="147" x="225" y="795.4043">RE-validates at the tap,</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="160" x="225" y="809.373">then EXISTING doors only:</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="185" x="225" y="823.3418">setTaskSize, setTaskDueDate</text><!--MD5=[7518041a300050aac907e20a36cd28cf]
+entity appdata--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="177" x="6" y="925.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="54" x="16" y="946.4355">AppData</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="117" x="16" y="960.4043">(86+ domain tests</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="157" x="16" y="974.373">already guard the doors)</text><!--MD5=[9c35e4b6c6623a73ed62714ab3fabb5f]
+entity receipt--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="198" x="218.5" y="925.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="111" x="228.5" y="946.4355">Transcript receipt</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="178" x="228.5" y="960.4043">\"✓ Applied: …\" (localOnly —</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="157" x="228.5" y="974.373">never sent to any model)</text><path d="M434,646.2969 L434,690.2031 A4,4 0 0 0 438,694.2031 L713,694.2031 A4,4 0 0 0 717,690.2031 L717,652.2969 L707,642.2969 L556.4,642.2969 L480.39,563.3469 L548.4,642.2969 L438,642.2969 A4,4 0 0 0 434,646.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M707,642.2969 L707,650.2969 A2,2 0 0 0 709,652.2969 L717,652.2969 L707,642.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="262" x="440" y="658.4355">The amber moment: everything left of this</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="242" x="440" y="672.4043">box is words. Discard → settle, nothing</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="190" x="440" y="686.373">happens, nothing is recorded.</text><path d="M451.5,927.2969 L451.5,985.1719 A4,4 0 0 0 455.5,989.1719 L745.5,989.1719 A4,4 0 0 0 749.5,985.1719 L749.5,933.2969 L739.5,923.2969 L546.21,923.2969 L384.93,836.4669 L538.21,923.2969 L455.5,923.2969 A4,4 0 0 0 451.5,927.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M739.5,923.2969 L739.5,931.2969 A2,2 0 0 0 741.5,933.2969 L749.5,933.2969 L739.5,923.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="264" x="457.5" y="939.4355">The stale-card rule: the world may change</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="250" x="457.5" y="953.4043">while the card waits (owner fills the field</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="277" x="457.5" y="967.373">by hand) — the tap re-validates and refuses</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="185" x="457.5" y="981.3418">politely rather than overwrite.</text><!--MD5=[ed71feca7d1b9fc8a4c7f54e2712fbd9]
+link proposer to proposal--><path d="M343.5,100.6469 C343.5,121.4969 343.5,147.5369 343.5,169.1169 " fill="none" id="proposer-&gt;proposal" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="343.5,174.2169,347.5,165.2169,343.5,169.2169,339.5,165.2169,343.5,174.2169" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="59" x="344.5" y="141.5073">composes</text><!--MD5=[428fb16541840e9c9ce2f69f15882b6c]
+link proposal to validate--><path d="M369.49,250.6469 C384.19,271.7569 402.59,298.1969 417.72,319.9369 " fill="none" id="proposal-&gt;validate" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="420.7,324.2169,418.8519,314.543,417.848,320.11,412.281,319.1061,420.7,324.2169" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[d555bda08e7a4448ddc0711db4a1a4af]
+link handles to validate--><path d="M527.61,243.6069 C512.41,265.6669 491.63,295.8069 474.92,320.0669 " fill="none" id="handles-&gt;validate" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="472.06,324.2069,480.467,319.0764,474.9023,320.0933,473.8854,314.5287,472.06,324.2069" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="67" x="501.5" y="291.5073">resolves T1</text><!--MD5=[8480d5079afe072b2c01f58c0b30cb1e]
+link validate to card--><path d="M446.5,400.6369 C446.5,424.9169 446.5,456.6469 446.5,481.8769 " fill="none" id="validate-&gt;card" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="446.5,487.1569,450.5,478.1569,446.5,482.1569,442.5,478.1569,446.5,487.1569" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="94" x="478.5" y="441.5073">verdict rendered</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="156" x="447.5" y="454.312">(born-broken → dead Apply)</text><!--MD5=[1ebd99ff58ae86778f6c7a7badb1b6f8]
+link card to aside--><path d="M412.61,563.3469 C392.79,585.0069 367.95,612.1469 348.63,633.2669 " fill="none" id="card-&gt;aside" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="345.09,637.1369,354.1167,633.1975,348.4654,633.4481,348.2147,627.7969,345.09,637.1369" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="89" x="383.5" y="604.5073">the owner's tap</text><!--MD5=[945471a13fc2ef5cc135a2961dda4917]
+link aside to apply--><path d="M317.5,699.3069 C317.5,715.9269 317.5,736.8469 317.5,755.0869 " fill="none" id="aside-&gt;apply" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="317.5,760.1469,321.5,751.1469,317.5,755.1469,313.5,751.1469,317.5,760.1469" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[c391b2e0672b28717a29fd622e707f8c]
+link apply to appdata--><path d="M264.37,836.4669 C227.11,862.5269 177.73,897.0669 141.82,922.1869 " fill="none" id="apply-&gt;appdata" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="137.51,925.2069,147.1809,923.343,141.6122,922.3482,142.607,916.7795,137.51,925.2069" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="59" x="231" y="877.5073">doors, not</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="80" x="220.5" y="890.312">new capability</text><!--MD5=[16a603a3106a114da341db9e0cf628e2]
+link apply to receipt--><path d="M317.5,836.6669 C317.5,861.9969 317.5,895.2569 317.5,920.1169 " fill="none" id="apply-&gt;receipt" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="317.5,925.2869,321.5,916.2869,317.5,920.2869,313.5,916.2869,317.5,925.2869" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="31" x="318.5" y="884.0073">on ok</text><!--MD5=[f657e7074086b64dbfa2ffa1c3e6149d]
+@startuml write_boundary
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+
+title The write boundary (v29.0) — nothing left of the tap can touch data
+
+rectangle "PROPOSER\n(Slice 1: the debug injector.\nSlice 2: the intake model.\nEither way: outside the boundary)" as proposer
+rectangle "verbs::Proposal\nclosed verb set, per-role\n(Intake → SetTaskDetails;\nNudge/CheckIn → nothing)" as proposal
+rectangle "HandleMap (per turn)\n[T1] → id, invented\nhandles die to \"\"" as handles
+rectangle "validate()\nrole ∧ handle ∧ open target\n∧ additive ∧ sane —\nreason in owner's words" as validate
+rectangle "ProposalCard\nApply / Discard\nsummary from FIELDS,\nnever proposer prose" as card
+rectangle "data.json copied aside\n(.pre-apply — §B's\ncheap insurance)" as aside
+rectangle "apply()\nRE-validates at the tap,\nthen EXISTING doors only:\nsetTaskSize, setTaskDueDate" as apply
+rectangle "AppData\n(86+ domain tests\nalready guard the doors)" as appdata
+rectangle "Transcript receipt\n\"✓ Applied: …\" (localOnly —\nnever sent to any model)" as receipt
+
+proposer - -> proposal : composes
+proposal - -> validate
+handles - -> validate : resolves T1
+validate - -> card : verdict rendered\n(born-broken → dead Apply)
+card - -> aside : the owner's tap
+aside - -> apply
+apply - -> appdata : doors, not\nnew capability
+apply - -> receipt : on ok
+
+note bottom of card
+  The amber moment: everything left of this
+  box is words. Discard → settle, nothing
+  happens, nothing is recorded.
+end note
+
+note bottom of apply
+  The stale-card rule: the world may change
+  while the card waits (owner fills the field
+  by hand) — the tap re-validates and refuses
+  politely rather than overwrite.
+end note
+
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

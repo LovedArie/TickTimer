@@ -1,0 +1,38 @@
+@startuml piece_promotion
+' ---------------------------------------------------------------------------
+' piece_promotion — v28.9, where a piece's minutes are counted.
+'
+' The picture to hold: ONE trigger, the DATE. A dated piece receives its
+' own verdict from affordability's first guard, so its minutes leave the
+' parent — whichever path the parent is on (own estimate: subtract;
+' borrowing: skip). The believed total always equals what was entered,
+' once. Referenced from design-addendum-subtasks.md §O.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+start
+:a piece, with an estimate;
+if (has its own due date?) then (yes — PROMOTED)
+  :answers for ITSELF:
+  own verdict, own nudge,
+  own needs-a-block line;
+  :its minutes LEAVE the parent
+  (subtracted from a sized parent,
+  skipped by an unsized one's borrow);
+else (no)
+  :no verdict of its own
+  (affordability needs a date);
+  :weighs on the parent
+  (inside its estimate, or
+  borrowed when unsized);
+endif
+:believed total = entered total, once;
+note right
+  Floor at zero: pieces promoted
+  past the parent's estimate cede
+  ALL of it — the parent falls back
+  to the planned-blocks proxy,
+  never goes negative.
+end note
+stop
+@enduml

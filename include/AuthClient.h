@@ -32,7 +32,20 @@ public:
     // changeable at runtime too. Each request reads m_serverUrl fresh, so a
     // new address simply applies to the NEXT call — no connection to tear
     // down (our server is one-request-per-connection anyway).
-    void setServerUrl(const QString& serverUrl) { m_serverUrl = serverUrl; }
+    void setServerUrl(const QString& serverUrl)
+    {
+        m_serverUrl = normalizeServerUrl(serverUrl);
+    }
+
+    // v29.0.1 — the trailing-slash landmine, defused at every entry. A
+    // pasted base URL routinely ends in '/', the client naively appended
+    // "/register", the server's EXACT route match 404'd "//register", and
+    // the catch-all blamed the owner's password (see TROUBLESHOOTING:
+    // "Please check your details"). Normalizing here — and in SyncClient,
+    // which shares the base — makes the whole class of paste unrepresentable
+    // instead of asking every future field to be careful. Trims whitespace,
+    // strips trailing slashes, never eats the scheme's own "//".
+    static QString normalizeServerUrl(QString url);
     QString serverUrl() const { return m_serverUrl; }
 
     enum class Outcome {
@@ -40,7 +53,14 @@ public:
         UsernameTaken,     // register only
         BadCredentials,    // login only
         InvalidInput,
-        NetworkError       // server unreachable — the "is it even running?" case
+        NetworkError,       // server unreachable — the "is it even running?" case
+        UnknownServerReply, // v29.0.1 — the server ANSWERED, with an error
+                            // token this client doesn't know (not_found, a
+                            // future version's vocabulary…). Distinct from
+                            // InvalidInput because the honest advice is
+                            // "check the address / versions", not "check
+                            // your password" — collapsing the two cost a
+                            // live debugging session.
     };
     Q_ENUM(Outcome)
 

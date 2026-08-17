@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4A505A"/>
+    </marker>
+    <marker id="arrsoft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8A9098"/>
+    </marker>
+  </defs>
+  <style>
+    .box   { fill:#FFFFFF; stroke:#4A505A; stroke-width:1.4; }
+    .pure  { fill:#EAF5F1; stroke:#2F7E6E; stroke-width:1.8; }
+    .group { fill:#F7F8F6; stroke:#C9CFC6; stroke-width:1; stroke-dasharray:5 4; }
+    .ghost { fill:#FAFAF8; stroke:#B7BCC3; stroke-width:1.2; stroke-dasharray:3 3; }
+    .b     { font-size:13px; font-weight:700; fill:#2A2F36; }
+    .t     { font-size:12px; fill:#2A2F36; }
+    .s     { font-size:11px; fill:#616974; font-style:italic; }
+    .lbl   { font-size:10.5px; fill:#4A505A; }
+    .soft  { stroke:#8A9098; stroke-width:1.3; stroke-dasharray:5 4; fill:none; }
+    .hard  { stroke:#4A505A; stroke-width:1.6; fill:none; }
+  </style>
+
+  <text x="20" y="28" class="b" font-size="16">Repeat, made real — the newest-link chain (v19.10)</text>
+  <text x="20" y="46" class="s">one invariant: the rule lives on the NEWEST link — advancing strips the old item, which is also the duplicate-spawn guard</text>
+
+  <!-- tasks group -->
+  <rect x="20" y="66" width="920" height="150" rx="12" class="group"/>
+  <text x="34" y="86" class="s">tasks — COMPLETION is the metronome</text>
+
+  <rect x="44" y="98" width="230" height="96" rx="10" class="box"/>
+  <text x="159" y="122" class="b" text-anchor="middle">Task: Lab report</text>
+  <text x="159" y="140" class="t" text-anchor="middle">due Jul 10 · ⟳ Weekly</text>
+  <text x="159" y="158" class="s" text-anchor="middle">completed →</text>
+  <text x="159" y="173" class="s" text-anchor="middle">done ✓, ⟳ STRIPPED</text>
+
+  <rect x="420" y="98" width="250" height="96" rx="10" class="box"/>
+  <text x="545" y="122" class="b" text-anchor="middle">Task: Lab report</text>
+  <text x="545" y="140" class="t" text-anchor="middle">due Jul 17 · ⟳ Weekly</text>
+  <text x="545" y="158" class="s" text-anchor="middle">fresh id — notes, priority,</text>
+  <text x="545" y="173" class="s" text-anchor="middle">category carried</text>
+
+  <path class="hard" d="M274,146 H420" marker-end="url(#arr)"/>
+  <text x="292" y="136" class="lbl">setTaskDone(true): spawn + strip</text>
+
+  <rect x="720" y="110" width="196" height="72" rx="10" class="ghost"/>
+  <text x="818" y="136" class="s" text-anchor="middle">done → undone → done?</text>
+  <text x="818" y="152" class="s" text-anchor="middle">no rule left = no second</text>
+  <text x="818" y="167" class="s" text-anchor="middle">spawn — guard for free</text>
+  <path class="soft" d="M670,146 H720" marker-end="url(#arrsoft)"/>
+
+  <!-- blocks group -->
+  <rect x="20" y="238" width="920" height="170" rx="12" class="group"/>
+  <text x="34" y="258" class="s">blocks — the CALENDAR is the metronome</text>
+
+  <rect x="44" y="272" width="250" height="116" rx="10" class="box"/>
+  <text x="169" y="296" class="b" text-anchor="middle">Block: Study PHY335</text>
+  <text x="169" y="314" class="t" text-anchor="middle">Mon Jun 29 · 10–12 · ⟳ Weekly</text>
+  <text x="169" y="332" class="s" text-anchor="middle">segments = what really</text>
+  <text x="169" y="347" class="s" text-anchor="middle">happened stay HERE;</text>
+  <text x="169" y="362" class="s" text-anchor="middle">⟳ stripped on roll</text>
+
+  <rect x="470" y="272" width="270" height="116" rx="10" class="box"/>
+  <text x="605" y="296" class="b" text-anchor="middle">Block: Mon Jul 13 · 10–12</text>
+  <text x="605" y="314" class="t" text-anchor="middle">⟳ Weekly · segments empty</text>
+  <text x="605" y="332" class="s" text-anchor="middle">identity copied, history not;</text>
+  <text x="605" y="347" class="s" text-anchor="middle">task link demoted to text</text>
+  <text x="605" y="362" class="s" text-anchor="middle">(removeTask pattern, 3rd use)</text>
+
+  <path class="hard" d="M294,330 H470" marker-end="url(#arr)"/>
+  <text x="300" y="308" class="lbl">rollRepeats(today): first rule-date ≥ today</text>
+  <text x="300" y="321" class="lbl">— NO backfill; occupied dates SKIPPED (isFree)</text>
+
+  <rect x="775" y="284" width="150" height="92" rx="10" class="ghost"/>
+  <text x="850" y="308" class="s" text-anchor="middle">366 collisions?</text>
+  <text x="850" y="323" class="s" text-anchor="middle">rule STAYS on the</text>
+  <text x="850" y="338" class="s" text-anchor="middle">old block; tomorrow</text>
+  <text x="850" y="353" class="s" text-anchor="middle">retries — never dies</text>
+  <path class="soft" d="M740,330 H775" marker-end="url(#arrsoft)"/>
+
+  <!-- shared rule + trigger -->
+  <rect x="60" y="432" width="380" height="68" rx="22" class="pure"/>
+  <text x="250" y="456" class="b" text-anchor="middle">nextOccurrence(date, rule) — one pure advance rule</text>
+  <text x="250" y="474" class="t" text-anchor="middle">daily/weekly by days · monthly/yearly via Qt clamping</text>
+  <text x="250" y="490" class="s" text-anchor="middle">(Jan 31 + 1 month = Feb 28/29 — boring on purpose)</text>
+  <path class="soft" d="M159,194 C150,290 170,380 220,432" marker-end="url(#arrsoft)"/>
+  <path class="soft" d="M169,388 C180,405 200,420 230,432" marker-end="url(#arrsoft)"/>
+
+  <rect x="560" y="436" width="330" height="60" rx="10" class="box"/>
+  <text x="725" y="460" class="b" text-anchor="middle">MainWindow — startup + each midnight</text>
+  <text x="725" y="478" class="s" text-anchor="middle">owns WHEN to knock; the domain owns the door</text>
+  <path class="hard" d="M700,436 C670,420 640,410 620,408" marker-end="url(#arr)"/>
+  <text x="640" y="428" class="lbl">rollRepeats(currentDate)</text>
+</svg>

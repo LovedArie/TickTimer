@@ -1,0 +1,50 @@
+@startuml extract_text_flow
+' v25.2 — reasoning models: how one reply becomes text (or a named failure).
+' See docs/design-addendum-provider.md §L.
+!include _style.puml
+title ai::extractText — the reply contains more than the answer (v25.2)
+
+start
+:reply bytes from the wire
+(ChatClient / LlmQuickAddClient);
+if (parses as a JSON object?) then (no)
+  #F7E9E8:error: "AI reply was not JSON";
+  stop
+endif
+switch (dialect?)
+case (Anthropic)
+  :walk content[] to the
+  **first text block**
+  (v21.2 — never index [0]);
+case (OpenAI)
+  :text = message.content;
+  if (empty after scrub?) then (yes)
+    #EDF4F1:fall back to message.reasoning,
+    then reasoning_content
+    <i>(recover a discarded answer —</i>
+    <i>never concatenate onto one)</i>;
+  else (no — content beats reasoning)
+  endif
+endswitch
+:**strippedOfThinking()** — both dialects
+remove every ~<think>…~</think> span
+an <b>unclosed</b> ~<think> drops to the end
+<i>(half a deliberation must not leak)</i>;
+if (anything left?) then (no)
+  #F7E9E8:error: "AI reply had no text content"
+  <i>(now only when the reply truly</i>
+  <i>holds no answer)</i>;
+  stop
+endif
+#EDF4F1:TextResult{ok, text}
+-> nlp::llm fences / chat bubble;
+stop
+
+note right
+  V72's bug class, both paths:
+  Anthropic fixed it by **walking blocks** (v21.2);
+  OpenAI needed a **scrub + fallback** (v25.2),
+  because there the deliberation arrives
+  <i>inside</i> the string, not beside it.
+end note
+@enduml

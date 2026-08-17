@@ -1,0 +1,43 @@
+@startuml write_boundary
+' ---------------------------------------------------------------------------
+' write_boundary — v29.0 Slice 1: proposal → validation → confirmation →
+' effect, with no model anywhere. The debug panel plays the model; Slice 2
+' swaps the proposer and changes NOTHING to the right of it.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title The write boundary (v29.0) — nothing left of the tap can touch data
+
+rectangle "PROPOSER\n(Slice 1: the debug injector.\nSlice 2: the intake model.\nEither way: outside the boundary)" as proposer
+rectangle "verbs::Proposal\nclosed verb set, per-role\n(Intake → SetTaskDetails;\nNudge/CheckIn → nothing)" as proposal
+rectangle "HandleMap (per turn)\n[T1] → id, invented\nhandles die to \"\"" as handles
+rectangle "validate()\nrole ∧ handle ∧ open target\n∧ additive ∧ sane —\nreason in owner's words" as validate
+rectangle "ProposalCard\nApply / Discard\nsummary from FIELDS,\nnever proposer prose" as card
+rectangle "data.json copied aside\n(.pre-apply — §B's\ncheap insurance)" as aside
+rectangle "apply()\nRE-validates at the tap,\nthen EXISTING doors only:\nsetTaskSize, setTaskDueDate" as apply
+rectangle "AppData\n(86+ domain tests\nalready guard the doors)" as appdata
+rectangle "Transcript receipt\n\"✓ Applied: …\" (localOnly —\nnever sent to any model)" as receipt
+
+proposer --> proposal : composes
+proposal --> validate
+handles --> validate : resolves T1
+validate --> card : verdict rendered\n(born-broken → dead Apply)
+card --> aside : the owner's tap
+aside --> apply
+apply --> appdata : doors, not\nnew capability
+apply --> receipt : on ok
+
+note bottom of card
+  The amber moment: everything left of this
+  box is words. Discard → settle, nothing
+  happens, nothing is recorded.
+end note
+
+note bottom of apply
+  The stale-card rule: the world may change
+  while the card waits (owner fills the field
+  by hand) — the tap re-validates and refuses
+  politely rather than overwrite.
+end note
+
+@enduml

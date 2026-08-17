@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TickTimer — "Needs a block" prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Theme tokens lifted verbatim from include/Theme.h so this reads as the
+     same product, not a generic mockup. */
+  :root{
+    --bg:#F1F4F0; --surface:#FFFFFF; --ink:#272C33; --ink-soft:#616974;
+    --line:#E2E6E0; --focus:#2F7E6E; --break:#DD9B4A; --track:#EAEDE8;
+    --urgent:#C05B5B; --rose:#C4566A;
+    --cat-school:#4A7CC4; --cat-health:#2F7E6E; --cat-home:#B0679A; --cat-work:#C4703A;
+    --font-display:'Nunito', system-ui, sans-serif;
+    --font-body:'Inter', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);
+       line-height:1.5;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:var(--font-display);margin:0;font-weight:700;letter-spacing:-0.01em;}
+
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:16px 26px;background:var(--surface);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:20;flex-wrap:wrap;}
+  .brand{display:flex;align-items:baseline;gap:12px;}
+  .brand h1{font-size:19px;}
+  .brand .tag{color:var(--ink-soft);font-size:12.5px;}
+  .protopill{background:rgba(224,164,74,0.16);border:1px solid rgba(224,164,74,0.5);
+    color:#8a5a12;border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:600;}
+
+  /* ---- design knobs ---- */
+  .knobs{background:var(--surface);border-bottom:1px solid var(--line);
+    padding:14px 26px;position:sticky;top:57px;z-index:15;}
+  .knobs-inner{max-width:1180px;margin:0 auto;display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;}
+  .knob{display:flex;flex-direction:column;gap:6px;}
+  .knob .klab{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--ink-soft);font-weight:600;}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface);}
+  .seg button{border:none;background:none;padding:6px 12px;font-size:12.5px;font-weight:600;
+    font-family:var(--font-body);color:var(--ink-soft);cursor:pointer;white-space:nowrap;}
+  .seg button+button{border-left:1px solid var(--line);}
+  .seg button.on{background:var(--focus);color:#fff;}
+  .knob-spacer{flex:1;}
+  .toggle-annot{border:1px solid var(--line);background:var(--surface);border-radius:9px;
+    padding:7px 13px;font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;
+    font-family:var(--font-body);align-self:flex-end;}
+  .toggle-annot.on{border-color:var(--focus);color:var(--focus);background:rgba(47,126,110,0.07);}
+
+  .shell{max-width:1180px;margin:0 auto;padding:20px 26px 70px;}
+  .daybar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    flex-wrap:wrap;margin-bottom:14px;}
+  .daybar .date{font-family:var(--font-display);font-weight:700;font-size:17px;}
+  .daybar .hint{color:var(--ink-soft);font-size:12.5px;}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:22px;}
+  @media(max-width:900px){.layout{grid-template-columns:1fr;}}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;}
+  .panel h2{font-size:15px;margin-bottom:3px;}
+  .panel .sub{color:var(--ink-soft);font-size:12.5px;margin-bottom:14px;}
+
+  /* ---- agenda ---- */
+  .agenda-track{position:relative;}
+  .hour-line{position:absolute;left:54px;right:0;border-top:1px solid var(--line);}
+  .half-line{position:absolute;left:54px;right:0;border-top:1px dashed #EEF0EC;}
+  .hour-label{position:absolute;left:0;width:46px;text-align:right;font-size:11.5px;
+    color:var(--ink-soft);margin-top:-7px;}
+  .event{position:absolute;left:54px;right:0;border-radius:10px;color:#fff;padding:6px 11px;
+    overflow:hidden;display:flex;flex-direction:column;justify-content:center;
+    box-shadow:0 1px 0 rgba(0,0,0,0.04);}
+  .event .name{font-family:var(--font-display);font-weight:700;font-size:12.5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .event .span{font-size:10.5px;opacity:0.9;}
+  .event.fresh{animation:pop .45s ease;}
+  @keyframes pop{0%{transform:scale(.94);opacity:0;}100%{transform:scale(1);opacity:1;}}
+
+  /* candidate free-slot targets, shown while placing a task */
+  .cand{position:absolute;left:54px;right:0;border-radius:9px;border:1px dashed var(--focus);
+    background:rgba(47,126,110,0.09);cursor:pointer;display:flex;align-items:center;
+    justify-content:center;color:var(--focus);font-size:11.5px;font-weight:600;z-index:4;}
+  .cand:hover{background:rgba(47,126,110,0.22);border-width:2px;}
+  .cand.best{background:rgba(47,126,110,0.16);border-width:2px;}
+  .cand .badge{position:absolute;top:3px;right:8px;font-size:9.5px;text-transform:uppercase;
+    letter-spacing:.05em;opacity:.75;}
+
+  .placing-banner{background:rgba(47,126,110,0.10);border:1px solid rgba(47,126,110,0.35);
+    color:#245f53;border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:12px;
+    display:flex;align-items:center;gap:9px;}
+  .placing-banner button{border:none;background:var(--focus);color:#fff;border-radius:7px;
+    padding:4px 11px;font-size:12px;cursor:pointer;margin-left:auto;font-family:var(--font-body);}
+
+  /* ---- the feature: needs-a-block card ---- */
+  .nb-card{border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:16px;}
+  .nb-card.gentle{background:rgba(47,126,110,0.05);border-color:rgba(47,126,110,0.28);}
+  .nb-card.urgent{background:rgba(192,91,91,0.06);border-color:rgba(192,91,91,0.38);}
+  .nb-head{display:flex;align-items:center;gap:8px;margin-bottom:3px;}
+  .nb-head h3{font-size:13.5px;}
+  .nb-count{margin-left:auto;font-size:11px;font-weight:700;border-radius:20px;padding:2px 9px;}
+  .gentle .nb-count{background:rgba(47,126,110,0.14);color:var(--focus);}
+  .urgent .nb-count{background:rgba(192,91,91,0.16);color:var(--urgent);}
+  .nb-sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:11px;}
+
+  .nb-task{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-top:1px solid var(--line);}
+  .nb-task:first-of-type{border-top:none;}
+  .nb-task .dot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:5px;}
+  .nb-task .body{flex:1;min-width:0;}
+  .nb-task .t{font-size:12.5px;font-weight:600;line-height:1.35;}
+  .nb-task .meta{font-size:11px;color:var(--ink-soft);margin-top:2px;
+    display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
+  .pchip{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    border-radius:4px;padding:1px 5px;}
+  .pchip.urgent{background:rgba(192,91,91,0.14);color:var(--urgent);}
+  .pchip.overdue{background:rgba(192,91,91,0.14);color:var(--urgent);}
+  .pchip.soon{background:rgba(224,164,74,0.18);color:#8a5a12;}
+  .nb-acts{display:flex;gap:6px;margin-top:7px;}
+  .nb-acts button{border:1px solid var(--line);background:var(--surface);border-radius:7px;
+    padding:4px 10px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--ink-soft);
+    font-family:var(--font-body);}
+  .nb-acts button.primary{background:var(--focus);border-color:var(--focus);color:#fff;}
+  .nb-acts button:hover{border-color:var(--focus);color:var(--focus);}
+  .nb-acts button.primary:hover{filter:brightness(1.07);color:#fff;}
+
+  .nb-empty{font-size:12.5px;color:var(--focus);display:flex;align-items:center;gap:8px;
+    padding:4px 0 2px;}
+
+  /* banner variant */
+  .nb-banner{border-radius:12px;padding:11px 14px;margin-bottom:14px;display:flex;
+    align-items:center;gap:11px;font-size:12.5px;}
+  .nb-banner.gentle{background:rgba(47,126,110,0.08);border:1px solid rgba(47,126,110,0.3);color:#245f53;}
+  .nb-banner.urgent{background:rgba(192,91,91,0.08);border:1px solid rgba(192,91,91,0.38);color:#8c3d3d;}
+  .nb-banner .grow{flex:1;}
+  .nb-banner button{border:none;border-radius:7px;padding:5px 12px;font-size:12px;
+    cursor:pointer;font-family:var(--font-body);font-weight:600;}
+  .nb-banner.gentle button{background:var(--focus);color:#fff;}
+  .nb-banner.urgent button{background:var(--urgent);color:#fff;}
+  .nb-banner button.ghost{background:transparent;color:inherit;opacity:.7;
+    border:1px solid currentColor;}
+
+  /* glance stats, for context only */
+  .stat-row{display:flex;gap:9px;margin-bottom:13px;}
+  .stat{flex:1;border:1px solid var(--line);border-radius:12px;padding:9px 11px;}
+  .stat .k{font-size:10px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;}
+  .stat .v{font-family:var(--font-display);font-weight:800;font-size:19px;margin-top:1px;}
+  .stat.focus .v{color:var(--focus);} .stat.brk .v{color:var(--break);}
+
+  /* ---- annotations ---- */
+  .annot{position:relative;border-left:3px solid var(--break);background:rgba(224,164,74,0.09);
+    border-radius:0 9px 9px 0;padding:9px 12px;font-size:12px;color:#7a5010;margin:10px 0;}
+  .annot b{font-family:var(--font-display);}
+  .annot.hidden{display:none;}
+  .annot .n{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
+    border-radius:50%;background:var(--break);color:#fff;font-size:10px;font-weight:700;
+    margin-right:6px;vertical-align:1px;}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;border-radius:11px;padding:10px 18px;font-size:12.5px;
+    opacity:0;transition:all .25s;pointer-events:none;z-index:60;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .questions{margin-top:28px;background:var(--surface);border:1px solid var(--line);
+    border-radius:16px;padding:20px 22px;}
+  .questions h2{font-size:15px;margin-bottom:4px;}
+  .questions .sub{color:var(--ink-soft);font-size:12.5px;margin-bottom:14px;}
+  .questions ol{margin:0;padding-left:20px;}
+  .questions li{font-size:13px;margin-bottom:11px;}
+  .questions li b{font-family:var(--font-display);}
+  .questions .mine{color:var(--ink-soft);font-size:12.5px;display:block;margin-top:2px;}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>TickTimer</h1>
+    <span class="tag">"Needs a block" — surfacing unscheduled work</span>
+  </div>
+  <span class="protopill">PROTOTYPE · throwaway · not production code</span>
+</header>
+
+<div class="knobs">
+  <div class="knobs-inner">
+    <div class="knob">
+      <span class="klab">What qualifies</span>
+      <div class="seg" id="knob-rule">
+        <button data-v="urgent" class="on">Urgent only</button>
+        <button data-v="soon">Urgent + due ≤3d</button>
+        <button data-v="dated">Anything dated</button>
+      </div>
+    </div>
+    <div class="knob">
+      <span class="klab">Where it lives</span>
+      <div class="seg" id="knob-place">
+        <button data-v="panel" class="on">Glance panel</button>
+        <button data-v="banner">Agenda banner</button>
+        <button data-v="both">Both</button>
+      </div>
+    </div>
+    <div class="knob">
+      <span class="klab">Tone</span>
+      <div class="seg" id="knob-tone">
+        <button data-v="gentle" class="on">Gentle</button>
+        <button data-v="urgent">Urgent</button>
+      </div>
+    </div>
+    <div class="knob-spacer"></div>
+    <button class="toggle-annot on" id="annot-btn">Design notes: on</button>
+  </div>
+</div>
+
+<div class="shell">
+
+  <div class="daybar">
+    <div>
+      <div class="date">Tuesday, 21 July</div>
+      <div class="hint">Plan vs. actual · 30-minute slots</div>
+    </div>
+  </div>
+
+  <div class="annot" data-annot>
+    <span class="n">1</span><b>The gap this fills.</b> Task blocks already exist — you can
+    click a free slot and pick a task, or type a task name into a block's label. What the app
+    never does is <em>notice</em> that an urgent task has no time set aside for it anywhere.
+    You can create "Lab 4 — due Friday", mark it Urgent, and get zero signal that Friday is
+    coming and nothing is planned. That silence is the whole feature.
+  </div>
+
+  <div id="banner-host"></div>
+
+  <div class="layout">
+
+    <!-- ================= AGENDA ================= -->
+    <div class="panel">
+      <h2>Today's plan</h2>
+      <div class="sub">Click a highlighted slot while placing a task.</div>
+      <div id="placing-host"></div>
+      <div class="agenda-track" id="agenda" style="height:600px;"></div>
+    </div>
+
+    <!-- ================= GLANCE PANEL ================= -->
+    <div>
+      <div class="panel">
+        <h2>Glance</h2>
+        <div class="sub">Where today actually went</div>
+
+        <div class="stat-row">
+          <div class="stat focus"><div class="k">Focus</div><div class="v">2h 10m</div></div>
+          <div class="stat brk"><div class="k">Break</div><div class="v">35m</div></div>
+        </div>
+
+        <div id="panel-host"></div>
+
+        <div class="annot" data-annot>
+          <span class="n">2</span><b>Why the glance panel.</b> It's already the "state of
+          my day" surface, and it's <em>beside</em> the agenda — so the fix (a free slot) is
+          in view at the same moment as the problem. A banner across the top would be louder,
+          but loud is not obviously right here. Flip the knob and see which you'd tolerate
+          every single morning.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annot" data-annot>
+    <span class="n">3</span><b>"Find time" is a suggestion, never an action.</b> Clicking it
+    highlights the free runs that fit — it does not silently book anything. The app's whole
+    thesis is plan-vs-actual honesty; an app that fills your calendar on your behalf is
+    writing a plan you never made. The model can propose later (that's the secretary arc),
+    but the human still presses the button.
+  </div>
+
+  <div class="annot" data-annot>
+    <span class="n">4</span><b>"Not today" is load-bearing, not a courtesy.</b> This app is
+    built for anxiety-driven procrastination. A list you cannot quiet becomes a list you
+    learn to ignore — and once you're ignoring it, every other signal in the app loses
+    credibility too. Dismissal is what keeps the feature honest: it can be right to not
+    schedule something today, and the app should be able to hear that.
+  </div>
+
+  <div class="questions">
+    <h2>Open questions — your call</h2>
+    <div class="sub">The ones I couldn't settle alone. Write on top of these.</div>
+    <ol>
+      <li><b>Does a block on a <em>future</em> day count as scheduled?</b>
+        <span class="mine">Prototype says yes — a task with time booked Thursday doesn't
+        nag on Tuesday. But then a task due Wednesday with a block on Thursday looks fine
+        and isn't. Worth catching, or over-thinking it?</span></li>
+      <li><b>How long does "Not today" last?</b>
+        <span class="mine">Until midnight is the obvious answer. But a task you dismiss
+        every morning for a week is telling you something — should the app eventually stop
+        asking rather than keep asking?</span></li>
+      <li><b>Should overdue-and-unscheduled read differently from urgent-and-unscheduled?</b>
+        <span class="mine">Prototype shows both in one list with different chips. They may
+        deserve real separation — overdue is a fact, urgent is an opinion you set.</span></li>
+      <li><b>Does this belong on the week view too?</b>
+        <span class="mine">Untouched here. "Nothing planned all week for a Friday deadline"
+        is arguably the more useful warning, and the week view is where you'd act on it.</span></li>
+      <li><b>Is "Needs a block" the right name?</b>
+        <span class="mine">Alternatives considered: "Unscheduled", "No time set aside",
+        "Waiting for time". The current one names the fix rather than the failure — a
+        deliberate tone choice, but yours to overrule.</span></li>
+    </ol>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Prototype state. Deliberately crude: plain objects, no framework, no
+// persistence. Its only job is to make the design decisions arguable.
+// ---------------------------------------------------------------------------
+
+const DAY_START = 8 * 60;      // prototype window 08:00
+const DAY_END   = 20 * 60;     // ...to 20:00 (real app is 06:00–24:00)
+const PX_PER_MIN = 600 / (DAY_END - DAY_START);
+
+const CATS = {
+  school: {name:'School', color:'var(--cat-school)', raw:'#4A7CC4'},
+  health: {name:'Health', color:'var(--cat-health)', raw:'#2F7E6E'},
+  home:   {name:'Home',   color:'var(--cat-home)',   raw:'#B0679A'},
+  work:   {name:'Work',   color:'var(--cat-work)',   raw:'#C4703A'},
+};
+
+// "Today" is pinned so the prototype reads the same every time it's opened.
+const TODAY = new Date(2026, 6, 21); // 21 July 2026, a Tuesday
+
+let events = [
+  {id:'e1', start: 9*60,        end: 10*60+30, label:'GTI350 lecture', cat:'school'},
+  {id:'e2', start: 12*60,       end: 12*60+30, label:'Lunch',          cat:'home'},
+  {id:'e3', start: 14*60,       end: 15*60,    label:'Gym',            cat:'health'},
+  {id:'e4', start: 17*60+30,    end: 18*60+30, label:'Shift prep',     cat:'work'},
+];
+
+let tasks = [
+  {id:'t1', title:'Lab 4 — Exigences contractuelles (5%)', cat:'school',
+   priority:'urgent', dueIn:3,  blockedDays:[], dismissed:false},
+  {id:'t2', title:'LOG410 final — study sheet', cat:'school',
+   priority:'urgent', dueIn:6,  blockedDays:[], dismissed:false},
+  {id:'t3', title:'Renew health card', cat:'home',
+   priority:'medium', dueIn:-2, blockedDays:[], dismissed:false},   // overdue
+  {id:'t4', title:'Reply to internship email', cat:'work',
+   priority:'medium', dueIn:1,  blockedDays:[], dismissed:false},
+  {id:'t5', title:'Book dentist', cat:'health',
+   priority:'low',    dueIn:12, blockedDays:[], dismissed:false},
+  {id:'t6', title:'Read chapter 7', cat:'school',
+   priority:'medium', dueIn:2,  blockedDays:[2], dismissed:false},  // already blocked Thu
+];
+
+let knobs = {rule:'urgent', place:'panel', tone:'gentle'};
+let placing = null;   // task id currently being placed, or null
+let showAnnot = true;
+
+// ---- the qualifying rule -------------------------------------------------
+// This is the actual decision the knob is exploring. Note it is a PURE
+// function of (task, rule) — in the real app this belongs in the domain
+// (AppData or a free function beside Task.h), not in a widget, so every
+// surface that asks "does this need a block?" gets the same answer.
+function needsBlock(t){
+  if (t.dismissed) return false;
+  if (t.blockedDays.length > 0) return false;   // has time somewhere → quiet
+  if (knobs.rule === 'urgent')  return t.priority === 'urgent';
+  if (knobs.rule === 'soon')    return t.priority === 'urgent' || t.dueIn <= 3;
+  if (knobs.rule === 'dated')   return true;
+  return false;
+}
+
+// Sort: overdue first, then urgent, then soonest due.
+function rank(t){
+  if (t.dueIn < 0) return 0;
+  if (t.priority === 'urgent') return 1;
+  return 2;
+}
+function qualifying(){
+  return tasks.filter(needsBlock)
+              .sort((a,b) => rank(a) - rank(b) || a.dueIn - b.dueIn);
+}
+
+function dueLabel(t){
+  if (t.dueIn < 0)  return `${-t.dueIn}d overdue`;
+  if (t.dueIn === 0) return 'due today';
+  if (t.dueIn === 1) return 'due tomorrow';
+  return `due in ${t.dueIn}d`;
+}
+
+// ---- free-slot finding ---------------------------------------------------
+// Contiguous free runs of at least `minMinutes`, snapped to the 30-minute
+// grid. The real app already has this shape of logic in AppData::isFree —
+// this is a throwaway restatement, not a proposed implementation.
+function freeRuns(minMinutes){
+  const busy = [...events].sort((a,b) => a.start - b.start);
+  const runs = [];
+  let cursor = DAY_START;
+  for (const e of busy){
+    if (e.start - cursor >= minMinutes) runs.push({start:cursor, end:e.start});
+    cursor = Math.max(cursor, e.end);
+  }
+  if (DAY_END - cursor >= minMinutes) runs.push({start:cursor, end:DAY_END});
+  return runs;
+}
+
+// ---- rendering -----------------------------------------------------------
+function y(min){ return (min - DAY_START) * PX_PER_MIN; }
+function fmt(min){
+  const h = Math.floor(min/60), m = min%60;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return m === 0 ? `${hh} ${ampm}` : `${hh}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+function renderAgenda(){
+  const host = document.getElementById('agenda');
+  host.innerHTML = '';
+
+  for (let m = DAY_START; m <= DAY_END; m += 30){
+    const line = document.createElement('div');
+    line.className = (m % 60 === 0) ? 'hour-line' : 'half-line';
+    line.style.top = y(m) + 'px';
+    host.appendChild(line);
+    if (m % 60 === 0 && m < DAY_END){
+      const lab = document.createElement('div');
+      lab.className = 'hour-label';
+      lab.style.top = y(m) + 'px';
+      lab.textContent = fmt(m);
+      host.appendChild(lab);
+    }
+  }
+
+  for (const e of events){
+    const el = document.createElement('div');
+    el.className = 'event' + (e.fresh ? ' fresh' : '');
+    el.style.top = y(e.start) + 'px';
+    el.style.height = Math.max(20, (e.end - e.start) * PX_PER_MIN - 3) + 'px';
+    el.style.background = CATS[e.cat].raw;
+    el.innerHTML = `<div class="name">${e.label}</div>` +
+      ((e.end - e.start) >= 45
+        ? `<div class="span">${fmt(e.start)} – ${fmt(e.end)}</div>` : '');
+    host.appendChild(el);
+    e.fresh = false;
+  }
+
+  if (placing){
+    const task = tasks.find(t => t.id === placing);
+    const runs = freeRuns(60);
+    runs.forEach((r, i) => {
+      const el = document.createElement('div');
+      el.className = 'cand' + (i === 0 ? ' best' : '');
+      el.style.top = y(r.start) + 'px';
+      el.style.height = Math.max(24, (r.end - r.start) * PX_PER_MIN - 3) + 'px';
+      el.innerHTML = `${fmt(r.start)} – ${fmt(r.end)} free` +
+        (i === 0 ? `<span class="badge">earliest</span>` : '');
+      el.onclick = () => placeInto(task, r);
+      host.appendChild(el);
+    });
+  }
+}
+
+function renderPlacingBanner(){
+  const host = document.getElementById('placing-host');
+  if (!placing){ host.innerHTML = ''; return; }
+  const t = tasks.find(x => x.id === placing);
+  host.innerHTML = `<div class="placing-banner">
+      <span>Placing <b>${t.title}</b> — pick a free run below.</span>
+      <button onclick="cancelPlacing()">Cancel</button>
+    </div>`;
+}
+
+function taskRowHtml(t){
+  const chips = [];
+  if (t.dueIn < 0)                 chips.push(`<span class="pchip overdue">${dueLabel(t)}</span>`);
+  else if (t.priority === 'urgent')chips.push(`<span class="pchip urgent">urgent</span>`);
+  else if (t.dueIn <= 3)           chips.push(`<span class="pchip soon">${dueLabel(t)}</span>`);
+  const due = t.dueIn >= 0 ? `<span>${dueLabel(t)}</span>` : '';
+  return `<div class="nb-task">
+      <span class="dot" style="background:${CATS[t.cat].raw}"></span>
+      <div class="body">
+        <div class="t">${t.title}</div>
+        <div class="meta">${chips.join('')}${t.dueIn>=0 && t.priority==='urgent' ? due : ''}
+          <span>${CATS[t.cat].name}</span></div>
+        <div class="nb-acts">
+          <button class="primary" onclick="startPlacing('${t.id}')">Find time</button>
+          <button onclick="dismiss('${t.id}')">Not today</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderPanel(){
+  const host = document.getElementById('panel-host');
+  if (knobs.place === 'banner'){ host.innerHTML = ''; return; }
+
+  const list = qualifying();
+  const tone = knobs.tone;
+
+  if (list.length === 0){
+    host.innerHTML = `<div class="nb-card ${tone}">
+        <div class="nb-head"><h3>Needs a block</h3></div>
+        <div class="nb-empty">✓ Everything urgent has time set aside.</div>
+      </div>`;
+    return;
+  }
+
+  const sub = tone === 'gentle'
+    ? 'Open work with no time set aside yet.'
+    : 'These have no time booked. Deadlines are approaching.';
+
+  host.innerHTML = `<div class="nb-card ${tone}">
+      <div class="nb-head">
+        <h3>Needs a block</h3>
+        <span class="nb-count">${list.length}</span>
+      </div>
+      <div class="nb-sub">${sub}</div>
+      ${list.map(taskRowHtml).join('')}
+    </div>`;
+}
+
+function renderBanner(){
+  const host = document.getElementById('banner-host');
+  if (knobs.place === 'panel'){ host.innerHTML = ''; return; }
+
+  const list = qualifying();
+  if (list.length === 0){ host.innerHTML = ''; return; }
+
+  const tone = knobs.tone;
+  const msg = tone === 'gentle'
+    ? `<b>${list.length}</b> ${list.length===1?'task has':'tasks have'} no time set aside — ${list[0].title}${list.length>1?' and others':''}.`
+    : `⚠ <b>${list.length}</b> unscheduled ${list.length===1?'task':'tasks'} — ${list[0].title}${list.length>1?' and others':''} ${list[0].dueIn<0?'is overdue':'needs attention'}.`;
+
+  host.innerHTML = `<div class="nb-banner ${tone}">
+      <span class="grow">${msg}</span>
+      <button onclick="startPlacing('${list[0].id}')">Find time</button>
+      <button class="ghost" onclick="dismiss('${list[0].id}')">Not today</button>
+    </div>`;
+}
+
+function renderAnnot(){
+  document.querySelectorAll('[data-annot]').forEach(el => {
+    el.classList.toggle('hidden', !showAnnot);
+  });
+}
+
+function renderAll(){
+  renderBanner(); renderPanel(); renderPlacingBanner(); renderAgenda(); renderAnnot();
+}
+
+// ---- actions -------------------------------------------------------------
+function startPlacing(id){ placing = id; renderAll(); }
+function cancelPlacing(){ placing = null; renderAll(); }
+
+function placeInto(task, run){
+  // Default duration: 1 hour, capped by the run. The real picker offers
+  // 30m–2h pills; not worth rebuilding here.
+  const dur = Math.min(60, run.end - run.start);
+  events.push({
+    id:'ev' + Date.now(), start: run.start, end: run.start + dur,
+    label: task.title, cat: task.cat, fresh:true
+  });
+  task.blockedDays.push(0);   // blocked today → drops off the list
+  placing = null;
+  renderAll();
+  toast(`Blocked ${fmt(run.start)} – ${fmt(run.start + dur)}`);
+}
+
+function dismiss(id){
+  const t = tasks.find(x => x.id === id);
+  t.dismissed = true;
+  if (placing === id) placing = null;
+  renderAll();
+  toast(`"${t.title}" won't be suggested again today`);
+}
+
+let toastTimer = null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ---- knob wiring ---------------------------------------------------------
+function wireKnob(id, key){
+  const host = document.getElementById(id);
+  host.querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      host.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      knobs[key] = b.dataset.v;
+      placing = null;
+      renderAll();
+    };
+  });
+}
+wireKnob('knob-rule','rule');
+wireKnob('knob-place','place');
+wireKnob('knob-tone','tone');
+
+document.getElementById('annot-btn').onclick = function(){
+  showAnnot = !showAnnot;
+  this.classList.toggle('on', showAnnot);
+  this.textContent = 'Design notes: ' + (showAnnot ? 'on' : 'off');
+  renderAnnot();
+};
+
+renderAll();
+</script>
+</body>
+</html>

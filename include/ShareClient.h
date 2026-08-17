@@ -39,7 +39,15 @@ public:
         NotFound,     // shared with a username that doesn't exist (typo)
         Forbidden,    // asked for a planner nobody granted us
         AuthError,    // token invalid/expired — re-login
-        NetworkError  // couldn't reach the server at all
+        NetworkError, // couldn't reach the server at all
+        UnexpectedReply // v29.0.2 — the server ANSWERED, but not to the
+                        // question we thought we asked (a route-level 404,
+                        // a future error token). Split from NotFound
+                        // because "no such USER" is the owner's typo and
+                        // "no such ROUTE" is OUR bug — one message blaming
+                        // her spelling for the app's URL cost a live
+                        // debugging session (TROUBLESHOOTING, second entry
+                        // of the same evening).
     };
     Q_ENUM(Outcome)
 

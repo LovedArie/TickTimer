@@ -1,0 +1,46 @@
+@startuml debug_seams
+' ---------------------------------------------------------------------------
+' debug_seams — v28.10: every seam, one keyboard chord.
+' The field report's closing finding: the v28 services were BUILT full of
+' injection seams and not one was reachable from the running app. Seams
+' only tests can reach are half a seam; this panel is the other half.
+' The panel is pure glass — every arrow below lands on a method the test
+' suite already calls, or an env var the test suite already flips.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title Ctrl+Shift+D — the DebugPanel and the seams it presses
+
+rectangle "DebugPanel  (glass: presses, never decides)" as panel {
+  rectangle "Pretend it is\nthis moment /\nBack to real time" as clock
+  rectangle "Sweep now\nForget manners" as affbtn
+  rectangle "Sweep now\nOffer now (skip gate)\nClear today's ask" as chkbtn
+  rectangle "Show the briefing" as briefbtn
+  rectangle "All providers down\nthis run  [checkbox]" as aibtn
+}
+
+rectangle "MainWindow\n(composition root)" as mw
+rectangle "AffordabilityService" as aff
+rectangle "CheckInService" as chk
+rectangle "ChatPage::currentBriefing()\nthe exact text the model receives" as brief
+rectangle "TICKTIMER_AI_DOWN=*\nprocess env, nothing persists" as env
+rectangle "NudgeClient · quick-add ·\nchat route walk\n(every wire checks forcedDown)" as wires
+
+clock --> mw : applyClock(moment | real)
+mw --> aff : setNowProvider
+mw --> chk : setNowProvider
+mw --> brief : nowProvider
+
+affbtn --> aff : sweep()\nforgetManners()
+chkbtn --> chk : sweep()\nforceOffer()\nclearTodaysAsk()
+briefbtn --> brief : fetched fresh\nper press
+aibtn --> env : qputenv / qunsetenv
+env --> wires : forcedDown(id)\n→ the C++ voices speak
+
+note bottom of chk
+  forceOffer(): the gate skipped ON PURPOSE,
+  the ledger untouched ON PURPOSE — a rehearsal
+  must not spend the morning's one real ask.
+end note
+
+@enduml

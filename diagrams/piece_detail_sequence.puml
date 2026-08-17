@@ -1,0 +1,59 @@
+@startuml piece_detail_sequence
+' ---------------------------------------------------------------------------
+' piece_detail_sequence — v28.5, opening a piece from its parent's panel.
+'
+' The picture to hold: the DIALOG never navigates. It records where the
+' user asked to go as part of its ANSWER (navigationTarget), and
+' runTaskDetail — a loop, one live dialog at a time — acts on the record
+' after applying. "Save-then-go": clicking through accepts; only Cancel
+' discards. The one place the modal close/reopen hop lives is also the
+' one function the future side-panel slice will swap.
+'
+' v28.6 NOTE: this modal loop is now runTaskDetail's FALLBACK — the
+' docked TaskDetailPanel (detail_panel_states.*) is the preferred path,
+' and its navigation is a swap-in-place with an unsaved-work guard.
+'
+' Referenced from design-addendum-subtasks.md §L.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+actor User as U
+participant "runTaskDetail\n(free function, the loop)" as R
+participant "TaskDetailDialog\n(parent's panel)" as P
+participant "TaskDetailDialog\n(piece's panel)" as C
+participant "AppData\n(the single door)" as D
+
+U -> R : click "Study for finals"
+R -> D : taskById / subtasksOf (fresh read)
+R -> P : construct + seedPieces\n(rows carry "Aug 8 · 45 min" hints)
+U -> P : tick "Read the spec"
+U -> P : click title "Chapter 3"
+note right of P
+  Records navigateTo = piece id,
+  then accept() — the hop SAVES
+  the sitting. Performs nothing.
+end note
+P --> R : Accepted
+R -> D : applyTaskDetailAnswers\n(one Batch — the tick lands)
+R -> R : taskId = navigationTarget()
+
+R -> D : taskById (fresh again — never stale)
+R -> C : construct + setBreadcrumb("‹ Study for finals")
+note right of C
+  A piece's panel: breadcrumb,
+  no checklist (one level only).
+  Full form — date, time, size.
+end note
+U -> C : set Aug 8 · 45 min, click breadcrumb
+C --> R : Accepted (navigateTo = parent id)
+R -> D : applyTaskDetailAnswers\n(the piece is now scheduled work)
+R -> P : loop continues — parent reopens,\nrow now shows the chip
+
+note over D
+  Domain untouched by v28.5: a dated piece
+  already flows into tasksDueOn and
+  tasksNeedingBlock — the door was
+  the only missing part.
+end note
+
+@enduml

@@ -1,0 +1,64 @@
+@startuml chat_route_walk
+' v26 — per-role routing: one turn's walk over the chat route, drawn for the
+' two-seat route the Settings UI edits; the mechanism itself takes N seats.
+' See docs/design-addendum-provider.md §M.
+!include _style.puml
+title ChatClient — one turn walks the route (v26)
+
+start
+:route = ai::routeFor(Feature::Chat)
+<i>read at fire time; a missing route key</i>
+<i>DERIVES the v25 provider — no migration write</i>;
+:planRoute() — drop seats cooling
+in the breaker (unreachable < 20 s ago);
+if (any seat left?) then (no)
+  #F7E9E8:fail FAST, naming the seats
+  "… unreachable — will retry shortly";
+  stop
+else (yes)
+endif
+:try **seat #1**
+(TICKTIMER_AI_DOWN forces
+unreachable before any socket);
+if (answered 200 with text?) then (yes)
+  #EDF4F1:breaker.noteOk — reply shown;
+  stop
+else (no)
+endif
+if (REFUSED? 401 403 404 429 5xx / bad reply) then (yes)
+  #F7E9E8:fail LOUDLY — never falls through
+  <i>a wrong key masked by a quieter seat costs an</i>
+  <i>evening of "why did the answers get dumber"</i>;
+  stop
+else (no — UNREACHABLE)
+endif
+:breaker.noteUnreachable(seat #1)
+transcript, local-only:
+"⚠ <seat 1> unreachable — trying <seat 2>…";
+if (a next seat in the route?) then (no)
+  #F7E9E8:failed — "couldn't reach the AI service";
+  stop
+else (yes)
+endif
+:try **seat #2** — same three verdicts;
+if (answered 200 with text?) then (yes)
+  #EDF4F1:reply shown **plus attribution**:
+  "answered by <seat 2>" — a fallback
+  answer names its author;
+  stop
+else (no)
+endif
+#F7E9E8:refused -> loud; unreachable -> noted,
+and the LAST seat has nowhere to go:
+"couldn't reach the AI service";
+stop
+
+note right
+  §E's one rule, drawn: only the
+  UNREACHABLE class (nothing
+  answered) moves to the next seat.
+  Everything a server actually SAID
+  is config feedback the user
+  must hear.
+end note
+@enduml

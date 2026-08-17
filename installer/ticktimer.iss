@@ -20,7 +20,42 @@
 ; does" goal better than a generated one you can't inspect.
 
 #define AppName        "TickTimer"
-#define AppVersion     "0.19.1"   ; keep in sync with include/Version.h (the .iss preprocessor cannot include C headers)
+; ---------------------------------------------------------------------------
+; VERSION — the only hand-copied version number in the project, and (v26.8
+; audit) it had drifted FIVE releases: this line said 21.2.0 while the app
+; was at 26.8.0. Its own comment said "bump BOTH, every release". It didn't.
+;
+; That contrast is the whole lesson, and it is sitting right here in one
+; folder. Version.h has THREE consumers:
+;   * C++ code            - #includes the header          -> never drifted
+;   * ticktimer.rc        - #includes the header          -> never drifted
+;   * this script         - a human retypes the number    -> drifted 5 times
+; The two mechanical consumers were correct for five straight releases. The
+; one relying on discipline was wrong. Mechanism beats intention, every time,
+; and a comment shouting MUST is not a mechanism.
+;
+; Consequence, and why this mattered beyond tidiness: Inno uses AppVersion for
+; upgrade detection. An installer claiming 21.2.0 over an installed 26.x is
+; not obviously an upgrade, so the "installing over the top" path was being
+; tested against a lie.
+;
+; PROPOSED MECHANICAL FIX (deliberately NOT enabled - see below):
+;   #define ExeForVersion DistDir + "\ticktimer.exe"
+;   #ifexist ExeForVersion
+;     #define AppVersion GetStringFileInfo(ExeForVersion, PRODUCT_VERSION)
+;   #else
+;     #define AppVersion "28.3.0"
+;   #endif
+; ticktimer.rc already stamps the exe FROM Version.h, so reading it back makes
+; the installer derive from the one source instead of copying it - the same
+; "derive, don't store" rule the domain code follows.
+;
+; It is left commented out for one reason: this script is the last thing
+; between the project and a user's machine, and it cannot be exercised on the
+; audit machine (no Windows, no Inno). Shipping an untested edit to the one
+; artifact you cannot test is how a documentation cleanup becomes an outage.
+; Enable it in a session where you can run ISCC and watch it build.
+#define AppVersion     "29.1.0"  ; MUST match include/Version.h (Inno cannot include C headers - bump BOTH, every release)
 #define AppPublisher   "TickTimer"
 #define DistDir        "..\dist\TickTimer"   ; produced by deploy-windows.bat
 

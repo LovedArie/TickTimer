@@ -80,13 +80,82 @@ private slots:
              AuthClient::Outcome::Success);
   }
 
+  // v29.0.1 — the pasted-URL rule, case by case, next to the client it
+  // guards (test_auth neither links Network nor builds AuthClient.cpp —
+  // this suite does). The /api/ case matters most: a deliberate PATH
+  // survives, only trailing slashes die — which is what lets the
+  // wrong-path test below exist at all.
+  void serverUrlNormalizationDefusesPastes() {
+    using AC = AuthClient;
+    QCOMPARE(AC::normalizeServerUrl("http://x:8080/"),
+             QStringLiteral("http://x:8080"));
+    QCOMPARE(AC::normalizeServerUrl("http://x:8080///"),
+             QStringLiteral("http://x:8080"));
+    QCOMPARE(AC::normalizeServerUrl("  http://x:8080  "),
+             QStringLiteral("http://x:8080"));
+    QCOMPARE(AC::normalizeServerUrl("http://x:8080"),
+             QStringLiteral("http://x:8080")); // clean stays clean
+    QCOMPARE(AC::normalizeServerUrl("http://"),
+             QStringLiteral("http://")); // degenerate stays degenerate
+    QCOMPARE(AC::normalizeServerUrl("http://x:8080/api/"),
+             QStringLiteral("http://x:8080/api"));
+  }
+
+  // v29.0.1 — the girlfriend's-laptop bug, pinned end-to-end: a base URL
+  // pasted WITH its trailing slash must register fine. Before the fix this
+  // exact call posted to //register, got not_found, and told the owner to
+  // check her password.
+  void registerToleratesTrailingSlashServerUrl() {
+    AuthClient client("http://localhost:8091///");
+    QCOMPARE(await(client, [&]{ client.registerUser("slash-reg-user", "pw123"); }),
+             AuthClient::Outcome::Success);
+  }
+
+  // …and a genuinely WRONG PATH — which normalization rightly preserves —
+  // now names itself instead of blaming the credentials.
+  void wrongPathYieldsUnknownServerReply() {
+    AuthClient client("http://localhost:8091/nope");
+    QCOMPARE(await(client, [&]{ client.registerUser("wrongpath-user", "pw123"); }),
+             AuthClient::Outcome::UnknownServerReply);
+  }
+
+  // v29.0.2 — the SECOND trailing-slash bug of the same evening, pinned
+  // where it actually bit: sharing. The slash-bearing base must share
+  // fine; a genuine typo must still say NotFound; and a wrong PATH must
+  // name itself instead of blaming the spelling.
+  void shareToleratesTrailingSlashAndSplitsIts404s() {
+    // loginForToken REGISTERS (its comment: "registering IS logging
+    // in") — handing it a name and letting it mint is the whole call.
+    // Registering explicitly first, as the first draft did, makes its
+    // second attempt UsernameTaken and the token empty.
+    const QString token = loginForToken("sharer-slash", "pw123");
+    QVERIFY(!token.isEmpty());
+
+    ShareClient slashy("http://localhost:8091///", token);
+    QCOMPARE(awaitShareUpdate(slashy, [&]{ slashy.share("dave"); }),
+             ShareClient::Outcome::Success);
+
+    QCOMPARE(awaitShareUpdate(slashy, [&]{ slashy.share("nobody-xyz"); }),
+             ShareClient::Outcome::NotFound); // real typos still say so
+
+    ShareClient wrongPath("http://localhost:8091/nope", token);
+    QCOMPARE(awaitShareUpdate(wrongPath, [&]{ wrongPath.share("dave"); }),
+             ShareClient::Outcome::UnexpectedReply); // our bug, named
+  }
+
   void unreachableServerReportsNetworkError() {
     AuthClient client("http://localhost:1"); // nothing there
     AuthClient::Outcome got = AuthClient::Outcome::Success;
     connect(&client, &AuthClient::resultReady,
             [&](AuthClient::Outcome o, const QString&){ got = o; });
     client.login("x", "y");
-    QTRY_COMPARE_WITH_TIMEOUT(got, AuthClient::Outcome::NetworkError, 3000);
+    // 15 s is a CEILING, not a duration — QTRY returns the moment the
+    // signal lands, so a healthy run stays fast. The old 3000 was a bet on
+    // how quickly THIS machine's network stack reports a dead port; the
+    // owner's Windows box took 3.6 s and the bet lost. A generous ceiling
+    // costs nothing when passing and stops a timing assumption about
+    // someone's OS from masquerading as a code failure.
+    QTRY_COMPARE_WITH_TIMEOUT(got, AuthClient::Outcome::NetworkError, 15000);
   }
 
 private:
@@ -265,6 +334,7 @@ private slots:
     QSettings settings;
     settings.remove("sync/lastRevision");
     settings.remove("sync/dirty");
+    settings.remove("sync/lastSyncTime");
 
     const QString token = loginForToken("gina", "pw");
     QVERIFY(!token.isEmpty());
@@ -393,6 +463,61 @@ private slots:
              ShareClient::Outcome::AuthError);
   }
 
+  void resolvingAConflictActuallyClearsIt() {
+    // The stale-flag regression, pinned: one conflict used to poison the
+    // service forever (hasPendingConflict() never fell, so auto-sync stayed
+    // gated and the ⚠ never calmed — resolved or not). This test creates a
+    // REAL conflict, resolves it, and asserts the service comes back from
+    // the dead: flag down, auto-sync pushing again, clock ticking.
+    QSettings settings;
+    settings.remove("sync/lena/lastRevision");
+    settings.remove("sync/lena/dirty");
+    settings.remove("sync/lena/lastSyncTime");
+
+    const QString token = loginForToken("lena", "pw");
+    QVERIFY(!token.isEmpty());
+
+    AppData data;
+    SyncClient wire("http://localhost:8091", token);
+    SyncService service(&data, &wire, "lena");
+    service.setAutoSync(true, /*debounceMs=*/150);
+    bool conflict = false;
+
+    // Clean first push.
+    QVERIFY(awaitService(service, [&]() {
+        data.addCategory("Mine", QColor("#4C6FE0"));
+    }, conflict));
+    QVERIFY(!conflict);
+
+    // A second "device" moves the server behind our back…
+    SyncClient rival("http://localhost:8091", token);
+    QJsonObject theirs; theirs["intruder"] = true;
+    QCOMPARE(awaitPush(rival, theirs, service.lastRevision(), false).first,
+             SyncClient::Outcome::Success);
+
+    // …we edit too → genuinely concurrent → the debounce runs into a
+    // conflict and PARKS (auto-when, never auto-who-wins).
+    awaitService(service, [&]() {
+        data.addCategory("Concurrent", QColor("#AA3366"));
+    }, conflict);
+    QVERIFY(conflict);
+    QVERIFY(service.hasPendingConflict());
+
+    // The human chooses. The flag must FALL — this line is the regression.
+    QVERIFY(awaitService(service, [&]() { service.resolveKeepMine(); },
+                         conflict));
+    QVERIFY(!service.hasPendingConflict());
+    QVERIFY(service.lastSyncTime().isValid());
+
+    // And the service is ALIVE: the very next edit auto-pushes, no clicks.
+    QVERIFY(awaitService(service, [&]() {
+        data.addCategory("AfterLife", QColor("#22AA55"));
+    }, conflict));
+    QVERIFY(!conflict);
+    QVERIFY(!service.hasPendingConflict());
+    QVERIFY(!service.dirty());
+  }
+
   void versionRouteRepeatsTheFileAndNeedsNoRestart() {
     UpdateClient updates("http://localhost:8091");
     const auto check = [&]() {
@@ -439,6 +564,108 @@ private slots:
     // Delete the file → unconfigured again, immediately.
     QVERIFY(QFile::remove(dir.filePath("version.json")));
     QCOMPARE(check().o, UpdateClient::Outcome::Unavailable);
+  }
+
+  void autoSyncPushesByItselfAfterTheDebounce() {
+    // The owner's complaint made executable: nobody clicks Sync in this
+    // test. Enable auto-sync with a tiny debounce, EDIT the data, and the
+    // service must push on its own — proven by a raw pull from a second
+    // client seeing the edit on the server.
+    //
+    // First: scrub this account's PERSISTED sync state. SyncService keeps
+    // lastRevision/dirty in QSettings per account — deliberately durable —
+    // which means a PREVIOUS test run's "kara" remembers a revision this
+    // run's fresh server has never issued. (This line exists because its
+    // absence made the test pass exactly once and fail forever after —
+    // the classic signature of state leaking across runs.)
+    QSettings settings;
+    settings.remove("sync/kara/lastRevision");
+    settings.remove("sync/kara/dirty");
+    settings.remove("sync/kara/lastSyncTime");
+
+    const QString token = loginForToken("kara", "pw");
+    QVERIFY(!token.isEmpty());
+
+    AppData data;
+    SyncClient wire("http://localhost:8091", token);
+    SyncService service(&data, &wire, "kara");
+    service.setAutoSync(true, /*debounceMs=*/150);
+
+    bool conflict = false;
+    // awaitService fires the action inside a running loop and returns when
+    // finished() lands — here the "action" is just a domain edit; the
+    // debounce timer does the rest. If nothing pushed, the 5s guard quits
+    // the loop and ok stays false.
+    const bool ok = awaitService(service, [&]() {
+        data.addCategory("Auto", QColor("#4C6FE0"));
+    }, conflict);
+    QVERIFY(ok);
+    QVERIFY(!conflict);
+    // The human clock ticked: a successful auto-push stamps lastSyncTime —
+    // the value the dialog now shows instead of "revision N".
+    QVERIFY(service.lastSyncTime().isValid());
+    QVERIFY(service.lastSyncTime().secsTo(QDateTime::currentDateTime()) < 10);
+
+    // The server heard it — a fresh client pulls the category back.
+    SyncClient verify("http://localhost:8091", token);
+    PullResult pulled = awaitPull(verify);
+    QCOMPARE(pulled.outcome, SyncClient::Outcome::Success);
+    QCOMPARE(pulled.data.value("categories").toArray().size(), 1);
+
+    // The in-flight race, made deterministic: syncNow() sends the push,
+    // and before the event loop can deliver the reply we edit again — the
+    // edit is guaranteed mid-flight. The old code marked everything clean
+    // on completion (the wire snapshot didn't contain "MidFlight", yet
+    // dirty went false — a silently unsynced edit). The fix: dirty
+    // survives, the debounce re-arms itself, and the next beat carries it.
+    // Choreography matters: syncNow() PULLS first, so an edit made right
+    // after the call lands BEFORE the push serializes — included, clean,
+    // no race (the first version of this test proved the fix wrong by
+    // testing the wrong moment). To be truly mid-flight the edit must land
+    // between the push REQUEST and its REPLY: the service announces that
+    // window ("Uploading…"), and a queued singleShot(0) from that signal
+    // runs after the request is sent but before any network reply can
+    // arrive. Deterministic, no sleeps.
+    QMetaObject::Connection midFlight = connect(
+        &service, &SyncService::statusChanged, [&](const QString& msg) {
+            if (!msg.contains(QStringLiteral("Uploading")))
+                return;
+            QObject::disconnect(midFlight); // once
+            QTimer::singleShot(0, [&data]() {
+                data.addCategory("MidFlight", QColor("#999999"));
+            });
+        });
+    // (And the sync needs something to upload — a clean service short-
+    // circuits at UpToDate and the "Uploading" window never opens. The
+    // first draft of this test failed on exactly that: it raced a push
+    // that never happened.)
+    QVERIFY(awaitService(service, [&]() {
+        data.addCategory("PreRace", QColor("#777777"));
+        service.syncNow();
+    }, conflict));
+    QVERIFY(!conflict);
+    QVERIFY(service.dirty()); // the mid-flight edit is NOT falsely "synced"
+    // The re-armed debounce pushes it without anyone asking:
+    QVERIFY(awaitService(service, [](){}, conflict));
+    QVERIFY(!service.dirty());
+    PullResult after = awaitPull(verify);
+    bool midFlightThere = false;
+    for (const QJsonValue& v : after.data.value("categories").toArray())
+        if (v.toObject().value("name").toString() == "MidFlight")
+            midFlightThere = true;
+    QVERIFY(midFlightThere);
+
+    // And a burst is ONE push, not many: three quick edits, one more
+    // finished() awaited, then the revision must have advanced exactly
+    // once more (debounce restarted per edit, fired once at the end).
+    const int revBefore = service.lastRevision();
+    const bool ok2 = awaitService(service, [&]() {
+        data.addCategory("B1", QColor("#111111"));
+        data.addCategory("B2", QColor("#222222"));
+        data.addCategory("B3", QColor("#333333"));
+    }, conflict);
+    QVERIFY(ok2);
+    QCOMPARE(service.lastRevision(), revBefore + 1);
   }
 };
 QTEST_MAIN(TestLoginLive)

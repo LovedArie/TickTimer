@@ -3,6 +3,7 @@
 #include "AgendaWidget.h"
 #include "AppData.h"
 #include "Event.h" // plan:: slot constants
+#include "Stats.h" // stats::weekStart — the one week-snap formula
 #include "Theme.h"
 #include "Widgets.h" // timeLabel, scaledFont
 
@@ -27,11 +28,25 @@ public:
         setMinimumHeight(sizeHint().height());
     }
 
+    // The axis is TOLD its window by the view — it must show exactly the
+    // range the columns show, and only the view knows the seven-day union.
+    void setWindow(int startMinutes, int endMinutes)
+    {
+        if (m_start == startMinutes && m_end == endMinutes)
+            return;
+        m_start = startMinutes;
+        m_end   = endMinutes;
+        setMinimumHeight(sizeHint().height());
+        updateGeometry();
+        update();
+    }
+
     QSize sizeHint() const override
     {
+        const int slotCount = (m_end - m_start) / plan::kSlotMinutes; // NB: "slots" is a Qt macro — never a variable name
         return {AgendaWidget::kDefaultGutter,
                 AgendaWidget::kTopPad
-                    + plan::kSlotsPerDay * AgendaWidget::kSlotHeight + 12};
+                    + slotCount * AgendaWidget::kSlotHeight + 12};
     }
 
 protected:
@@ -41,14 +56,21 @@ protected:
         p.fillRect(rect(), theme::surface()); // own every pixel we show
         p.setFont(scaledFont(font(), -1.5));
         p.setPen(theme::inkSoft());
-        for (int i = 0; i < plan::kSlotsPerDay; i += 2) { // on the hour only
+        const int slotCount = (m_end - m_start) / plan::kSlotMinutes; // NB: "slots" is a Qt macro — never a variable name
+        for (int i = 0; i < slotCount; ++i) {
+            const int minutes = m_start + i * plan::kSlotMinutes;
+            if (minutes % 60 != 0)
+                continue; // labels on the hour only, wherever the window starts
             const int y = AgendaWidget::kTopPad + i * AgendaWidget::kSlotHeight;
-            const int minutes = plan::kDayStartMinutes + i * plan::kSlotMinutes;
             p.drawText(QRect(0, y - 8, width() - 10, 16),
                        Qt::AlignRight | Qt::AlignVCenter,
                        timeLabel(minutes).remove(":00")); // "6 AM"
         }
     }
+
+private:
+    int m_start = plan::kDayStartMinutes; // full day by default, like the
+    int m_end   = plan::kDayEndMinutes;   // columns it serves
 };
 } // namespace
 
@@ -63,7 +85,8 @@ WeekAgendaView::WeekAgendaView(const AppData* data,
     grid->setHorizontalSpacing(1);
     grid->setVerticalSpacing(6);
 
-    grid->addWidget(new AgendaAxis(this), 1, 0);
+    m_axis = new AgendaAxis(this);
+    grid->addWidget(m_axis, 1, 0);
     grid->setColumnStretch(0, 0); // axis: fixed width, no stretch
 
     for (int d = 0; d < kDays; ++d) {
@@ -90,23 +113,71 @@ WeekAgendaView::WeekAgendaView(const AppData* data,
                 this, &WeekAgendaView::eventResized); // resize a block in any day
     }
 
-    // Columns paint straight from AppData; when the data changes, repaint them.
-    connect(m_data, &AppData::changed, this, [this]() {
-        for (auto* col : m_columns)
-            col->update();
-    });
+    // When the data changes, the seven-day UNION window may change (a block
+    // landed outside it) — recompute so the axis and all columns move
+    // together. Each column also repaints itself on changed(); this hook is
+    // about the shared frame, not the pixels inside it.
+    connect(m_data, &AppData::changed, this,
+            &WeekAgendaView::applyWindow);
 
     setDate(QDate::currentDate());
 }
 
+void WeekAgendaView::setVisibleWindow(int startMinutes, int endMinutes)
+{
+    if (m_prefStart == startMinutes && m_prefEnd == endMinutes)
+        return;
+    m_prefStart = startMinutes;
+    m_prefEnd   = endMinutes;
+    applyWindow();
+}
+
+void WeekAgendaView::setFirstDayOfWeek(Qt::DayOfWeek day)
+{
+    if (m_firstDay == day)
+        return;
+    m_firstDay = day;
+    // Re-snap around a day we're certainly showing, under the new rule.
+    // Force the re-snap even if the resulting start is unchanged elsewhere:
+    const QDate anchor = m_weekStart.addDays(3); // mid-week, safely inside
+    m_weekStart = QDate();                        // defeat setDate's no-op
+    setDate(anchor);
+}
+
+void WeekAgendaView::applyWindow()
+{
+    // The alignment rule of every multi-column screen: sibling columns must
+    // share ONE window or 9 AM stops being one horizontal line. Each day
+    // could stretch differently (its own out-of-window blocks), so the view
+    // takes the UNION across the seven days — computed by the SAME
+    // windowCovering every single agenda uses, just folded seven times.
+    int start = plan::kDayEndMinutes, end = plan::kDayStartMinutes;
+    for (int d = 0; d < m_columns.size(); ++d) {
+        const auto w = AgendaWidget::windowCovering(
+            m_data, m_weekStart.addDays(d), m_prefStart, m_prefEnd);
+        start = qMin(start, w.first);
+        end   = qMax(end, w.second);
+    }
+    // m_axis is stored as QWidget* because AgendaAxis is deliberately
+    // file-local (single consumer). The cast is safe by construction: this
+    // .cpp is the only code that ever assigns m_axis, three screens up.
+    static_cast<AgendaAxis*>(m_axis)->setWindow(start, end);
+    for (auto* col : m_columns)
+        col->setVisibleWindow(start, end); // union ⊇ each day's own needs,
+                                           // so per-column stretching adds 0
+}
+
 void WeekAgendaView::setDate(QDate anyDayInWeek)
 {
-    // Snap to Monday (dayOfWeek: 1 = Mon .. 7 = Sun) so the seven columns line
-    // up with the Monday-first week the stats panel below uses.
-    m_weekStart = anyDayInWeek.addDays(-(anyDayInWeek.dayOfWeek() - 1));
+    // Snap to the week's first day — Monday by default, the user's
+    // preference when a page has said otherwise. One shared formula
+    // (stats::weekStart) so this view, the review's totals, and the "Week
+    // of …" label can never disagree about what "this week" means.
+    m_weekStart = stats::weekStart(anyDayInWeek, m_firstDay);
     for (int d = 0; d < m_columns.size(); ++d)
         m_columns[d]->setDate(m_weekStart.addDays(d));
     relabelHeaders();
+    applyWindow(); // a new set of dates can mean a new union window
 }
 
 void WeekAgendaView::relabelHeaders()

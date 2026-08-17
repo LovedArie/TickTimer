@@ -67,9 +67,13 @@ LoginDialog::LoginDialog(const QString& serverUrl, QWidget* parent)
     connect(m_password, &QLineEdit::returnPressed, this, &LoginDialog::submit);
     connect(m_client,   &AuthClient::resultReady, this, &LoginDialog::onResult);
 
-    toggleMode();          // sets initial labels…
-    m_registerMode = false; // …to LOGIN (toggleMode flipped it, flip back)
-    toggleMode();
+    // Land on LOGIN first (owner request — and a bug confession: the old
+    // three-line dance here flipped the mode TWICE and ended on register,
+    // while its own comment claimed login. The UI test couldn't find a
+    // "Log in" button and we worked around the symptom instead of reading
+    // these three lines. Set the opposite, flip once: ends on login.)
+    m_registerMode = true;
+    toggleMode(); // -> false == login mode, all labels written
 }
 
 void LoginDialog::toggleMode()
@@ -117,9 +121,16 @@ QString LoginDialog::serverUrl() const
     // Forgive the most common omission: "192.168.1.20:8080" without the
     // scheme. QUrl treats a scheme-less string unpredictably; adding http://
     // here beats a "can't reach the server" that was really a parse failure.
+    // v29.0.2 — normalize where the value is BORN. v29.0.1 normalized
+    // inside AuthClient, which made login tolerate a trailing slash while
+    // quietly SAVING the raw slash into settings — arming the same bug in
+    // every downstream consumer (ShareClient found it within hours). This
+    // function is the source every save and every service inherits from;
+    // clean here means clean everywhere, forever, including consumers not
+    // written yet.
     if (!url.isEmpty() && !url.contains(QStringLiteral("://")))
         url.prepend(QStringLiteral("http://"));
-    return url;
+    return AuthClient::normalizeServerUrl(url);
 }
 
 void LoginDialog::onResult(AuthClient::Outcome outcome,
@@ -140,6 +151,12 @@ void LoginDialog::onResult(AuthClient::Outcome outcome,
         return;
     case AuthClient::Outcome::InvalidInput:
         m_status->setText(tr("Please check your details and try again."));
+        return;
+    case AuthClient::Outcome::UnknownServerReply:
+        m_status->setText(tr("The server answered, but not in a way this "
+                             "app understands. Check the server address — "
+                             "just http://host:port, nothing after it — "
+                             "and that app and server versions match."));
         return;
     case AuthClient::Outcome::NetworkError:
         // The most likely dev-time failure gets the most actionable message:

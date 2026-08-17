@@ -3,6 +3,12 @@
 
 IDI_ICON1 ICON "ticktimer.ico"
 
+// The application manifest (id 1, type 24 = RT_MANIFEST): tells Windows
+// this is a modern app needing no elevation — which switches OFF the
+// Program Compatibility Assistant heuristics that once flagged us as a
+// failed installer (see TROUBLESHOOTING: the 'updates' keyword incident).
+1 24 "ticktimer.manifest"
+
 // The numbers below come from include/Version.h — the single source of
 // truth. Bump the version THERE; this file follows automatically. (windres
 // preprocesses quoted #includes relative to this file; RC_INVOKED inside

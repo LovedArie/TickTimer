@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="468px" preserveAspectRatio="none" style="width:632px;height:468px;" version="1.1" viewBox="0 0 632 468" width="632px" zoomAndPan="magnify"><defs/><g><ellipse cx="253.75" cy="20" fill="#000000" rx="10" ry="10" style="stroke: none; stroke-width: 1.0;"/><rect fill="#FFFFFF" height="33.9688" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="178" x="164.75" y="50"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="158" x="174.75" y="71.1387">a piece, with an estimate</text><polygon fill="#EDF4F1" points="184.75,103.9688,322.75,103.9688,334.75,115.9688,322.75,127.9688,184.75,127.9688,172.75,115.9688,184.75,103.9688" style="stroke: #2F7E6E; stroke-width: 1.5;"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="138" x="184.75" y="120.123">has its own due date?</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="102" x="70.75" y="113.3745">yes — PROMOTED</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="14" x="334.75" y="113.3745">no</text><rect fill="#FFFFFF" height="61.9063" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="172" x="48" y="137.9688"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="120" x="58" y="159.1074">answers for ITSELF:</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="152" x="58" y="173.0762">own verdict, own nudge,</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="143" x="58" y="187.0449">own needs-a-block line</text><rect fill="#FFFFFF" height="61.9063" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="248" x="10" y="233.8438"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="182" x="20" y="254.9824">its minutes LEAVE the parent</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="203" x="20" y="268.9512">(subtracted from a sized parent,</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="228" x="20" y="282.9199">skipped by an unsized one's borrow)</text><rect fill="#FFFFFF" height="47.9375" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="191" x="278" y="137.9688"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="126" x="288" y="159.1074">no verdict of its own</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="171" x="288" y="173.0762">(affordability needs a date)</text><rect fill="#FFFFFF" height="61.9063" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="172" x="287.5" y="219.875"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="134" x="297.5" y="241.0137">weighs on the parent</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="141" x="297.5" y="254.9824">(inside its estimate, or</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="152" x="297.5" y="268.9512">borrowed when unsized)</text><polygon fill="#EDF4F1" points="253.75,301.75,265.75,313.75,253.75,325.75,241.75,313.75,253.75,301.75" style="stroke: #2F7E6E; stroke-width: 1.5;"/><path d="M396.25,335.75 L396.25,371.6719 L376.25,375.6719 L396.25,379.6719 L396.25,415.5938 A0,0 0 0 0 396.25,415.5938 L620.25,415.5938 A0,0 0 0 0 620.25,415.5938 L620.25,345.75 L610.25,335.75 L396.25,335.75 A0,0 0 0 0 396.25,335.75 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M610.25,335.75 L610.25,345.75 L620.25,345.75 L610.25,335.75 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="192" x="402.25" y="351.8887">Floor at zero: pieces promoted</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="203" x="402.25" y="365.8574">past the parent's estimate cede</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="198" x="402.25" y="379.8262">ALL of it — the parent falls back</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="178" x="402.25" y="393.7949">to the planned-blocks proxy,</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="132" x="402.25" y="407.7637">never goes negative.</text><rect fill="#FFFFFF" height="33.9688" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="245" x="131.25" y="358.6875"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="225" x="141.25" y="379.8262">believed total = entered total, once</text><ellipse cx="253.75" cy="446.5938" fill="#FFFFFF" rx="11" ry="11" style="stroke: #000000; stroke-width: 1.0;"/><ellipse cx="253.75" cy="446.5938" fill="#000000" rx="6" ry="6" style="stroke: #7F7F7F; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="253.75" x2="253.75" y1="30" y2="50"/><polygon fill="#616974" points="249.75,40,253.75,50,257.75,40,253.75,44" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="134" x2="134" y1="199.875" y2="233.8438"/><polygon fill="#616974" points="130,223.8438,134,233.8438,138,223.8438,134,227.8438" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="373.5" x2="373.5" y1="185.9063" y2="219.875"/><polygon fill="#616974" points="369.5,209.875,373.5,219.875,377.5,209.875,373.5,213.875" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="172.75" x2="134" y1="115.9688" y2="115.9688"/><line style="stroke: #616974; stroke-width: 1.5;" x1="134" x2="134" y1="115.9688" y2="137.9688"/><polygon fill="#616974" points="130,127.9688,134,137.9688,138,127.9688,134,131.9688" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="334.75" x2="373.5" y1="115.9688" y2="115.9688"/><line style="stroke: #616974; stroke-width: 1.5;" x1="373.5" x2="373.5" y1="115.9688" y2="137.9688"/><polygon fill="#616974" points="369.5,127.9688,373.5,137.9688,377.5,127.9688,373.5,131.9688" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="134" x2="134" y1="295.75" y2="313.75"/><line style="stroke: #616974; stroke-width: 1.5;" x1="134" x2="241.75" y1="313.75" y2="313.75"/><polygon fill="#616974" points="231.75,309.75,241.75,313.75,231.75,317.75,235.75,313.75" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="373.5" x2="373.5" y1="281.7813" y2="313.75"/><line style="stroke: #616974; stroke-width: 1.5;" x1="373.5" x2="265.75" y1="313.75" y2="313.75"/><polygon fill="#616974" points="275.75,309.75,265.75,313.75,275.75,317.75,271.75,313.75" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="253.75" x2="253.75" y1="83.9688" y2="103.9688"/><polygon fill="#616974" points="249.75,93.9688,253.75,103.9688,257.75,93.9688,253.75,97.9688" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="253.75" x2="253.75" y1="325.75" y2="358.6875"/><polygon fill="#616974" points="249.75,348.6875,253.75,358.6875,257.75,348.6875,253.75,352.6875" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="253.75" x2="253.75" y1="392.6563" y2="435.5938"/><polygon fill="#616974" points="249.75,425.5938,253.75,435.5938,257.75,425.5938,253.75,429.5938" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[d8c0bf75cbaf77abd114ff368f95e68c]
+@startuml piece_promotion
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+
+start
+:a piece, with an estimate;
+if (has its own due date?) then (yes — PROMOTED)
+  :answers for ITSELF:
+  own verdict, own nudge,
+  own needs-a-block line;
+  :its minutes LEAVE the parent
+  (subtracted from a sized parent,
+  skipped by an unsized one's borrow);
+else (no)
+  :no verdict of its own
+  (affordability needs a date);
+  :weighs on the parent
+  (inside its estimate, or
+  borrowed when unsized);
+endif
+:believed total = entered total, once;
+note right
+  Floor at zero: pieces promoted
+  past the parent's estimate cede
+  ALL of it — the parent falls back
+  to the planned-blocks proxy,
+  never goes negative.
+end note
+stop
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

@@ -1,0 +1,44 @@
+%% Settings & the visible window — how a preference travels (v19.3)
+%%
+%% Read top to bottom: the user's choice is WRITTEN once, then PULLED by
+%% the one page-level choke point and TOLD to every widget that cares.
+%% Note what never appears on this diagram: AppData / data.json — a
+%% preference cannot dirty the planner, trigger a save, or sync.
+flowchart TB
+    subgraph glass["The glass"]
+        SD["SettingsDialog<br/><i>⚙ combos; writes on OK only</i>"]
+        MW["MainWindow<br/><i>opens dialog; on accept →<br/>planner.applyDisplayPrefs()</i>"]
+    end
+
+    QS[("QSettings<br/><b>agenda/startMinutes · endMinutes<br/>week/firstDay</b><br/><i>taste — per machine, never synced</i>")]
+
+    PP["PlannerPage::applyDisplayPrefs()<br/><i>the ONE QSettings reader —<br/>widgets are told, they never read</i>"]
+
+    subgraph hours["agenda hours (display window)"]
+        AW["AgendaWidget (day)<br/><i>setVisibleWindow</i>"]
+        WV["WeekAgendaView<br/><i>7-day UNION via<br/>windowCovering → axis + columns</i>"]
+    end
+
+    subgraph week["week start (Mon / Sun)"]
+        WR["WeekReviewPage<br/><i>summarizeWeek(…, firstDay)</i>"]
+        MG["MonthGrid<br/><i>column of the 1st + headers</i>"]
+        LB["“Week of …” label<br/><i>stats::weekStart</i>"]
+    end
+
+    CD["CompareDialog<br/><i>session glass: reads prefs itself;<br/>2-dataset UNION via windowCovering</i>"]
+
+    COV(["AgendaWidget::windowCovering<br/><b>pure, static, shared</b><br/>preference ∪ the date's events<br/>= “data always wins”"])
+
+    MW -->|"exec()"| SD
+    SD -->|"OK → save()"| QS
+    MW -->|"accept() → pull"| PP
+    QS -.->|"read"| PP
+    QS -.->|"read"| CD
+    PP -->|"setVisibleWindow"| AW
+    PP -->|"setVisibleWindow + setFirstDayOfWeek"| WV
+    PP -->|"setFirstDayOfWeek"| WR
+    PP -->|"setFirstDayOfWeek"| MG
+    PP -->|"m_firstDay"| LB
+    AW -.->|"per-date range"| COV
+    WV -.->|"×7 dates → union"| COV
+    CD -.->|"×2 datasets → union"| COV

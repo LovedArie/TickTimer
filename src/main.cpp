@@ -7,6 +7,7 @@
 // the ignition.
 // ---------------------------------------------------------------------------
 
+#include "LlmProvider.h"
 #include "LoginDialog.h"
 #include "MainWindow.h"
 #include "Theme.h"
@@ -18,15 +19,39 @@ int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
 
-    // This name is not decoration: QStandardPaths uses it to build the
-    // data folder (…/AppData/Roaming/TimeFocusTracker on Windows). Set it
-    // BEFORE anything asks for a path. We deliberately set only the
-    // APPLICATION name — AppDataLocation is "<organization>/<application>",
-    // so setting both to the same string would double the folder
-    // (TickTimer/TickTimer). Caught in testing. Renaming this
-    // string moves the data folder — JsonStore::migrateLegacyData is
-    // the bridge that keeps existing data reachable after the rename.
+    // These names are not decoration: QStandardPaths builds the data folder
+    // from them, and QSettings builds its storage path from them. Set them
+    // BEFORE anything asks for a path.
+    //
+    // A short archaeology, because this block has now bitten twice:
+    //   * Originally only the APPLICATION name was set, with a warning that
+    //     naming the organization too would "double the folder
+    //     (TickTimer/TickTimer)". True — and the price of that choice was an
+    //     ANONYMOUS QSettings path, which on some Windows machines silently
+    //     drops writes (the un-tickable pomodoro checkbox; the un-openable
+    //     review gate — v22.7's field bug).
+    //   * v22.7 added the organization name to cure the settings — and
+    //     walked straight into the documented folder-doubling: the data
+    //     folder moved one level deeper, the app opened an empty home, and
+    //     the owner met a blank planner ("my data is completely erased" —
+    //     it never was; the file sat untouched at the old address).
+    //   * v22.8 keeps the organization name and pays its real cost:
+    //     JsonStore::migrateLegacyData — the bridge the original comment
+    //     itself prescribed for renames — now carries every data*.json from
+    //     the old home into the new one (copy, never move, never overwrite).
+    //
+    // The lesson, at the site of the wound: a comment that says "caught in
+    // testing" is a tripwire, and the patch that steps past it owes the
+    // reader either a migration or an apology. This one now ships both.
+    QApplication::setOrganizationName(QStringLiteral("TickTimer"));
     QApplication::setApplicationName(QStringLiteral("TickTimer"));
+
+    // v24: v21's single-vendor AI settings ("ai/anthropicApiKey", a global
+    // "ai/model") become per-provider entries. One line, once, immediately
+    // after the settings PATH exists and before anything reads a preference —
+    // the same placement rule JsonStore::migrateLegacyData earned the hard
+    // way. Idempotent, so a second launch is a no-op.
+    ai::migrateLegacySettings();
 
     // One call pins the ENTIRE look: Fusion style, our light palette, and
     // the stylesheet. All three together, always — v3 set only the

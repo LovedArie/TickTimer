@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4A505A"/>
+    </marker>
+    <marker id="arrsoft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8A9098"/>
+    </marker>
+  </defs>
+  <style>
+    .box   { fill:#FFFFFF; stroke:#4A505A; stroke-width:1.4; }
+    .eng   { fill:#EAF5F1; stroke:#2F7E6E; stroke-width:1.8; }
+    .store { fill:#FFF7E6; stroke:#B8860B; stroke-width:1.4; }
+    .group { fill:#F7F8F6; stroke:#C9CFC6; stroke-width:1; stroke-dasharray:5 4; }
+    .t     { font-size:12.5px; fill:#2A2F36; }
+    .b     { font-size:13px; font-weight:700; fill:#2A2F36; }
+    .s     { font-size:11px; fill:#616974; font-style:italic; }
+    .lbl   { font-size:10.5px; fill:#4A505A; }
+    .soft  { stroke:#8A9098; stroke-width:1.3; stroke-dasharray:5 4; fill:none; }
+    .hard  { stroke:#4A505A; stroke-width:1.5; fill:none; }
+  </style>
+
+  <text x="20" y="28" class="b" font-size="16">The Pomodoro grown up — one clock, many faces (v19.4)</text>
+  <text x="20" y="46" class="s">solid = commands in · dashed = signals out · the engine owns the only truth; everything else paints it or adapts it</text>
+
+  <!-- engine -->
+  <rect x="270" y="66" width="420" height="86" rx="14" class="eng"/>
+  <text x="480" y="90" class="b" text-anchor="middle">PomodoroEngine  (service, owned by MainWindow)</text>
+  <text x="480" y="108" class="t" text-anchor="middle">phase · round · remaining · running · engaged</text>
+  <text x="480" y="126" class="s" text-anchor="middle">tickOneSecond() — QTimer in production, tests call it raw</text>
+  <text x="480" y="142" class="s" text-anchor="middle">signal grains: changed (tick) · modeChanged (transition) · phaseEnded (zero)</text>
+
+  <!-- faces group -->
+  <rect x="20" y="220" width="440" height="180" rx="12" class="group"/>
+  <text x="34" y="240" class="s">faces — views with no state of their own</text>
+
+  <rect x="40" y="252" width="190" height="130" rx="10" class="box"/>
+  <text x="135" y="276" class="b" text-anchor="middle">PomodoroPage</text>
+  <text x="135" y="294" class="s" text-anchor="middle">ring · dots · durations</text>
+  <text x="135" y="309" class="s" text-anchor="middle">+ the two new checkboxes</text>
+  <text x="135" y="327" class="s" text-anchor="middle">owns every QSettings</text>
+  <text x="135" y="342" class="s" text-anchor="middle">read/write for the Pomodoro</text>
+
+  <rect x="250" y="252" width="190" height="130" rx="10" class="box"/>
+  <text x="345" y="276" class="b" text-anchor="middle">PomodoroMiniWindow</text>
+  <text x="345" y="294" class="s" text-anchor="middle">frameless · draggable</text>
+  <text x="345" y="309" class="s" text-anchor="middle">stays on top of every app</text>
+  <text x="345" y="327" class="s" text-anchor="middle">▶/⏸ · “Focus ›” = skip · mm:ss</text>
+  <text x="345" y="342" class="s" text-anchor="middle">position remembered</text>
+
+  <!-- notifier -->
+  <rect x="700" y="230" width="240" height="110" rx="10" class="box"/>
+  <text x="820" y="254" class="b" text-anchor="middle">MainWindow notifier</text>
+  <text x="820" y="272" class="s" text-anchor="middle">painted tray icon (no resource)</text>
+  <text x="820" y="287" class="s" text-anchor="middle">beep + desktop toast</text>
+  <text x="820" y="302" class="s" text-anchor="middle">notify pref read AT FIRE TIME</text>
+  <text x="820" y="317" class="s" text-anchor="middle">tray click raises the window</text>
+
+  <!-- link -->
+  <rect x="490" y="430" width="230" height="96" rx="10" class="box"/>
+  <text x="605" y="450" class="b" text-anchor="middle">PomodoroLink (adapter)</text>
+  <text x="605" y="468" class="t" text-anchor="middle">you pick the block, it picks the kind —</text>
+  <text x="605" y="484" class="t" text-anchor="middle">and adopts the block under the clock on ▶</text>
+  <text x="605" y="502" class="s" text-anchor="middle">paused→distracted · reset→hands off ·</text>
+  <text x="605" y="516" class="s" text-anchor="middle">Stop outranks; only play edges adopt</text>
+
+  <!-- tracker -->
+  <rect x="760" y="430" width="180" height="96" rx="10" class="box"/>
+  <text x="850" y="454" class="b" text-anchor="middle">TrackerService</text>
+  <text x="850" y="472" class="s" text-anchor="middle">Focusing / OnBreak /</text>
+  <text x="850" y="487" class="s" text-anchor="middle">Distracted — on the block</text>
+  <text x="850" y="502" class="s" text-anchor="middle">YOU chose (canTrackNow</text>
+  <text x="850" y="517" class="s" text-anchor="middle">guards every switch)</text>
+
+  <!-- QSettings -->
+  <rect x="40" y="470" width="300" height="80" rx="16" class="store"/>
+  <text x="190" y="494" class="b" text-anchor="middle">QSettings</text>
+  <text x="190" y="512" class="t" text-anchor="middle">durations · notify · drive · mini pos</text>
+  <text x="190" y="530" class="s" text-anchor="middle">the page is the only writer</text>
+
+  <!-- edges: faces -> engine (commands) -->
+  <path class="hard" d="M150,252 C170,205 260,175 300,152" marker-end="url(#arr)"/>
+  <text x="150" y="196" class="lbl">toggle / reset / skip / setDurations</text>
+  <path class="hard" d="M355,252 C370,225 400,185 430,152" marker-end="url(#arr)"/>
+  <text x="400" y="212" class="lbl">toggle / skip</text>
+
+  <!-- edges: engine -> faces (changed) -->
+  <path class="soft" d="M290,140 C220,175 175,215 160,252" marker-end="url(#arrsoft)"/>
+  <text x="120" y="176" class="lbl">changed() — every tick</text>
+  <path class="soft" d="M390,152 C380,190 370,220 362,252" marker-end="url(#arrsoft)"/>
+
+  <!-- engine -> notifier -->
+  <path class="soft" d="M690,120 C790,140 820,180 822,230" marker-end="url(#arrsoft)"/>
+  <text x="700" y="180" class="lbl">phaseEnded() — countdown hit 0</text>
+  <text x="700" y="194" class="lbl">(skip stays deliberately silent)</text>
+
+  <!-- engine -> link -->
+  <path class="soft" d="M560,152 C590,250 600,340 604,430" marker-end="url(#arrsoft)"/>
+  <text x="590" y="300" class="lbl">modeChanged() —</text>
+  <text x="590" y="314" class="lbl">transitions only, never ticks</text>
+
+  <!-- link -> tracker -->
+  <path class="hard" d="M720,470 H760" marker-end="url(#arr)"/>
+  <text x="612" y="546" class="lbl">startFocus / startBreak / startDistracted — adopts only liveEventNow, only on ▶; never stops</text>
+
+  <!-- tracker -> link (join edge) -->
+  <path class="soft" d="M800,430 C770,400 700,395 660,430" marker-end="url(#arrsoft)"/>
+  <text x="672" y="384" class="lbl">Idle→tracking edge: a join snaps in ·</text>
+  <text x="672" y="398" class="lbl">trackedBlockEnded → pause the engine</text>
+  <text x="672" y="412" class="lbl">(the one tracker→engine message)</text>
+
+  <!-- page -> settings / link -->
+  <path class="hard" d="M140,382 C150,415 170,440 180,470" marker-end="url(#arr)"/>
+  <text x="70" y="430" class="lbl">reads + writes</text>
+  <path class="hard" d="M230,360 C360,420 430,450 490,468" marker-end="url(#arr)"/>
+  <text x="300" y="425" class="lbl">setEnabled(pref) — told, not read</text>
+</svg>

@@ -9,11 +9,13 @@
 #include <QVBoxLayout>
 
 SharingDialog::SharingDialog(ShareClient* client, AppData* myData,
-                             TrackerService* tracker, QWidget* parent)
+                             TrackerService* tracker, const QString& myName,
+                             QWidget* parent)
     : QDialog(parent)
     , m_client(client)
     , m_myData(myData)
     , m_tracker(tracker)
+    , m_myName(myName)
 {
     setWindowTitle(tr("Share & compare"));
     setModal(true);
@@ -90,6 +92,12 @@ SharingDialog::SharingDialog(ShareClient* client, AppData* myData,
                     m_status->setText(tr("No account with that name — "
                                          "check the spelling."));
                     break;
+                case ShareClient::Outcome::UnexpectedReply:
+                    m_status->setText(tr("The server answered unexpectedly "
+                                         "— check the server address (just "
+                                         "http://host:port) and that app "
+                                         "and server versions match."));
+                    break;
                 case ShareClient::Outcome::AuthError:
                     m_status->setText(tr("Session expired — please restart "
                                          "the app and log in again."));
@@ -125,6 +133,19 @@ SharingDialog::SharingDialog(ShareClient* client, AppData* myData,
                 if (outcome != ShareClient::Outcome::Success) {
                     m_status->setText(tr("Could not fetch %1's planner.")
                                           .arg(user));
+                    return;
+                }
+                if (data.isEmpty()) {
+                    // The server can only hand out what the peer has PUSHED
+                    // — sync is a manual button. An empty blob means "never
+                    // synced", and opening a blank planning screen would
+                    // let that read as "has no plans". Say the true thing
+                    // instead. (The owner hit exactly this; the app knew
+                    // and didn't say — never again.)
+                    m_status->setText(
+                        tr("%1 hasn't synced a planner yet — ask them to "
+                           "press Sync first, then try Compare again.")
+                            .arg(user));
                     return;
                 }
                 m_status->clear();
@@ -208,6 +229,6 @@ void SharingDialog::openCompare(const QString& user,
 {
     // Stack dialog parented to US — we outlive its exec() by definition
     // (the A1 rule: a stack dialog's parent must be guaranteed to survive it).
-    CompareDialog dialog(m_myData, m_tracker, user, peerBlob, this);
+    CompareDialog dialog(m_myData, m_tracker, m_myName, user, peerBlob, this);
     dialog.exec();
 }

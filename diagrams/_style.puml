@@ -1,0 +1,73 @@
+' ---------------------------------------------------------------------------
+' _style.puml — the shared look of every TickTimer diagram.
+' An INCLUDE, not a diagram: every .puml starts with `!include _style.puml`;
+' edit here to restyle all of them at once. Do not render this file directly.
+'
+' Restored in v24: the diagrams README documented this file and every diagram
+' included it, but it was missing from the tree — `plantuml *.puml` failed on
+' all of them. (Doc said one thing, disk said another; same drift family as
+' the v23 roadmap line. Grep, not memory.)
+'
+' Palette = the app's own (Theme.h): focus green #2F7E6E, danger red #C25B54,
+' ink grey #616974 — so a diagram of the app looks like the app.
+' ---------------------------------------------------------------------------
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+' Named colours for inline use in diagrams:
+'   #EDF4F1 tinted panel (focus-green wash)   #2F7E6E focus green
+'   #F7E9E8 danger wash                       #C25B54 danger red
+'   #616974 ink grey

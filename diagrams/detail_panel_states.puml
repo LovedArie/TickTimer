@@ -1,0 +1,43 @@
+@startuml detail_panel_states
+' ---------------------------------------------------------------------------
+' detail_panel_states — v28.6, the docked panel's guard machine.
+'
+' The picture to hold: there is NO arrow out of "Dirty" that skips the
+' prompt. Switching tasks, piece clicks, the breadcrumb, the X, and Esc
+' all funnel through the same Save/Discard/Stay question — no silent
+' discard path exists, which is the explicit-save contract in one glance.
+' The modal dialog's path (runTaskDetail's fallback) is the OLD sequence
+' diagram, piece_detail_sequence.*, unchanged.
+'
+' Referenced from design-addendum-detail-panel.md §B.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+[*] --> Closed
+Closed --> Clean : openTask(id)\n(slide in, fresh form, markClean)
+
+Clean --> Dirty : any edit\n(Save button lights)
+Dirty --> Clean : Save clicked\n(apply, reseed, "Saved ✓")
+
+Clean --> Clean : navigate / switch task\n(swap in place, no question)
+Clean --> Closed : ✕, Esc, or\nclick outside (scrim)
+
+Dirty --> Prompt : navigate, switch,\n✕, Esc, or click outside
+Prompt --> Clean : Save\n(apply, then proceed)
+Prompt --> Clean : Discard\n(proceed, nothing written)
+Prompt --> Dirty : Stay\n(the click did nothing)
+
+note right of Prompt
+  Save / Discard / Stay.
+  Save is the DEFAULT button:
+  Enter never destroys work.
+end note
+
+note right of Clean
+  changed() while clean:
+  reseed to the new truth.
+  While dirty: the user's
+  edits win; Save writes last.
+end note
+
+@enduml

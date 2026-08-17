@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="361px" preserveAspectRatio="none" style="width:1067px;height:361px;" version="1.1" viewBox="0 0 1067 361" width="1067px" zoomAndPan="magnify"><defs/><g><ellipse cx="16" cy="180" fill="#000000" rx="10" ry="10" style="stroke: none; stroke-width: 1.0;"/><rect fill="#FFFFFF" height="50" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="62" x="43" y="300"/><line style="stroke: #616974; stroke-width: 1.5;" x1="43" x2="105" y1="323.9688" y2="323.9688"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="42" x="53" y="316.1387">Closed</text><rect fill="#FFFFFF" height="50" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="55" x="251.5" y="155"/><line style="stroke: #616974; stroke-width: 1.5;" x1="251.5" x2="306.5" y1="178.9688" y2="178.9688"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="35" x="261.5" y="171.1387">Clean</text><rect fill="#FFFFFF" height="50" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="50" x="696" y="300"/><line style="stroke: #616974; stroke-width: 1.5;" x1="696" x2="746" y1="323.9688" y2="323.9688"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="28" x="707" y="316.1387">Dirty</text><rect fill="#FFFFFF" height="50" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="65" x="626.5" y="9"/><line style="stroke: #616974; stroke-width: 1.5;" x1="626.5" x2="691.5" y1="32.9688" y2="32.9688"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="45" x="636.5" y="25.1387">Prompt</text><path d="M727,12 L727,30 L691.62,34 L727,38 L727,55.9063 A4,4 0 0 0 731,59.9063 L921,59.9063 A4,4 0 0 0 925,55.9063 L925,18 L915,8 L731,8 A4,4 0 0 0 727,12 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M915,8 L915,16 A2,2 0 0 0 917,18 L925,18 L915,8 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="132" x="733" y="24.1387">Save / Discard / Stay.</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="177" x="733" y="38.1074">Save is the DEFAULT button:</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="168" x="733" y="52.0762">Enter never destroys work.</text><path d="M533,151 L533,176 L306.79,180 L533,184 L533,208.875 A4,4 0 0 0 537,212.875 L715,212.875 A4,4 0 0 0 719,208.875 L719,157 L709,147 L537,147 A4,4 0 0 0 533,151 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M709,147 L709,155 A2,2 0 0 0 711,157 L719,157 L709,147 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="142" x="539" y="163.1387">changed() while clean:</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="154" x="539" y="177.1074">reseed to the new truth.</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="135" x="539" y="191.0762">While dirty: the user's</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="165" x="539" y="205.0449">edits win; Save writes last.</text><!--MD5=[51ad14c1b253b1d0cbc31b222ac7a4ed]
+link *start to Closed--><path d="M17.2,190.18 C19.59,206.71 25.8,242.33 38,270 C41.83,278.7 47.05,287.53 52.32,295.46 " fill="none" id="*start-&gt;Closed" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="55.25,299.77,53.5015,290.0776,52.4404,295.634,46.884,294.573,55.25,299.77" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[8f30bc430db4ad1796e58a4d2b65919f]
+link Closed to Clean--><path d="M105.18,313.14 C129.73,303.79 164.17,288.82 191,270 C215.48,252.83 239.06,228.41 255.65,209.49 " fill="none" id="Closed-&gt;Clean" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="259.29,205.29,250.3621,209.4484,256.0056,209.06,256.394,214.7035,259.29,205.29" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="73" x="281" y="254.2104">openTask(id)</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="187" x="224" y="267.0151">(slide in, fresh form, markClean)</text><!--MD5=[6788db2615a84a3d36a130024ecacaa7]
+link Clean to Closed--><path d="M251.24,184.97 C198.98,193.08 89.25,213.31 67,243 C56.11,257.54 57.93,277.93 62.45,294.61 " fill="none" id="Clean-&gt;Closed" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="63.92,299.66,65.24,289.9,62.52,294.86,57.56,292.14,63.92,299.66" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="57" x="96.5" y="254.2104">✕, Esc, or</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="114" x="68" y="267.0151">click outside (scrim)</text><!--MD5=[d99d68dad82dc449fe7e48ffcbf704ca]
+link Clean to Dirty--><path d="M306.73,184.46 C376.64,193.43 558.46,218.5 614,243 C615.12,243.49 660.57,278.01 691.87,301.82 " fill="none" id="Clean-&gt;Dirty" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="695.99,304.96,691.259,296.3218,692.0142,301.9281,686.4079,302.6832,695.99,304.96" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="45" x="683" y="254.2104">any edit</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="111" x="650" y="267.0151">(Save button lights)</text><!--MD5=[5c3339572d29bbf1f7645f7e2b96aa03]
+link Dirty to Clean--><path d="M695.95,323.1 C646.8,320.46 535.23,310.15 452,270 C435.24,261.91 435.79,252.85 420,243 C385.04,221.2 341.08,203.18 311.62,192.29 " fill="none" id="Dirty-&gt;Clean" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="306.66,190.47,313.7194,197.3377,311.351,192.2005,316.4882,189.8321,306.66,190.47" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="70" x="494" y="254.2104">Save clicked</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="152" x="453" y="267.0151">(apply, reseed, "Saved ✓")</text><!--MD5=[d2bf857e2a667a511ba2bbbf8a82c49a]
+link Clean to Clean--><path d="M306.63,166.88 C324.4,163.45 341.5,167.83 341.5,180 C341.5,191.03 327.46,195.66 311.6,193.88 " fill="none" id="Clean-&gt;Clean" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="306.63,193.12,314.9206,198.4366,311.5724,193.8771,316.1319,190.5288,306.63,193.12" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="124" x="366" y="177.7104">navigate / switch task</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="161" x="347.5" y="190.5151">(swap in place, no question)</text><!--MD5=[468f0b35b30b411b26c5fff1f5fd627c]
+link Dirty to Prompt--><path d="M746.2,301.68 C754.48,292.76 762.66,281.79 767,270 C795.02,193.89 781.12,158.06 737,90 C727.04,74.63 711.13,62.27 696.27,53.2 " fill="none" id="Dirty-&gt;Prompt" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="691.7,50.49,697.391,58.5282,695.9975,53.0457,701.48,51.6522,691.7,50.49" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="96" x="799.5" y="177.7104">navigate, switch,</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="131" x="782" y="190.5151">✕, Esc, or click outside</text><!--MD5=[305dbe8bab015e294ebcb99d2e2462be]
+link Prompt to Dirty--><path d="M691.77,51.46 C697.8,54.38 704.06,57.33 710,60 C802.89,101.77 865.28,62.41 922,147 C938.34,171.36 936.91,187.74 922,213 C884.76,276.1 797.38,305.81 751.06,317.55 " fill="none" id="Prompt-&gt;Dirty" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="746.16,318.76,755.8614,320.4577,751.0107,317.5473,753.9211,312.6966,746.16,318.76" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="25" x="982" y="177.7104">Stay</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="121" x="934" y="190.5151">(the click did nothing)</text><!--MD5=[7f1487b7ff851e23de5076ff2da1fccb]
+link Prompt to Clean--><path d="M626.32,38.01 C577.03,43.44 481.5,57.51 407,90 C371.35,105.55 335.4,131.68 310.71,151.62 " fill="none" id="Prompt-&gt;Clean" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="306.54,155.01,316.0427,152.422,310.4149,151.85,310.9868,146.2222,306.54,155.01" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="28" x="454.5" y="101.2104">Save</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="121" x="408" y="114.0151">(apply, then proceed)</text><!--MD5=[7f1487b7ff851e23de5076ff2da1fccb]
+link Prompt to Clean--><path d="M628.85,59.05 C604.53,77.36 568.76,101.91 534,117 C458.19,149.91 361.79,167.31 312.04,174.66 " fill="none" id="Prompt-&gt;Clean-1" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="306.79,175.42,316.2771,178.0648,311.7366,174.6909,315.1105,170.1503,306.79,175.42" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="43" x="633" y="101.2104">Discard</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="147" x="581" y="114.0151">(proceed, nothing written)</text><!--MD5=[421ef2573e566d7ebc5f3a1565aea9b7]
+@startuml detail_panel_states
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+
+[*] - -> Closed
+Closed - -> Clean : openTask(id)\n(slide in, fresh form, markClean)
+
+Clean - -> Dirty : any edit\n(Save button lights)
+Dirty - -> Clean : Save clicked\n(apply, reseed, "Saved ✓")
+
+Clean - -> Clean : navigate / switch task\n(swap in place, no question)
+Clean - -> Closed : ✕, Esc, or\nclick outside (scrim)
+
+Dirty - -> Prompt : navigate, switch,\n✕, Esc, or click outside
+Prompt - -> Clean : Save\n(apply, then proceed)
+Prompt - -> Clean : Discard\n(proceed, nothing written)
+Prompt - -> Dirty : Stay\n(the click did nothing)
+
+note right of Prompt
+  Save / Discard / Stay.
+  Save is the DEFAULT button:
+  Enter never destroys work.
+end note
+
+note right of Clean
+  changed() while clean:
+  reseed to the new truth.
+  While dirty: the user's
+  edits win; Save writes last.
+end note
+
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

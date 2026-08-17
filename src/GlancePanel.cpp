@@ -1,7 +1,8 @@
 #include "GlancePanel.h"
 
-#include "ReviewWidgets.h" // CategoryPie — one pie widget, every screen
 
+#include "CatchUpCard.h"
+#include "NeedsBlockCard.h"
 #include "Theme.h"
 #include "Widgets.h"
 #include "AppData.h"
@@ -28,49 +29,141 @@ GlancePanel::GlancePanel(const AppData* data, const TrackerService* tracker,
 
     auto* title = new QLabel(tr("At a glance"), this);
     title->setObjectName("h2");
-    auto* sub = new QLabel(
+    m_sub = new QLabel(
         tr("Calculated live from what you tracked — nothing is stored twice."),
         this);
-    sub->setObjectName("sub");
-    sub->setWordWrap(true);
+    m_sub->setObjectName("sub");
+    m_sub->setWordWrap(true);
 
-    m_focusBox = new StatBox(tr("Focused"), theme::focus(), this);
-    m_breakBox = new StatBox(tr("Break"), theme::brk(), this);
+    // The review card sits ABOVE the numbers and, when the gate is closed,
+    // INSTEAD of them (needs-a-block §E). Its action signals are forwarded
+    // verbatim: this panel is a const view and decides nothing.
+    m_needsBlock = new NeedsBlockCard(m_data, this);
+    connect(m_needsBlock, &NeedsBlockCard::planTaskRequested,
+            this, &GlancePanel::planTaskRequested);
+    connect(m_needsBlock, &NeedsBlockCard::editDeadlineRequested,
+            this, &GlancePanel::editDeadlineRequested);
+    connect(m_needsBlock, &NeedsBlockCard::notUrgentRequested,
+            this, &GlancePanel::notUrgentRequested);
+    connect(m_needsBlock, &NeedsBlockCard::dismissRequested,
+            this, &GlancePanel::dismissRequested);
+    connect(m_needsBlock, &NeedsBlockCard::bringBackRequested,
+            this, &GlancePanel::bringBackRequested);
+    // "Show my day" only changed per-device QSettings — no changed() will
+    // fire, so the card asks for the re-derive itself.
+    connect(m_needsBlock, &NeedsBlockCard::reviewed,
+            this, &GlancePanel::refresh);
+
+    // Everything the gate can hold back lives in ONE container, so the
+    // gate is a single setVisible — not a dozen widgets each remembering
+    // to hide. (Named for the test suite: it finds the gate by finding
+    // this widget.)
+    m_dayContent = new QWidget(this);
+    m_dayContent->setObjectName("glanceContent");
+    auto* content = new QVBoxLayout(m_dayContent);
+    content->setContentsMargins(0, 0, 0, 0);
+    content->setSpacing(10);
+
+    m_focusBox = new StatBox(tr("Focused"), theme::focus(), m_dayContent);
+    m_breakBox = new StatBox(tr("Break"), theme::brk(), m_dayContent);
     // Distracted gets its own box (owner request — break is CHOSEN rest,
     // distraction is off-task drift; folding them together hides the one
     // number this app exists to expose). Same danger hue the block bars
     // already use — one colour per meaning, everywhere.
-    m_distractedBox = new StatBox(tr("Distracted"), theme::danger(), this);
+    m_distractedBox = new StatBox(tr("Distracted"), theme::danger(),
+                                  m_dayContent);
     auto* statRow = new QHBoxLayout;
     statRow->addWidget(m_focusBox);
     statRow->addWidget(m_breakBox);
     statRow->addWidget(m_distractedBox);
 
-    m_bars = new CategoryBars(this);
+    m_bars = new CategoryBars(m_dayContent);
 
-    // The day's pie (owner request), reusing the week review's CategoryPie
-    // — one chart widget, every screen. No legend of its own: the BARS
-    // above are the legend (same rows, same colours, same order), which is
-    // why the pie must be fed exactly the rows the bars show.
-    m_pie = new CategoryPie(this);
-
-    m_encourage = new QLabel(this);
+    // The pie RETIRED here in v26.7 (glance de-crowding, catch-up §K.5):
+    // it was the same split the bars already show, rendered a third time —
+    // the bars were literally its legend, which is a chart confessing it
+    // adds no information. CategoryPie itself lives on in the week and
+    // month reviews, where it isn't sitting next to its own data.
+    m_encourage = new QLabel(m_dayContent);
     m_encourage->setObjectName("encourage");
     m_encourage->setWordWrap(true);
 
-    layout->addWidget(title);
-    layout->addWidget(sub);
-    layout->addLayout(statRow);
-    layout->addWidget(m_bars);
+    content->addLayout(statRow);
+    content->addWidget(m_bars);
+        content->addWidget(m_encourage);
+    // Top-pack the day content INSIDE its own container: the container is
+    // about to take the panel-level stretch (below), and without this its
+    // stats would drift apart to fill the room instead of staying compact.
+    content->addStretch(1);
+
+    // The catch-up strip (v26.2 §K). Built here, placed BELOW the review
+    // card: the gate may hold the day's numbers hostage, the strip may not,
+    // and stacking them this way keeps the blocking question first.
+    m_catchUp = new CatchUpCard(m_data, this);
+    connect(m_catchUp, &CatchUpCard::acceptProposalRequested,
+            this, &GlancePanel::catchUpAcceptRequested);
+    connect(m_catchUp, &CatchUpCard::resolveRequested,
+            this, &GlancePanel::catchUpResolveRequested);
+    connect(m_catchUp, &CatchUpCard::showDayRequested,
+            this, &GlancePanel::catchUpShowDayRequested);
+    connect(m_catchUp, &CatchUpCard::resolveAllRequested,
+            this, &GlancePanel::catchUpResolveAllRequested);
+
+    // The REVIEW ROW (v26.7.1): both review features share one horizontal
+    // line, which is what makes their pills read as one grammar instead of
+    // two stacked dialects (the owner's screenshot). The needs-block card
+    // takes the row's width — its gate and pinned rows need room — and the
+    // catch-up chip sits beside it, top-aligned.
+    //
+    // ADJACENT, not book-ended (v26.7.2): the first cut gave the
+    // needs-block card the row's stretch, which shoved the chip to the far
+    // edge — two objects pinned to opposite walls FRAME the void between
+    // them, and the eye pays for every comparison with a saccade across
+    // dead space (the owner felt it as fatigue). Both cards now size to
+    // their hints and pack left; ONE trailing stretch owns the slack.
+    //
+    // KNOWN SQUEEZE, accepted: when the strip mode shows pinned hero rows
+    // (rung-2 escalations — rare), the card's hint widens and the HBox
+    // squeezes it against the chip inside the 320px panel. Common case is
+    // exactly the prototype; the rare case is cramped but functional. If
+    // escalations turn out frequent, the fix is stacking when pinned rows
+    // exist — a decision waiting, not a surprise.
+    // ORDER AND STRETCH, third and final cut (v26.7.4). The needs-block
+    // card wraps its content in a QScrollArea, and a scroll area's
+    // sizeHint is a CACHED GUESS (the v22 scar, biting again): sized to
+    // that hint in a row, the card came out narrow and CLIPPED its own
+    // pill mid-word. The rule that ends the whack-a-mole: in a row, the
+    // widget with the unreliable hint takes the stretch — it absorbs the
+    // hint's error along with the slack — and honest-hint widgets (the
+    // chip is a plain button) pack first. The card's internal left-pack
+    // then puts its pill flush after the chip: adjacent pills, slack at
+    // the far right, nothing clipped, and gate mode still owns the full
+    // row because the chip hides while the gate is closed.
+    m_reviewRow = new QWidget(this);
     {
-        auto* pieRow = new QHBoxLayout;   // centred, not stretched
-        pieRow->addStretch(1);
-        pieRow->addWidget(m_pie);
-        pieRow->addStretch(1);
-        layout->addLayout(pieRow);
+        auto* rowLay = new QHBoxLayout(m_reviewRow);
+        rowLay->setContentsMargins(0, 0, 0, 0);
+        rowLay->setSpacing(8);
+        rowLay->addWidget(m_catchUp, 0, Qt::AlignTop);
+        rowLay->addWidget(m_needsBlock, 1);
     }
-    layout->addWidget(m_encourage);
-    layout->addStretch(1);
+    // The drawers cover the PANEL, not the pill-height row the cards now
+    // live in (v26.7.5). addWidget above re-parented both cards into the
+    // row — and the drawers' old host rule was "my parent", so without
+    // these two lines every slide-over opens inside a 40px strip: the
+    // needs-block one invisibly, the catch-up one mangled. Written
+    // contract now: the panel says who gets covered.
+    m_needsBlock->setDrawerHost(this);
+    m_catchUp->setDrawerHost(this);
+
+    layout->addWidget(title);
+    layout->addWidget(m_sub);
+    layout->addWidget(m_reviewRow);
+    layout->addWidget(m_dayContent, 1);
+    // NO trailing addStretch (v22.1). The slack now lives inside whichever
+    // section is on stage — refresh() moves the stretch factor to the review
+    // card when the gate closes, so the card fills the panel instead of
+    // huddling squashed at the top over a void (the owner's screenshot).
 
     refresh();
 }
@@ -83,6 +176,38 @@ void GlancePanel::setDate(QDate date)
 
 void GlancePanel::refresh()
 {
+    // Step 0: the review card decides the panel's shape (needs-a-block
+    // §E). One `now`, from the seam, for every derivation this pass — the
+    // gate and the flag must never disagree about what time it is.
+    const QDateTime now = nowProvider();
+    m_needsBlock->refresh(now);
+    // The gate is an INPUT to the chip, decided before the chip refreshes —
+    // the card owns its visibility; the panel only reports the veto.
+    m_catchUp->setSuppressed(m_needsBlock->gateClosed());
+    m_catchUp->refresh(now);
+    m_dayContent->setVisible(!m_needsBlock->gateClosed());
+    // v22.1: whoever is on stage gets the room. Gate closed -> the card IS
+    // the panel (§E said so all along), so it takes the vertical stretch and
+    // its rows fill the height; gate open -> the day content takes it back
+    // and the card sizes to its content. The v22 bug was laying the card out
+    // at its sizeHint — and a scroll area's sizeHint is a cached GUESS about
+    // its content, not a claim on the space around it. Stretch factors claim
+    // space; hints only suggest it.
+    // The vertical stretch now targets the review ROW (the card's new
+    // home): same v22.1 rule, one level up — whoever is on stage gets the
+    // room. While the gate holds the panel, the catch-up chip yields
+    // entirely: one blocking review at a time is the §K ceiling, and the
+    // chip returns the moment "Show my day" opens the gate.
+    const bool closed = m_needsBlock->gateClosed();
+    if (auto* lay = qobject_cast<QVBoxLayout*>(layout())) {
+        lay->setStretchFactor(m_reviewRow, closed ? 1 : 0);
+        lay->setStretchFactor(m_dayContent, closed ? 0 : 1);
+    }
+    m_sub->setText(m_needsBlock->gateClosed()
+                       ? tr("First, a look at what has no time set aside.")
+                       : tr("Calculated live from what you tracked — "
+                            "nothing is stored twice."));
+
     // Step 1: derive today's numbers from raw Segments — nothing cached.
     stats::PeriodSummary s = stats::summarizeDay(*m_data, m_date);
 
@@ -153,14 +278,6 @@ void GlancePanel::refresh()
     if (s.unaccountedSeconds > 0)
         rows.append({tr("Unaccounted"), QColor("#8A929C"),
                      s.unaccountedSeconds});
-
-    // The pie eats EXACTLY the rows the bars show — that identity is what
-    // lets the bars double as the pie's legend. Hidden on an empty day.
-    QVector<CategoryPie::Slice> slices;
-    for (const CategoryBars::Row& r : rows)
-        slices.append({r.color, r.seconds});
-    m_pie->setSlices(slices);
-    m_pie->setVisible(!slices.isEmpty());
 
     m_bars->setRows(std::move(rows));
 

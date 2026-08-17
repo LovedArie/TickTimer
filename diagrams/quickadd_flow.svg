@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="844px" preserveAspectRatio="none" style="width:765px;height:844px;" version="1.1" viewBox="0 0 765 844" width="765px" zoomAndPan="magnify"><defs/><g><text fill="#000000" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="398" x="187" y="12.0669">Quick-add — three surfaces, one parse, one AI fallback (v21.2)</text><!--MD5=[af4e165634b2a4ca3c4688fff127cc50]
+cluster S--><rect fill="#EDF4F1" height="133" rx="5" ry="5" style="stroke: #2F7E6E; stroke-width: 1.5;" width="494" x="22" y="129.1328"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="63" x="237.5" y="143.1997">surfaces</text><!--MD5=[33ae8812c9acf91759a378408d5553b6]
+entity IN1--><rect fill="#EEF2F0" height="50.2656" rx="5" ry="5" style="stroke: #2F7E6E; stroke-width: 1.5;" width="189" x="310.5" y="188.6328"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="124" x="320.5" y="210.6997">Activities task input</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="169" x="320.5" y="225.8325">context: the selected area</text><!--MD5=[318dd6aad385f906323880f4e6401af5]
+entity IN2--><rect fill="#EEF2F0" height="65.3984" rx="5" ry="5" style="stroke: #2F7E6E; stroke-width: 1.5;" width="237" x="38.5" y="181.1328"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="191" x="48.5" y="203.1997">QuickCaptureOverlay (Ctrl+N)</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="217" x="48.5" y="218.3325">no context: #tag -&gt; remembered</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="181" x="48.5" y="233.4653">default -&gt; first category&lt;/i&gt;</text><!--MD5=[626ad08abde0879284d52f51a0eb42aa]
+entity P--><rect fill="#EEF2F0" height="95.6641" rx="5" ry="5" style="stroke: #2F7E6E; stroke-width: 1.5;" width="265" x="207.5" y="323.1328"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="202" x="217.5" y="345.1997">nlp::parseQuickAdd(text, today)</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="99" x="217.5" y="360.3325">pure function</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="245" x="217.5" y="375.4653">tokenize -&gt; first-match-wins per facet:</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="218" x="217.5" y="390.5981">date . priority . repeat . #category</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="185" x="217.5" y="405.731">leftovers = title (casing kept)</text><!--MD5=[28b617f45f8b852b803088f4fea1b95e]
+entity PT--><rect fill="#EEF2F0" height="65.3984" rx="5" ry="5" style="stroke: #2F7E6E; stroke-width: 1.5;" width="175" x="437.5" y="508.1328"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="73" x="447.5" y="530.1997">ParsedTask</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="155" x="447.5" y="545.3325">title . dueDate . priority .</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="136" x="447.5" y="560.4653">repeat . categoryHint</text><!--MD5=[adee7018ee2606d8bc7c60fb772af90a]
+entity PV--><rect fill="#EEF2F0" height="65.3984" rx="5" ry="5" style="stroke: #2F7E6E; stroke-width: 1.5;" width="244" x="403" y="648.1328"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="147" x="413" y="670.1997">quickAddPreviewHtml()</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="114" x="413" y="685.3325">shared readout</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="38" x="531" y="685.3325">— the</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="224" x="413" y="700.4653">second consumer forced the home</text><!--MD5=[99f3cfe8ce18ee9cb444babb539f6fb5]
+entity CM--><rect fill="#EEF2F0" height="65.3984" rx="5" ry="5" style="stroke: #2F7E6E; stroke-width: 1.5;" width="268" x="54" y="648.1328"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="49" x="64" y="670.1997">commit</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="248" x="64" y="685.3325">AppData::categoryIdByName (domain)</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="166" x="64" y="700.4653">-&gt; addTask + updateTask</text><!--MD5=[0bbf5511d91d17fcdd97aa38a0263a02]
+entity AD--><path d="M150,798.1328 C150,788.1328 188,788.1328 188,788.1328 C188,788.1328 226,788.1328 226,798.1328 L226,822.2656 C226,832.2656 188,832.2656 188,832.2656 C188,832.2656 150,832.2656 150,822.2656 L150,798.1328 " fill="#E7EEFA" style="stroke: #4C6FE0; stroke-width: 1.5;"/><path d="M150,798.1328 C150,808.1328 188,808.1328 188,808.1328 C188,808.1328 226,808.1328 226,798.1328 " fill="none" style="stroke: #4C6FE0; stroke-width: 1.5;"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="56" x="160" y="824.1997">AppData</text><!--MD5=[3f77536d44baa329b128c7832d6efa03]
+entity AI--><rect fill="#EEF2F0" height="65.3984" rx="5" ry="5" style="stroke: #2F7E6E; stroke-width: 1.5;" width="214" x="535" y="181.1328"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="158" x="545" y="203.1997">LlmQuickAddClient (wire)</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="194" x="545" y="218.3325">POST /v1/messages . key read</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="184" x="545" y="233.4653">at request time . stale-guard</text><!--MD5=[f18e9cf7baf1e7169aa70c693f532840]
+entity AIP--><rect fill="#EEF2F0" height="80.5313" rx="5" ry="5" style="stroke: #2F7E6E; stroke-width: 1.5;" width="207" x="521.5" y="330.6328"/><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="89" x="531.5" y="352.6997">nlp::llm (pure)</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="148" x="531.5" y="367.8325">systemPrompt(today) .</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="187" x="531.5" y="382.9653">parseApiReply -&gt; ParsedTask</text><text fill="#2B2F36" font-family="Helvetica" font-size="13" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="187" x="531.5" y="398.0981">defensive: garbage degrades</text><path d="M194,518.1328 L194,563.5313 A5,5 0 0 0 199,568.5313 L397,568.5313 A5,5 0 0 0 402,563.5313 L402,523.1328 L392,513.1328 L308.76,513.1328 L328.19,419.2328 L300.76,513.1328 L199,513.1328 A5,5 0 0 0 194,518.1328 " fill="#FBF5D0" style="stroke: #D9CE7A; stroke-width: 1.0;"/><path d="M392,513.1328 L392,520.6328 A2.5,2.5 0 0 0 394.5,523.1328 L402,523.1328 L392,513.1328 " fill="#FBF5D0" style="stroke: #D9CE7A; stroke-width: 1.0;"/><text fill="#4A4A2E" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="187" x="200" y="530.1997">same function on every path:</text><text fill="#4A4A2E" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="182" x="200" y="545.3325">no surface can disagree with</text><text fill="#4A4A2E" font-family="Helvetica" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="110" x="200" y="560.4653">what Enter will do</text><!--MD5=[d0094b76c2b5417924599353ef908c6c]
+link IN1 to P--><path d="M394.84,238.9328 C386.04,260.0028 372.99,291.2128 361.83,317.9128 " fill="none" id="IN1-&gt;P" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="359.77,322.8428,366.9313,316.0814,361.6981,318.2295,359.55,312.9964,359.77,322.8428" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="182" x="379" y="290.2715">textChanged / returnPressed</text><!--MD5=[35741794e4a97b7fa3adff2b98285a1e]
+link IN2 to P--><path d="M160.17,246.1728 C163.14,261.7728 168.88,280.0328 180,293.1328 C188.7,303.3928 199.09,312.3928 210.33,320.2628 " fill="none" id="IN2-&gt;P" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="214.51,323.1028,209.3462,314.7162,210.3852,320.2768,204.8246,321.3159,214.51,323.1028" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="182" x="181" y="290.2715">textChanged / returnPressed</text><!--MD5=[736df0e8533cb15a4f3727ad718f54ea]
+link P to PT--><path d="M392.03,419.2328 C421.87,446.2628 458.72,479.6228 486.05,504.3728 " fill="none" id="P-&gt;PT" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="490.01,507.9528,486.0326,498.9428,486.3071,504.593,480.6569,504.8675,490.01,507.9528" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[38f97e5ced12809c85861967b977c984]
+link PT to PV--><path d="M525,573.2928 C525,594.0628 525,621.3028 525,643.0128 " fill="none" id="PT-&gt;PV" style="stroke: #616974; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><polygon fill="#616974" points="525,648.1228,529,639.1228,525,643.1228,521,639.1228,525,648.1228" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="126" x="526" y="615.2715">live, every keystroke</text><!--MD5=[dcfe61d211eaad0a20d5b5cb062de380]
+link PT to CM--><path d="M447.69,573.2928 C394.49,595.0728 323.95,623.9628 269.81,646.1328 " fill="none" id="PT-&gt;CM" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="264.95,648.1228,274.7948,648.4055,269.5755,646.2241,271.7568,641.0047,264.95,648.1228" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="34" x="367" y="615.2715">Enter</text><!--MD5=[f67950a1c18b4b6dc1f1c763dbbe0e2d]
+link CM to AD--><path d="M188,713.1528 C188,734.5428 188,762.5028 188,782.7228 " fill="none" id="CM-&gt;AD" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="188,787.9528,192,778.9528,188,782.9528,184,778.9528,188,787.9528" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="138" x="189" y="755.2715">one fully-dressed task</text><!--MD5=[f43d4e886de078a4943e21e1b661025f]
+link CM to IN2--><path d="M183.94,647.9928 C181.34,626.8328 178.09,598.3528 176,573.1328 C166.3,455.9228 160.58,316.7328 158.24,251.6428 " fill="none" id="CM-&gt;IN2" style="stroke: #616974; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><polygon fill="#616974" points="158.05,246.3228,154.3607,255.4546,158.2213,251.3199,162.356,255.1805,158.05,246.3228" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="126" x="170" y="461.2715">taskCaptured(catId)</text><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="79" x="193.5" y="475.2402">-&gt; QSettings</text><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="102" x="45.7478" y="265.6032">capture memory</text><!--MD5=[6fc99a040ade447768ad754e2663096f]
+link IN2 to AI--><path d="M192.55,181.0028 C218.32,159.6628 255.17,133.6728 293,122.1328 C387.8,93.2128 421.74,91.5128 516,122.1328 C549.79,133.1028 582.08,156.9228 605.52,177.5028 " fill="none" id="IN2-&gt;AI" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="609.5,181.0428,605.4308,172.0739,605.763,177.721,600.1159,178.0532,609.5,181.0428" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="122" x="344" y="110.2715">Ctrl+Enter (explicit)</text><!--MD5=[0fee70455fd38289a2e2e9224c530da9]
+link AI to AIP--><path d="M638.52,246.4728 C636.02,269.3028 632.63,300.3528 629.87,325.6228 " fill="none" id="AI-&gt;AIP" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="629.32,330.5928,634.2733,322.0802,629.8628,325.6224,626.3206,321.2118,629.32,330.5928" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="68" x="636" y="290.2715">reply bytes</text><!--MD5=[80b7536642d9d60cc15ff0fdd4622234]
+link AIP to PT--><path d="M601.3,411.8328 C584.7,439.6328 562.7,476.4828 546.59,503.4728 " fill="none" id="AIP-&gt;PT" style="stroke: #616974; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><polygon fill="#616974" points="543.85,508.0528,551.8882,502.3618,546.4057,503.7553,545.0122,498.2728,543.85,508.0528" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="175" x="578" y="461.2715">same struct, \u2728 marker</text><text fill="#4A5560" font-family="Helvetica" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="103" x="614" y="475.2402">any edit disarms</text><!--MD5=[99d9113619c198998d4d6ce5edea2226]
+@startuml quickadd_flow
+skinparam backgroundColor transparent
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 13
+skinparam roundCorner 10
+skinparam ArrowColor #616974
+skinparam ArrowFontColor #4A5560
+skinparam ArrowFontSize 12
+
+skinparam rectangle {
+  BackgroundColor #EEF2F0
+  BorderColor #2F7E6E
+  FontColor #2B2F36
+}
+skinparam component {
+  BackgroundColor #EEF2F0
+  BorderColor #2F7E6E
+  FontColor #2B2F36
+}
+skinparam database {
+  BackgroundColor #E7EEFA
+  BorderColor #4C6FE0
+  FontColor #2B2F36
+}
+skinparam note {
+  BackgroundColor #FBF5D0
+  BorderColor #D9CE7A
+  FontColor #4A4A2E
+}
+skinparam class {
+  BackgroundColor #EEF2F0
+  BorderColor #2F7E6E
+  FontColor #2B2F36
+  AttributeFontColor #4A5560
+}
+skinparam state {
+  BackgroundColor #EEF2F0
+  BorderColor #2F7E6E
+  FontColor #2B2F36
+  StartColor #2F7E6E
+  EndColor #C25B54
+}
+skinparam sequence {
+  ArrowColor #616974
+  LifeLineBorderColor #B9C0BA
+  LifeLineBackgroundColor #EEF2F0
+  ParticipantBackgroundColor #EEF2F0
+  ParticipantBorderColor #2F7E6E
+  ActorBackgroundColor #E7EEFA
+  ActorBorderColor #4C6FE0
+}
+skinparam activity {
+  BackgroundColor #EEF2F0
+  BorderColor #2F7E6E
+  DiamondBackgroundColor #E7EEFA
+  DiamondBorderColor #4C6FE0
+  StartColor #2F7E6E
+  EndColor #C25B54
+}
+title Quick-add — three surfaces, one parse, one AI fallback (v21.2)
+
+rectangle "surfaces" as S #EDF4F1 {
+  rectangle "Activities task input\n<i>context: the selected area</i>" as IN1
+  rectangle "QuickCaptureOverlay (Ctrl+N)\n<i>no context: #tag -> remembered\ndefault -> first category</i>" as IN2
+}
+rectangle "nlp::parseQuickAdd(text, today)\n<b>pure function</b>\ntokenize -> first-match-wins per facet:\ndate . priority . repeat . #category\nleftovers = title (casing kept)" as P
+rectangle "ParsedTask\ntitle . dueDate . priority .\nrepeat . categoryHint" as PT
+rectangle "quickAddPreviewHtml()\n<b>shared readout</b> — the\nsecond consumer forced the home" as PV
+rectangle "commit\nAppData::categoryIdByName (domain)\n-> addTask + updateTask" as CM
+database "AppData" as AD
+
+IN1 - -> P : textChanged / returnPressed
+IN2 - -> P : textChanged / returnPressed
+P - -> PT
+PT ..> PV : live, every keystroke
+PT - -> CM : Enter
+CM - -> AD : one fully-dressed task
+CM ..> IN2 : taskCaptured(catId)\n-> QSettings "capture memory"
+rectangle "LlmQuickAddClient (wire)\nPOST /v1/messages . key read\nat request time . stale-guard" as AI
+rectangle "nlp::llm (pure)\nsystemPrompt(today) .\nparseApiReply -> ParsedTask\n<i>defensive: garbage degrades</i>" as AIP
+IN2 - -> AI : Ctrl+Enter (explicit)
+AI - -> AIP : reply bytes
+AIP ..> PT : same struct, \u2728 marker\nany edit disarms
+note bottom of P
+  same function on every path:
+  no surface can disagree with
+  what Enter will do
+end note
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

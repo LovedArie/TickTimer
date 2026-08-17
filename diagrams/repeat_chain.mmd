@@ -1,0 +1,26 @@
+%% Repeat, made real — the newest-link chain (v19.10)
+%%
+%% One invariant: THE RULE LIVES ON THE NEWEST LINK. Advancing strips
+%% the old item and hands the rule to the new one — which is also the
+%% duplicate-spawn guard (a stripped item can never spawn again).
+flowchart LR
+    subgraph tasks["tasks — completion is the metronome"]
+        T1["Task: Lab report<br/>due Jul 10 · ⟳ Weekly"]
+        T2["Task: Lab report<br/>due Jul 17 · ⟳ Weekly<br/><i>fresh id, notes/priority carried</i>"]
+        T1 -->|"setTaskDone(true)<br/>spawn + STRIP rule"| T2
+        T1D["(done, ⟳ gone —<br/>archive tells no lies)"]
+        T1 -.-> T1D
+    end
+
+    subgraph blocks["blocks — the calendar is the metronome"]
+        B1["Block: Study PHY335<br/>Mon Jun 29 10–12 · ⟳ Weekly<br/><i>segments = what really happened</i>"]
+        B2["Block: Mon Jul 13 10–12<br/>⟳ Weekly · segments empty<br/><i>identity copied, history not;<br/>task link demoted to text</i>"]
+        B1 -->|"rollRepeats(today)<br/>first rule-date ≥ today —<br/>NO backfill of missed days;<br/>occupied dates SKIPPED (isFree)"| B2
+    end
+
+    NEXT(["nextOccurrence(date, rule)<br/><b>one pure advance rule</b><br/>daily/weekly by days ·<br/>monthly/yearly via Qt clamping"])
+    T1 -.-> NEXT
+    B1 -.-> NEXT
+
+    MW["MainWindow<br/><i>startup + each midnight —<br/>owns WHEN to knock;<br/>the domain owns the door</i>"]
+    MW -->|"rollRepeats(currentDate)"| blocks

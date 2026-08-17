@@ -70,6 +70,79 @@ the same things in the same order:
 
 ## ── LOGGED ISSUES (TickTimer) ──
 
+### "No account with that name — check the spelling" in Share & compare, but the account definitely exists
+
+**SYMPTOM**
+Share & compare rejects a username with *"No account with that name —
+check the spelling"* — while that exact account can log in, sync, and
+even share in the OTHER direction (A→B works, B→A fails).
+
+**CAUSE**
+The same trailing-slash poison as the login entry below, one layer
+deeper — and armed BY v29.0.1's fix. `LoginDialog::serverUrl()` returned
+the raw field text; AuthClient normalized only its own internal copy, so
+login now SUCCEEDED with a slash-bearing URL and quietly saved the raw
+value to settings. ShareClient (the consumer the v29.0.1 patch missed)
+concatenated `base + "/share"` → `//share` → route-level 404 — and its
+classifier collapsed BOTH 404s ("no such route", "no such user") into
+NotFound, so the app's own URL bug was printed as the owner's spelling
+mistake. The asymmetry decodes as: whichever machine's saved URL carries
+the slash is the one that can't share out.
+
+**FIX**
+Immediate, any version: restart the app, remove the trailing slash from
+the Server field at login, log back in (this re-saves the clean value).
+Since v29.0.2: unnecessary — `LoginDialog::serverUrl()` normalizes at
+the BIRTH of the value (every save and every consumer inherits it),
+ShareClient normalizes defensively too, and its 404s are split:
+`no_such_user` → the spelling message; anything else →
+`UnexpectedReply`, "The server answered unexpectedly — check the server
+address…".
+
+**PREVENT**
+The v29.0.1 postmortem line, upgraded by same-evening evidence: fixing
+per-consumer misses consumers — normalize where the value is BORN, and
+keep consumer-side normalization only as defense in depth. And the
+taxonomy rule again, second conviction in one night: when a classifier
+knowingly collapses "their typo" and "our bug" into one message (the old
+code's comment did it with a straight face), the debugging bill lands on
+whoever trusts the message. Tests pin the slash-bearing share, the
+genuine-typo NotFound, and the wrong-path UnexpectedReply.
+
+### "Please check your details and try again" when creating an account from another machine
+
+**SYMPTOM**
+On a second machine, the login dialog rejects Create account with
+*"Please check your details and try again"* — while the same server address
+opened in a browser DOES answer (with `{"error":"not_found","ok":false}`,
+which proves the network path is fine).
+
+**CAUSE**
+The Server field ended with a slash (`http://10.61.241.202:8080/` — the
+natural paste). The client appended `/register`, producing `//register`;
+the server's route match is exact, so it answered 404 `not_found`; and the
+client's error mapping collapsed every unrecognized token into
+"InvalidInput" — a message that blames the credentials when the problem
+was the URL. Two distinct causes, one misleading sentence: that collapse
+cost the live debugging session.
+
+**FIX**
+Immediate: remove the trailing slash from the Server field.
+Since v29.0.1: unnecessary — `AuthClient::normalizeServerUrl` strips
+trailing slashes (and whitespace) at every entry point, SyncClient shares
+the same rule (same landmine, same base URL), and an unrecognized server
+error now shows its own message ("The server answered, but not in a way
+this app understands…") instead of impersonating a typo.
+
+**PREVENT**
+Three tests pin it: the normalization table, register-with-trailing-slash
+end-to-end (the exact failing call), and wrong-path →
+UnknownServerReply. The doctrine line: when a user can paste it, the
+program normalizes it — vigilance is not a mechanism. And error
+taxonomies earn their keep at the CATCH-ALL: the unknown case must name
+itself, because it is precisely the case you didn't foresee.
+
+
 ### Program exits instantly with code -1073741515 (0xC0000135) — prints nothing, terminal returns straight away
 
 **SYMPTOM**
@@ -595,6 +668,124 @@ migrations copy rather than move so the old file remains a free backup.
 
 ---
 
+### Auto-sync "stops working": edits never push, the Sync button shows ⚠, the dialog offers no choice
+
+**SYMPTOM**
+Edits stop reaching the server. The Sync nav button shows **⚠**, but
+opening the Sync dialog shows only "changes waiting" and a Sync-now
+button — no conflict-resolution choice anywhere. Auto-sync appears dead.
+
+**CAUSE**
+Two layers. (1) *By design*: a sync conflict PAUSES auto-sync — "auto
+means auto-WHEN, never auto-WHO-WINS" — so until a human resolves,
+nothing pushes. The classic trigger is a device whose sync state says
+revision 0 (fresh install, new account key) meeting a server that
+already holds data: dirty + rev-0 + server-ahead = conflict, sometimes
+seconds after login. **If conflicts RECUR endlessly**, the usual cause is
+TWO running copies of the app on the same account (dev build + installed
+copy, or a leftover test window) auto-syncing against each other — each
+is a "device", and because the sync unit is the whole planner, ANY
+concurrent editing is a total conflict, even on different days. One
+running copy per account. (2) *A real bug hid the way out*: the
+"show the held conflict when the dialog opens" code had been inserted by
+an anchored text edit that matched the FIRST `refreshInfo()` in the file
+— inside the finished-lambda — instead of the constructor's. It
+compiled, tests passed, and the dialog opened blind to the held
+conflict. **Position bugs survive compilers.**
+
+**FIX**
+The check moved to the constructor (opening the dialog now shows the
+resolution box whenever a conflict is held), and the ⚠ became DERIVED
+from `hasPendingConflict()` after every event rather than toggled by
+events — an event-toggled glyph can strand lit. To unblock: open Sync,
+pick a winner (usually "Keep mine" if this device has the newest work).
+
+**AND IF IT RECURS AFTER RESOLVING (fixed in 19.2.4):** the held-conflict
+REVISION was never cleared by the resolve paths (only the held data was),
+and `hasPendingConflict()` had been bolted onto that exact field — so one
+conflict gated auto-sync and lit the ⚠ forever, resolved or not. The fix
+is a single `clearHeldConflict()` both resolutions call; a live test now
+creates a real conflict, resolves it, and asserts the service returns to
+life. Lesson: when old state gains a NEW consumer, audit every write site.
+
+**PREVENT**
+Anchored/string-based edits: after applying, READ THE DIFF IN CONTEXT —
+the compiler checks syntax, never placement. And UI that reflects state
+should re-derive it (§3.5 for glyphs), never accumulate toggles.
+
+---
+
+### "This program might not have installed correctly" every time the app closes
+
+**SYMPTOM**
+On closing TickTimer (or the server), Windows shows the **Program
+Compatibility Assistant**: *"This program might not have installed
+correctly"*, offering to reinstall with compatibility settings — for a
+program that was never an installer at all.
+
+**CAUSE**
+Two ingredients, both required. (1) PCA guesses whether a program is an
+installer from **keywords in its version metadata** — "setup", "install",
+"patch", **"update"** — and our server's `.rc` FileDescription proudly
+said *"…sync, sharing, updates"*. A suspected installer that exits
+without registering an installed program looks, to PCA, like a failed
+install. (2) The heuristics only apply to programs **without an
+application manifest** — and MinGW, unlike MSVC, embeds none by default,
+so both exes were fair game for guessing.
+
+**FIX**
+(1) An embedded manifest (`installer/ticktimer.manifest`, resource
+`1 24` in both `.rc` files): `asInvoker` + the supportedOS list formally
+declares "modern app, no elevation, stop guessing" — PCA disables its
+heuristics for manifested programs. (2) The trigger word removed from the
+description. Users who already saw the dialog can also click *"This
+program installed correctly"* once — PCA remembers per exe.
+
+**PREVENT**
+Version metadata is machine-read, not just human-read: keep installer
+vocabulary ("update", "setup", "patch") OUT of FileDescription /
+ProductName for anything that isn't one. And every Windows exe ships with
+a manifest — it's the difference between telling Windows what you are and
+letting it guess.
+
+---
+
+### "I updated / rebuilt, but the version didn't change" (dist exe, installer, or the banner disagree with you)
+
+**SYMPTOM**
+New code was added to the project (or downloaded from GitHub), the deploy
+script ran clean — yet `dist\ticktimer.exe` → Properties still shows the
+old File version, or the update banner keeps announcing a version you
+believe you already installed.
+
+**CAUSE — four flavours, all field-collected:**
+(1) **Nobody bumped the number.** The version is a fact hand-written in
+`include/Version.h`; the build only REPRINTS it. New code under an
+unchanged number is legal — and unverifiable.
+(2) **The new files never landed.** Extracting a zip over the project and
+choosing *Skip* (or extracting into a nested subfolder) leaves the old
+`Version.h` — and everything else — in place.
+(3) **The installer wasn't recompiled.** Running an old `Setup.exe`
+faithfully reinstalls the old build.
+(4) **GitHub's shelf is stale.** `releases/latest` serves whatever was
+last *published* — if `version.json` announces 19.1.0 but the newest
+published release still holds 19.0.0 assets, "downloading the latest"
+reinstalls the old version and the banner rightly returns.
+
+**FIX**
+Walk the proof points in `docs/GITHUB.md`'s release routine, in order:
+`Version.h` says the new number → dist exe Properties says it → the
+freshly-compiled Setup says it → the published release holds those files
+→ `version.json` announces it. The first proof that fails is the culprit.
+
+**PREVENT**
+Treat the version number as the receipt: every delivery of new code comes
+with a bump, so "did the update take?" is always answerable by Properties
+→ Details. And bump BOTH files (`Version.h` + `ticktimer.iss`) — the one
+manual seam.
+
+---
+
 ### `ctest` fails suites that pass when run by hand (aborts, or "waitForStarted returned FALSE")
 
 **SYMPTOM**
@@ -629,6 +820,475 @@ doesn't, the harness has an undeclared dependency on your habits.
 
 ---
 
+### Mini timer vanishes when the main window is minimized
+
+**SYMPTOM**
+The always-on-top Pomodoro mini card only stays visible while the main
+window is up; minimize (or un-maximize) the app and the card disappears
+with it — despite `Qt::WindowStaysOnTopHint` being set. (Owner-reported,
+v19.5.0.)
+
+**CAUSE**
+The card was constructed with the main window as its QWidget parent —
+intended as a *memory-only* arrangement ("Qt splits who-deletes-me from
+am-I-my-own-window"). But on Windows a parent on a top-level widget is
+never only memory: Qt maps it to a **Win32 owner**, and Windows hides all
+owned windows while their owner is minimized. A hidden window can't be
+on top of anything; the flag never gets a vote.
+
+**FIX**
+Construct the card with `nullptr` parent, then pay back the two services
+the parent provided silently:
+1. memory — `~PomodoroPage()` deletes the card by hand;
+2. quit accounting — `setAttribute(Qt::WA_QuitOnClose, false)`, so an
+   open card doesn't keep the app alive after the main window closes
+   (without it: close the app, and a zombie process keeps running one
+   tiny floating card).
+
+**PREVENT**
+The regression test `miniTimerSurvivesTheMainWindowMinimizing` pins the
+arrangement (parentless + WA_QuitOnClose off + the flags) — offscreen CI
+can't observe real Win32 stacking, but it can forbid the setup that
+caused it. Rule of thumb: for any window meant to outlive or float over
+its opener, treat a widget parent as **platform behaviour**, not
+bookkeeping — the window manager reads it as ownership.
+
+---
+
+### Fake-clock tests show 0s of live time (a seam with holes)
+
+**SYMPTOM**
+With `tracker.nowProvider` set to a fake clock, anything derived from the
+live interval stays frozen: the live badge's clock doesn't tick between
+two grabs, `liveSeconds()` returns 0 (or garbage), the glance panel's
+live box shows "0s". Meanwhile one old test that SHOULD have caught it
+stays green — because it `qWait(1100)`s real time instead of moving the
+fake clock. (Found v19.6, while pixel-verifying the new badge.)
+
+**CAUSE**
+The `nowProvider` seam was only MOSTLY installed: four methods inside
+TrackerService still called `QDateTime::currentDateTime()` directly —
+`liveSeconds()`, `beginInterval()`'s start stamp, the heartbeat's
+`touchRunning`, and `commitCurrentInterval()`'s end stamp. In production
+both clocks are the same, so nothing ever LOOKED wrong; under a fake
+clock, live time mixed two different clocks. Worse, the leak had shaped
+a test: `liveDistractedTimeIsNotCountedAsBreak` slept real milliseconds
+to make the wall clock move — green for the wrong reason, and 1.1 s
+slower than it needed to be every run.
+
+**FIX**
+`grep -n currentDateTime` over the whole service; route every hit
+through `nowProvider()` (the only legitimate `currentDateTime` left is
+the default provider's own definition). Rewrite the sleeping test to
+advance the fake clock by hand — the UI suite dropped from ~1.3 s to
+~0.2 s, the removed sleep being the entire difference.
+
+**PREVENT**
+When installing a time seam, audit by GREP, not by symptom — holes come
+in families, because the habit that made one made the others. And treat
+any `qWait`/sleep inside a test as a smell: it usually means some code
+under test is reading a clock the test can't reach.
+
+---
+
+### Notifications: system beep instead of the chime, and no popup at all
+
+**SYMPTOM**
+(v19.8 on the owner's machine) Phase/block notifications play the plain
+Windows beep instead of the app's chimes, and no popup appears — though
+the sound proves the handler ran. (Owner-reported.)
+
+**CAUSE**
+Two independent rented pipelines, both failing quietly:
+1. *Sound* — Qt Multimedia is an OPTIONAL module in the Qt installer,
+   and the owner's kit doesn't have it. The `#ifdef` fell back to
+   `QApplication::beep()` exactly as designed — silently, which was the
+   design's mistake. A degrade nobody can see is indistinguishable from
+   a bug.
+2. *Popup* — `QSystemTrayIcon::showMessage` does not show a popup; it
+   SUBMITS one to the OS notification pipeline, which Windows may
+   decline without error (Focus Assist, per-app notification settings,
+   full-screen suppression).
+
+**FIX**
+Own both pipelines:
+1. Three-tier sound: QSoundEffect → **winmm `PlaySoundW(SND_MEMORY |
+   SND_ASYNC)`** (Windows' own API, always present, plays the real WAV
+   from the resource with zero extra installs) → beep as the floor. The
+   configure step now PRINTS the chosen tier (`TickTimer sound: …`).
+2. `NotificationToast` — an app-owned always-on-top card (the mini
+   timer's window recipe plus `WA_ShowWithoutActivating` and
+   `WA_DeleteOnClose`), stacked top-right, auto-fading. A plain window
+   cannot be suppressed by a notification pipeline. The tray icon stays
+   for presence and click-to-raise only.
+
+**PREVENT**
+Two rules. *Degrade in steps, and never silently*: every fallback tier
+must be visible at configure or run time. *Don't rent what must be
+guaranteed*: if a feature's whole job is to interrupt (an alarm), it
+cannot depend on a pipeline another program can switch off. Bonus Qt
+timing scar from the toast's stacking test: `destroyed()` fires while
+~QObject runs and QPointers to the dying object may not be null yet —
+remove the sender from registries explicitly; trust nothing
+mid-destruction.
+
+---
+
+### `undefined reference to __imp_PlaySoundW` — but only in test_ui.exe
+
+**SYMPTOM**
+(v19.9 on the owner's Windows/MinGW kit, Qt without Multimedia) The app
+target builds; **test_ui.exe** fails at LINK with
+`undefined reference to '__imp_PlaySoundW'`. Bonus warning on the same
+build: `ignoring return value of QFile::open` (nodiscard in Qt 6.11).
+
+**CAUSE**
+`MainWindow.cpp` is compiled into THREE targets (ticktimer, test_ui,
+screenshot-tool), but the winmm link requirement — and the
+`TICKTIMER_HAS_MULTIMEDIA` definition — were attached to the app target
+only. Same source, three .obj files, one of them promised a symbol
+nobody offered it. The stage line in the log says it all: the compiler
+was satisfied (the declaration exists); the LINKER wasn't (the library
+wasn't on test_ui's line). Classic per-target sprinkling: when a
+dependency is hung on one target instead of travelling with the source
+that needs it, some other consumer of that source is eventually
+forgotten.
+
+**FIX**
+An INTERFACE library, `ticktimer_sound`: it owns no code, only *usage
+requirements* (the tier's link line + compile definition), and every
+target that compiles `MainWindow.cpp` links it — app, test_ui,
+screenshot-tool. One decision, made once, carried everywhere. The
+nodiscard warning: check `open()`'s verdict (failed open → empty bytes
+→ the existing beep fallback).
+
+**PREVENT**
+When one source file is compiled into several targets, its dependencies
+must be expressed as something the targets SHARE — an interface/object
+library — never repeated per target. And verify tier drops on purpose:
+`cmake -DCMAKE_DISABLE_FIND_PACKAGE_Qt6Multimedia=ON` builds the
+fallback configuration on demand, so "works without the module" is a
+tested claim, not a hope. Zero-warning policy covers the owner's
+compiler too — their Qt may be newer than the CI's (nodiscard arrived
+with theirs).
+
+---
+
+### Sidebar state persists across launches, but window position / maximized state doesn't (v23.0)
+
+**Symptom.** Toggle the rail with `Ctrl+B`, restart — remembered. Move or
+maximize the window, restart — forgotten. One half of the same feature works,
+the other doesn't, on the same machine, every time.
+
+**Why the split is the whole diagnosis.** The two values were written at
+different moments: the sidebar on every toggle (write-on-intent), the geometry
+only in `closeEvent` (write-on-close). So "one persists and one doesn't" means
+exactly one thing — **`closeEvent` never ran.** Qt Creator's Stop button, a
+debugger detach, Task Manager, and a crash all kill the process without it.
+The symptom isn't noise; it's the design's failure mode wearing a name tag.
+
+**The trap.** It looks like a restore bug ("the app isn't reading the value"),
+so the instinct is to debug `restoreGeometry()`. Check the *store* first:
+`HKCU\Software\TickTimer\TickTimer` → `window\geometry`. Absent after a
+"close" = the save never happened = stop debugging the restore.
+
+**Fix (v23.1).** Geometry now debounce-saves ~1s after the window stops
+moving/resizing/changing state (`moveEvent` + `resizeEvent` + `changeEvent`
+restart a 1s single-shot `QTimer`; maximize arrives as `WindowStateChange`,
+which is why the trio has three members). `closeEvent` keeps a final
+belt-and-braces save but is no longer load-bearing. See
+`design-addendum-window-memory` §E for the full tradeoff-and-revision story.
+
+**The transferable rule.** `closeEvent` is a fine place for shutdown *work*
+and a terrible place for the *only copy* of anything — a normal developer
+workflow skips it dozens of times a day. And if your manual-test instructions
+need a ⚠️ about how to exit the program, the warning is the design
+apologising.
+
+**Related.** If *neither* value persisted, that would be a different fault
+entirely (QSettings organization/application name — see the v22 field bug).
+And if geometry is skipped but the header's tagline is *also* missing, the
+screen is being detected as compact (`isCompactScreen()`, min dimension < 600
+logical px — display scaling counts) and the skip is by design.
+
+### A QSettings write under `a/b/c` reads back empty — when `a/b` already exists as a value
+
+**SYMPTOM**
+`QSettings().setValue("ai/model/anthropic", …)` appears to succeed, but the
+value reads back as an empty string. No error, no warning, nothing in the
+debug output. (Found by `legacySettingsMigrateOnceAndOnlyIntoAnEmptySlot` on
+its very first run, v24.)
+
+**CAUSE**
+QSettings uses `/` as a **group separator**, and a name cannot be both a
+value and a group. v21 had stored `ai/model` as a plain value; writing
+`ai/model/anthropic` asks for a group called `model` in the same place. The
+backend cannot represent both, and the write is silently dropped.
+
+**FIX**
+Two changes, both kept: (1) the per-provider keys are **plural** —
+`ai/keys/<id>`, `ai/models/<id>` — names nothing in v21 ever used as a value;
+(2) `ai::migrateLegacySettings()` **removes the legacy value before writing
+the new entry**, so even a future clash resolves in the right order.
+
+**PREVENT**
+QSettings' failure mode is *silence* — this is the project's second instance
+(the first: the anonymous settings path, v22.7, logged above). Whenever a key
+scheme changes shape (new nesting, renamed groups, org/app names), write a
+test that round-trips through **real** storage, not just through the map you
+think QSettings is. And never design a key hierarchy where a prefix of a new
+key was ever a value in an old release.
+
+
+### Build fails in EVERY file at once: `error: redefinition of 'struct PieceCount'`
+
+**SYMPTOM**
+The first build after applying a drop fails in dozens of translation units,
+all with the same pair of lines:
+```
+AppData.h:59:8: error: redefinition of 'struct PieceCount'
+Task.h:309:8: note: previous definition of 'struct PieceCount'
+```
+
+**CAUSE**
+C++'s One Definition Rule: a struct may be defined once. It was defined in
+TWO headers — one written by an interrupted session in the tail of `Task.h`,
+one written by the re-land session into `AppData.h`, which had surveyed the
+half-applied tree by grepping for the symbols it *expected* and never read
+`Task.h` past ~line 240. Every file that (transitively) includes both
+headers refuses, and widely-included headers reach the whole app — hence
+everywhere-at-once.
+
+**FIX**
+`grep -rn "struct PieceCount" include/ src/` — keep exactly one definition
+(it now lives in `AppData.h`, beside `pieceProgress()`, the query that
+fills it), delete the other. v28.3.1.
+
+**PREVENT**
+When completing someone else's half-finished work, read every line of what
+they left, not just the lines your search terms happened to match. Grep
+answers the question you asked; only reading answers the ones you didn't.
+
+### deploy-windows.bat stops immediately: "APPLY CHECK FAILED - the tree disagrees with itself"
+
+**SYMPTOM**
+The bat prints the versions from `include\Version.h` and
+`installer\ticktimer.iss`, states they differ, and refuses to build.
+
+**CAUSE**
+Those two files ship together in every drop and must always agree. A
+disagreement is the signature of a **half-applied drop** (unzip interrupted
+or aimed at the wrong folder) — or a hand edit that bumped one file and
+forgot the other. The check exists because half-applied drops happened
+twice in this project and looked finished both times.
+
+**FIX**
+Re-unzip the drop over the project root, letting it overwrite everything.
+Run the bat again; it re-checks before building.
+
+**PREVENT**
+Always apply drops with the full unzip-over-root, and let the bat's step 0
+be the judge. The check is self-maintaining (it compares the pair rather
+than hardcoding an expected number), but it cannot catch a *fully* stale
+tree that agrees with itself — that's what the loud version banner is for:
+eyeball it against the drop's filename.
+
+### A test failure quotes a value that is no longer in the source
+
+**SYMPTOM**
+A fix was applied, the suite was rerun, and the SAME failure came back —
+e.g. `Expected (870)` from a test whose source now says 780, at line
+numbers that should have shifted.
+
+**CAUSE**
+Stale binaries. A test run proves things about the binaries it executed,
+not the sources on disk. The first version of `run-tests.bat` ran ctest
+without building, so "unzip the fix, run the tests" silently re-tested
+yesterday's code.
+
+**FIX**
+Rebuild, rerun. Since v28.3.4 both bats build before testing
+(`run-tests.bat` incrementally, `deploy-windows.bat` from scratch).
+
+**PREVENT**
+The diagnostic habit that caught it: when a failure message quotes a
+literal, check whether that literal still exists in the source. If it
+doesn't, you are not looking at a bug — you are looking at old code.
+
+### Fifteen UI tests fail as "wrote a setting (or planted one), read it back empty"
+
+**SYMPTOM**
+Many unrelated-looking `test_ui` failures at once: settings dialogs save on
+OK but reads return defaults; window geometry never persists; tests that
+plant a setting to arrange a scenario (a stale review clock, a custom
+endpoint, a chat route) find the widget behaving as if unarranged.
+
+**CAUSE**
+One cause behind all fifteen: `QSettings()` is scoped by BOTH application
+identity names, and `test_ui` set only `applicationName` — with
+`organizationName` empty, nothing persisted on Qt 6.11/Windows. The real
+app sets both in `main.cpp`; `test_nlp` sets both and passed. This is the
+project's THIRD instance of QSettings failing by *silence* (anonymous
+settings path v22.7 and the plural-keys clash, both logged above).
+
+**FIX**
+A real `initTestCase()` in `test_ui.cpp` sets both names once,
+process-wide. v28.3.2 — it turned 15 failures into 2.
+
+**PREVENT**
+Two habits. Any test binary that touches QSettings sets BOTH names in
+`initTestCase`. And when several failures arrive together, read them for a
+shared *signature* before treating them as separate bugs — failures that
+share a signature share a cause.
+
+### `moodUpsertsByDateAndRoundTripsThroughV12` fails: version is N, expected N-1
+
+**SYMPTOM**
+```
+FAIL! : TestDomain::moodUpsertsByDateAndRoundTripsThroughV12()
+   Actual   (root["version"].toInt()): 13
+   Expected (12)                     : 12
+```
+
+**CAUSE**
+That QCOMPARE is the **format-version tripwire**: it pins the storage
+format's current number on purpose. v28.3.0 bumped JsonStore's literal to
+13 (subtasks) and missed the pin. The failure is the tripwire working —
+one drop late.
+
+**FIX**
+Bump the pin to match JsonStore's literal, in the same drop, every time.
+
+**PREVENT**
+A format bump greps the tests for the OLD number before shipping:
+`grep -rn '"version"' tests/`. Two lines move together, always.
+
+### Geometry/size assertions keep failing on the offscreen platform — differently each time
+
+**SYMPTOM**
+A window-size QCOMPARE fails; each "fix" of the expected number fails a
+new way. Observed sequence here: expected 870 → got 798; expected 780 →
+got 798; expected the *measured* 1166 → got 798.
+
+**CAUSE**
+The offscreen platform has a real (fake) screen — **800×600** — and no
+fonts, so Qt's fallback metrics balloon layout minimums (this MainWindow
+computes ~1166 minimum width, wider than the whole fake screen). A
+window's width is then decided by three parties in sequence: the layout
+minimum (pushes any smaller resize back up), the screen fit
+(`restoreGeometry()` clamps blobs that don't fit), and WHEN each acts
+relative to the first layout pass. None of them is the code under test —
+the save/restore wiring was faithful in every run.
+
+**FIX**
+Stop asserting the number. The test now asserts exactly what its name
+claims: restore *acted* (size differs from the untouched default) and
+startup did not overwrite the stored blob. v28.3.6.
+
+**PREVENT**
+Pin invariants you own; never pin numbers the platform or layout owns.
+And when an assertion keeps losing to the environment, stop refining the
+number — ask what the test's NAME claims, and assert exactly that.
+
+### A widget's `isVisible()` is false even though its show/hide wiring is correct
+
+**SYMPTOM**
+`QVERIFY(baseUrl->isVisible())` fails after programmatically switching the
+provider combo to "custom" — while the matching negative check
+(`!isVisible()` for a known vendor) always "passed".
+
+**CAUSE**
+Qt's `isVisible()` is *effective* visibility: a widget is visible only if
+every ancestor is. The AI section lives on the Assistant page of a
+QStackedWidget and the dialog opens on page 0 — so everything there
+reports invisible regardless of its own flag. The positive assertion was
+impossible; the negative one passed **vacuously**, proving nothing.
+
+**FIX**
+Navigate to the page first — the test finds the nav row by its title
+("Assistant"), not by index, so reordering pages can't silently
+re-vacuum it. v28.3.3. The app needed no change.
+
+**PREVENT**
+For any passing negative assertion, ask: *what would make this fail?* If
+nothing reachable from the setup can, it isn't testing what it claims.
+
+### `login_live` fails: "the requested timeout (3000 ms) was too short"
+
+**SYMPTOM**
+```
+QTestLib: This test case check ... failed because the requested timeout
+(3000 ms) was too short, 3600 ms would have been sufficient this time.
+```
+
+**CAUSE**
+A `QTRY_*_WITH_TIMEOUT` ceiling was a bet on how fast this OS reports a
+dead port; the machine took 3.6 s and the 3 s bet lost. OS network-stack
+timing is not the code under test.
+
+**FIX**
+Raise the ceiling generously (15 s). v28.3.2.
+
+**PREVENT**
+QTRY ceilings are free: the macro returns the moment the condition holds,
+so green runs stay fast. Make every ceiling generous enough that only a
+genuine hang can hit it.
+
+### ctest / a test exe dies with "Qt6Gui.dll was not found" from a plain command prompt
+
+**SYMPTOM**
+Running `ctest` (or a test exe) from a bare cmd/PowerShell pops the
+Windows "code execution cannot proceed because Qt6Gui.dll was not found"
+dialog. The same suite runs fine from `deploy-windows.bat`.
+
+**CAUSE**
+Same family as the 0xC0000135 entry near the top of this log: the test
+executables link Qt's DLLs and a bare prompt has no Qt on PATH. The deploy
+bat sets Qt's `bin` on PATH internally for its own ctest step; a hand-run
+prompt doesn't.
+
+**FIX**
+Use `tools\run-tests.bat` (it does the same Qt discovery, rebuilds what
+changed, runs ctest, and writes `test-results.txt`). One-off alternative:
+`set PATH=C:\Qt\6.11.1\mingw_64\bin;%PATH%` first.
+
+**PREVENT**
+Hand-testing goes through `run-tests.bat`, full releases through
+`deploy-windows.bat`. Neither leaves DLL resolution to the shell you
+happen to be standing in.
+
+### A test's own fixture data silently doesn't exist — a query over it returns the empty/default answer
+
+**SYMPTOM**
+A test creates domain objects (events, segments) and a later query
+behaves as if they were never made — e.g. `personalMultiplier()`
+returning its no-history default (1.0) despite three carefully built
+sample tasks. No error anywhere; the failure surfaces at an assert far
+from the cause.
+
+**CAUSE**
+The domain **refused the fixture** and the test never checked the door.
+Here: the fixture planted 05:00–21:00 blocks, and `isFree` guards the
+planner's day window (`plan::kDayStartMinutes` = 06:00) — every
+`addTaskEvent` returned an empty id, and `appendSegment("")` is a quiet
+no-op. The domain's gates apply to test data exactly as they apply to
+users; that is them working.
+
+**FIX**
+Make the fixture legal (09:00–21:00 blocks) and `QVERIFY` **every**
+door's return in fixture loops — `addTaskEvent`, `appendSegment`, all of
+them — so a refusal fails AT the refusal. v28.4.1, test-only; the query
+under test had been correct the whole time.
+
+**PREVENT**
+Two habits. When inventing fixture values, check what the passing tests
+use and ask why before deviating (every existing test used 09:00 blocks
+for a reason). And a returned id/bool from a domain door is a verdict,
+not a formality — a refusal you don't check becomes a mystery three
+asserts later.
+
+---
+
 ## Sources
 
 - Qt documentation — Signals & Slots (the `signals`/`slots`/`emit` macros and
@@ -639,3 +1299,28 @@ doesn't, the harness has an undeclared dependency on your habits.
   and `QSaveFile` (atomic writes).
 - General: font-fallback behaviour for uncovered codepoints is
   platform-dependent (general knowledge, verified empirically here).
+- Qt documentation — `QSettings` default constructor (scoped by
+  organization AND application names) and `QWidget::isVisible`
+  (effective visibility requires visible ancestors).
+- Qt documentation — the offscreen platform plugin (default 800×600
+  screen; no font directory since Qt stopped shipping fonts), and
+  `QWidget::restoreGeometry` (validates/fits restored rectangles
+  against the current screen).
+
+### Panel/card shows patchwork colors — white frame, grey middle
+
+**SYMPTOM:** a styled container (white via stylesheet) renders with a
+different-colored interior wherever a QScrollArea sits; the seam tracks
+the scroll area's bounds exactly. Screenshot-visible only — every
+offscreen test green.
+**CAUSE:** `QScrollArea::setWidget()` turns ON the child widget's
+`autoFillBackground`, so a widget that never painted a background
+starts filling itself with the palette's Window color (Theme.h pins the
+palette, so: the app grey). Documented in Theme.h since v3 (the
+dark-mode agenda incident); re-hit in v28.6.1 by TaskDetailPanel.
+**FIX:** `child->setAutoFillBackground(false);` immediately after every
+`setWidget(child)` — including rebuilds. TaskDetailPanel does this in
+buildFor.
+**PREVENT:** the flag is pinned by test
+(`theFormNeverFillsItsOwnBackground`), after open AND after a save's
+rebuild — a tripwire that fails a patch instead of hoping to be read.

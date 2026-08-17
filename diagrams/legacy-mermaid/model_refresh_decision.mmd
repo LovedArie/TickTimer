@@ -1,0 +1,8 @@
+%% TaskListModel::refresh() decision — granular updates vs reset (v20.1). See docs/design-addendum-model-view.md §I
+flowchart TB
+    S["AppData::changed()"] --> R["refresh():<br/>take fresh snapshot, diff vs old"]
+    R --> Q1{"same ids,<br/>same order?"}
+    Q1 -->|yes| D["dataChanged on rows whose<br/><b>visible role</b> moved<br/><i>(description-only edit -> no signal;<br/>scroll + selection kept)</i>"]
+    Q1 -->|no| Q2{"do survivors keep<br/>their relative order?"}
+    Q2 -->|yes| G["beginRemoveRows (vanished ids)<br/>+ beginInsertRows (new ids)<br/>+ dataChanged (edited survivors)<br/><i>(scroll mostly kept)</i>"]
+    Q2 -->|"no — a due-date edit<br/>re-sorted a row"| RST["beginResetModel<br/><i>honest fallback:<br/>assume everything moved</i>"]

@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TickTimer — "Needs a block" prototype v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F1F4F0; --surface:#FFFFFF; --ink:#272C33; --ink-soft:#616974;
+    --line:#E2E6E0; --focus:#2F7E6E; --break:#DD9B4A; --track:#EAEDE8;
+    --urgent:#C05B5B;
+    --cat-school:#4A7CC4; --cat-health:#2F7E6E; --cat-home:#B0679A; --cat-work:#C4703A;
+    --font-display:'Nunito', system-ui, sans-serif;
+    --font-body:'Inter', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);
+       line-height:1.5;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:var(--font-display);margin:0;font-weight:700;letter-spacing:-0.01em;}
+
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:14px 26px;background:var(--surface);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:20;flex-wrap:wrap;}
+  .brand{display:flex;align-items:baseline;gap:12px;}
+  .brand h1{font-size:19px;}
+  .brand .tag{color:var(--ink-soft);font-size:12.5px;}
+  .topacts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .protopill{background:rgba(224,164,74,0.16);border:1px solid rgba(224,164,74,0.5);
+    color:#8a5a12;border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:600;}
+  .tbtn{border:1px solid var(--line);background:var(--surface);border-radius:9px;
+    padding:7px 12px;font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;
+    font-family:var(--font-body);}
+  .tbtn:hover{border-color:var(--focus);color:var(--focus);}
+  .tbtn.on{border-color:var(--focus);color:var(--focus);background:rgba(47,126,110,0.07);}
+
+  .shell{max-width:1180px;margin:0 auto;padding:20px 26px 70px;}
+  .daybar{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;
+    margin-bottom:14px;flex-wrap:wrap;}
+  .daybar .date{font-family:var(--font-display);font-weight:700;font-size:17px;}
+  .daybar .hint{color:var(--ink-soft);font-size:12.5px;}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;
+    background:var(--surface);}
+  .seg button{border:none;background:none;padding:7px 16px;font-size:12.5px;font-weight:600;
+    font-family:var(--font-body);color:var(--ink-soft);cursor:pointer;}
+  .seg button+button{border-left:1px solid var(--line);}
+  .seg button.on{background:var(--focus);color:#fff;}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:22px;}
+  @media(max-width:900px){.layout{grid-template-columns:1fr;}}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;}
+  .panel h2{font-size:15px;margin-bottom:3px;}
+  .panel .sub{color:var(--ink-soft);font-size:12.5px;margin-bottom:14px;}
+
+  /* ---- day agenda ---- */
+  .agenda-track{position:relative;}
+  .hour-line{position:absolute;left:54px;right:0;border-top:1px solid var(--line);}
+  .half-line{position:absolute;left:54px;right:0;border-top:1px dashed #EEF0EC;}
+  .hour-label{position:absolute;left:0;width:46px;text-align:right;font-size:11.5px;
+    color:var(--ink-soft);margin-top:-7px;}
+  .event{position:absolute;left:54px;right:0;border-radius:10px;color:#fff;padding:6px 11px;
+    overflow:hidden;display:flex;flex-direction:column;justify-content:center;}
+  .event .name{font-family:var(--font-display);font-weight:700;font-size:12.5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .event .span{font-size:10.5px;opacity:0.9;}
+  .event.fresh{animation:pop .45s ease;}
+  @keyframes pop{0%{transform:scale(.94);opacity:0;}100%{transform:scale(1);opacity:1;}}
+  .cand{position:absolute;left:54px;right:0;border-radius:9px;border:1px dashed var(--focus);
+    background:rgba(47,126,110,0.09);cursor:pointer;display:flex;align-items:center;
+    justify-content:center;color:var(--focus);font-size:11.5px;font-weight:600;z-index:4;}
+  .cand:hover{background:rgba(47,126,110,0.22);border-width:2px;}
+  .cand.best{background:rgba(47,126,110,0.16);border-width:2px;}
+  .cand .badge{position:absolute;top:3px;right:8px;font-size:9.5px;text-transform:uppercase;
+    letter-spacing:.05em;opacity:.75;}
+  .cand.late{border-color:var(--urgent);background:rgba(192,91,91,0.08);color:var(--urgent);}
+  .cand.late:hover{background:rgba(192,91,91,0.18);}
+
+  .placing-banner{background:rgba(47,126,110,0.10);border:1px solid rgba(47,126,110,0.35);
+    color:#245f53;border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:12px;
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+  .placing-banner button{border:none;background:var(--focus);color:#fff;border-radius:7px;
+    padding:4px 11px;font-size:12px;cursor:pointer;margin-left:auto;font-family:var(--font-body);}
+
+  /* ---- week grid ---- */
+  .weekwrap{position:relative;}
+  .week-cols{display:grid;grid-template-columns:44px repeat(7,minmax(0,1fr));gap:4px;}
+  .wcol-head{text-align:center;font-size:11px;padding-bottom:6px;}
+  .wcol-head .dn{font-family:var(--font-display);font-weight:700;font-size:12px;}
+  .wcol-head .dd{color:var(--ink-soft);font-size:10.5px;}
+  .wcol-head.today .dn{color:var(--focus);}
+  .wcol-head.today{border-bottom:2px solid var(--focus);}
+  .wcol-head.past{opacity:.45;}
+  .dueflags{min-height:26px;display:flex;flex-direction:column;gap:2px;padding-bottom:4px;}
+  .dueflag{font-size:9px;font-weight:700;border-radius:3px;padding:1px 3px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;}
+  .dueflag.unsched{outline:2px solid var(--urgent);outline-offset:-2px;}
+  .wcol{position:relative;border-left:1px solid var(--line);background:#FCFDFC;}
+  .wcol.today{background:rgba(47,126,110,0.04);}
+  .wcol.past{background:#F7F8F6;}
+  .wev{position:absolute;left:2px;right:2px;border-radius:5px;color:#fff;font-size:9px;
+    padding:2px 4px;overflow:hidden;line-height:1.25;}
+  .wev.late{outline:2px solid var(--urgent);outline-offset:-2px;}
+  .wtime{position:relative;}
+  .wtime .tl{position:absolute;right:4px;font-size:10px;color:var(--ink-soft);margin-top:-6px;}
+  .wgrid-line{position:absolute;left:0;right:0;border-top:1px solid var(--line);}
+
+  .weeklegend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--ink-soft);
+    margin-top:12px;}
+  .weeklegend span{display:flex;align-items:center;gap:6px;}
+  .lgbox{width:13px;height:13px;border-radius:3px;background:var(--track);}
+  .lgbox.flag{background:#4A7CC4;}
+  .lgbox.late{background:#4A7CC4;outline:2px solid var(--urgent);outline-offset:-2px;}
+
+  /* ---- needs-a-block ---- */
+  .nb-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+  .nb-head h3{font-size:14px;}
+  .nb-count{margin-left:auto;font-size:11px;font-weight:700;border-radius:20px;padding:2px 9px;}
+  .gentle .nb-count{background:rgba(47,126,110,0.14);color:var(--focus);}
+  .urgent .nb-count{background:rgba(192,91,91,0.16);color:var(--urgent);}
+  .nb-sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;}
+  .nb-task{display:flex;align-items:flex-start;gap:9px;padding:10px 0;
+    border-top:1px solid var(--line);}
+  .nb-task:first-of-type{border-top:none;padding-top:2px;}
+  .nb-task .dot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:5px;}
+  .nb-task .body{flex:1;min-width:0;}
+  .nb-task .t{font-size:12.5px;font-weight:600;line-height:1.35;}
+  .nb-task .meta{font-size:11px;color:var(--ink-soft);margin-top:3px;
+    display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .nb-task .meta .sep{opacity:.45;}
+  .whyline{font-size:10.5px;color:var(--urgent);background:rgba(192,91,91,0.08);
+    border-radius:6px;padding:3px 7px;margin-top:5px;display:inline-block;}
+  .pchip{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    border-radius:4px;padding:1px 5px;}
+  .pchip.urgent,.pchip.overdue{background:rgba(192,91,91,0.14);color:var(--urgent);}
+  .pchip.soon{background:rgba(224,164,74,0.18);color:#8a5a12;}
+  .nb-acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+  .nb-acts button{border:1px solid var(--line);background:var(--surface);border-radius:7px;
+    padding:4px 10px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--ink-soft);
+    font-family:var(--font-body);}
+  .nb-acts button.primary{background:var(--focus);border-color:var(--focus);color:#fff;}
+  .nb-acts button:hover{border-color:var(--focus);color:var(--focus);}
+  .nb-acts button.primary:hover{filter:brightness(1.07);color:#fff;}
+
+  .gate-foot{border-top:1px solid var(--line);margin-top:12px;padding-top:12px;}
+  .gate-foot button{width:100%;border:1px solid var(--line);background:var(--surface);
+    border-radius:9px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer;
+    color:var(--ink-soft);font-family:var(--font-body);}
+  .gate-foot button:hover{border-color:var(--focus);color:var(--focus);
+    background:rgba(47,126,110,0.05);}
+  .gate-foot .note{font-size:10.5px;color:var(--ink-soft);text-align:center;margin-top:6px;opacity:.8;}
+
+  .nb-strip{display:flex;align-items:center;gap:8px;border-radius:10px;padding:8px 11px;
+    font-size:12px;cursor:pointer;margin-bottom:12px;user-select:none;}
+  .nb-strip.gentle{background:rgba(47,126,110,0.07);border:1px solid rgba(47,126,110,0.28);color:#245f53;}
+  .nb-strip.urgent{background:rgba(192,91,91,0.07);border:1px solid rgba(192,91,91,0.35);color:#8c3d3d;}
+  .nb-strip .chev{margin-left:auto;font-size:10px;opacity:.7;}
+  .nb-strip.clear{background:rgba(47,126,110,0.06);border-color:rgba(47,126,110,0.22);
+    color:var(--focus);cursor:default;}
+  .nb-expand{border:1px solid var(--line);border-radius:12px;padding:12px 13px;
+    margin:-4px 0 12px;background:#FCFDFC;}
+
+  .dismissed-strip{font-size:11px;color:var(--ink-soft);border:1px dashed var(--line);
+    border-radius:9px;padding:7px 10px;margin-bottom:12px;cursor:pointer;user-select:none;}
+  .dismissed-strip:hover{border-color:var(--focus);color:var(--focus);}
+  .drow{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:4px 0;
+    color:var(--ink-soft);}
+  .drow button{border:none;background:none;color:var(--focus);font-size:11px;cursor:pointer;
+    font-weight:600;font-family:var(--font-body);padding:0;}
+
+  .stat-row{display:flex;gap:9px;margin-bottom:14px;}
+  .stat{flex:1;border:1px solid var(--line);border-radius:12px;padding:9px 11px;}
+  .stat .k{font-size:10px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;}
+  .stat .v{font-family:var(--font-display);font-weight:800;font-size:19px;margin-top:1px;}
+  .stat.focus .v{color:var(--focus);} .stat.brk .v{color:var(--break);}
+  .catbar{margin:10px 0;}
+  .catbar .lab{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;}
+  .catbar .lab .t{display:flex;align-items:center;gap:7px;}
+  .dotc{width:9px;height:9px;border-radius:50%;flex:none;}
+  .catbar .bar{height:8px;border-radius:5px;background:var(--track);overflow:hidden;}
+  .catbar .bar i{display:block;height:100%;border-radius:5px;}
+  .encourage{margin-top:14px;padding:11px 13px;background:rgba(47,126,110,0.08);
+    border-radius:11px;color:#245f53;font-size:12.5px;}
+  .reveal{animation:fade .35s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+
+  /* ---- settings modal ---- */
+  .scrim{position:fixed;inset:0;background:rgba(39,44,51,0.45);z-index:40;display:none;}
+  .scrim.show{display:block;}
+  .modal{position:fixed;z-index:50;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:min(470px,93vw);background:var(--surface);border-radius:16px;padding:22px;
+    box-shadow:0 18px 48px rgba(0,0,0,0.22);display:none;max-height:88vh;overflow:auto;}
+  .modal.show{display:block;}
+  .modal h2{font-size:16px;margin-bottom:2px;}
+  .modal .msub{color:var(--ink-soft);font-size:12.5px;margin-bottom:16px;}
+  .srow{padding:13px 0;border-top:1px solid var(--line);}
+  .srow:first-of-type{border-top:none;padding-top:2px;}
+  .srow .sl{font-size:12.5px;font-weight:600;margin-bottom:3px;}
+  .srow .sd{font-size:11.5px;color:var(--ink-soft);margin-bottom:9px;}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;}
+  .chipbtn{border:1px solid var(--line);background:var(--surface);border-radius:20px;
+    padding:5px 13px;font-size:12px;font-weight:600;color:var(--ink-soft);cursor:pointer;
+    font-family:var(--font-body);}
+  .chipbtn.on{background:var(--focus);border-color:var(--focus);color:#fff;}
+  .modal select,.modal input[type=time],.modal input[type=number]{
+    border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12.5px;
+    font-family:var(--font-body);color:var(--ink);background:var(--surface);}
+  .inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;}
+  .checkrow{display:flex;align-items:flex-start;gap:9px;}
+  .checkrow input{margin-top:3px;accent-color:var(--focus);width:15px;height:15px;}
+  .fixednote{font-size:11px;color:var(--ink-soft);background:var(--bg);border-radius:8px;
+    padding:8px 11px;margin-top:8px;}
+  .fixednote b{color:var(--ink);}
+  .modal .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;}
+  .modal .foot button{border:1px solid var(--line);background:var(--surface);border-radius:9px;
+    padding:8px 16px;font-size:12.5px;font-weight:600;cursor:pointer;
+    font-family:var(--font-body);color:var(--ink-soft);}
+  .modal .foot button.primary{background:var(--focus);border-color:var(--focus);color:#fff;}
+  .live{font-size:11.5px;color:var(--focus);background:rgba(47,126,110,0.08);
+    border-radius:8px;padding:8px 11px;margin-top:14px;}
+
+  .annot{border-left:3px solid var(--break);background:rgba(224,164,74,0.09);
+    border-radius:0 9px 9px 0;padding:9px 12px;font-size:12px;color:#7a5010;margin:12px 0;}
+  .annot b{font-family:var(--font-display);}
+  .annot code{background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;font-size:11px;}
+  .annot.hidden{display:none;}
+  .annot .n{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
+    border-radius:50%;background:var(--break);color:#fff;font-size:10px;font-weight:700;
+    margin-right:6px;vertical-align:1px;}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;border-radius:11px;padding:10px 18px;font-size:12.5px;
+    opacity:0;transition:all .25s;pointer-events:none;z-index:60;max-width:80vw;text-align:center;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .settled{background:rgba(47,126,110,0.06);border:1px solid rgba(47,126,110,0.25);
+    border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:12.5px;color:#245f53;}
+  .settled b{font-family:var(--font-display);}
+  .settled ul{margin:7px 0 0;padding-left:18px;}
+  .settled li{margin-bottom:4px;}
+  .questions{margin-top:28px;background:var(--surface);border:1px solid var(--line);
+    border-radius:16px;padding:20px 22px;}
+  .questions h2{font-size:15px;margin-bottom:4px;}
+  .questions .sub{color:var(--ink-soft);font-size:12.5px;margin-bottom:14px;}
+  .questions ol{margin:0;padding-left:20px;}
+  .questions li{font-size:13px;margin-bottom:11px;}
+  .questions li b{font-family:var(--font-display);}
+  .questions .mine{color:var(--ink-soft);font-size:12.5px;display:block;margin-top:2px;}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>TickTimer</h1>
+    <span class="tag">"Needs a block" — v3</span>
+  </div>
+  <div class="topacts">
+    <span class="protopill">PROTOTYPE</span>
+    <button class="tbtn" id="settings-btn">⚙ Settings</button>
+    <button class="tbtn" id="rearm-btn">⏱ Simulate re-arm</button>
+    <button class="tbtn on" id="annot-btn">Design notes: on</button>
+    <button class="tbtn" id="reset-btn">↺ Reset</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <div class="settled">
+    <b>New in v3 — your four calls:</b>
+    <ul>
+      <li><b>A late block no longer counts.</b> Coverage is deadline-aware: a block
+        must fall on or before the deadline, and must not already be in the past.</li>
+      <li><b>Re-arm is configurable</b> — daily at a set time, or every N hours.
+        Defaults to daily at 06:00.</li>
+      <li><b>"Not today" uses the same shape</b>, defaulting to end of day.</li>
+      <li><b>The list now appears on the week view too</b> — see note 3 for why that
+        follows from the first change rather than being a separate decision.</li>
+    </ul>
+  </div>
+
+  <div class="daybar">
+    <div>
+      <div class="date" id="date-label">Tuesday, 21 July 2026</div>
+      <div class="hint" id="date-hint">Plan vs. actual · 30-minute slots</div>
+    </div>
+    <div class="seg" id="view-switch">
+      <button data-v="day" class="on">Day</button>
+      <button data-v="week">Week</button>
+    </div>
+  </div>
+
+  <div class="annot" data-annot>
+    <span class="n">1</span><b>The coverage rule, precisely.</b> A block covers a task only
+    when <code>0 ≤ blockDay ≤ deadline</code>, where <code>deadline = max(dueDay, today)</code>.
+    Two consequences worth naming. <em>Overdue tasks stay satisfiable</em> — the
+    <code>max(…, today)</code> means a task due last week is covered by a block today,
+    rather than being permanently un-fixable and nagging forever. And <em>a block that
+    already passed doesn't count</em> — if Monday's block came and went and the task is
+    still open, that time didn't do the job, so it needs new time. Watch "Read chapter 7"
+    and "Renew health card" in the list.
+  </div>
+
+  <div class="layout">
+    <div class="panel" id="main-panel">
+      <div id="main-host"></div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Glance</h2>
+        <div class="sub" id="glance-sub">Where today actually went</div>
+        <div id="glance-host"></div>
+      </div>
+
+      <div class="annot" data-annot>
+        <span class="n">2</span><b>Same panel, both views.</b> Switch to Week — the list
+        doesn't change, because under the new rule it can't. <code>needsBlock(task)</code>
+        reads the task, today's date, and the settings; the <em>viewed</em> date is not an
+        input. So this isn't "the day panel, copied" — it's one derived list rendered
+        wherever there's room, which is also why it can't drift between views.
+      </div>
+    </div>
+  </div>
+
+  <div class="annot" data-annot>
+    <span class="n">3</span><b>What the week view buys you.</b> The day view can tell you a
+    task is uncovered; only the week view shows you <em>why</em>. "Read chapter 7" is due
+    Wednesday and has a block on Thursday — outlined in red on the wrong side of its
+    deadline flag. That's a mistake that is nearly invisible on a day view and obvious
+    here. In the real app this is <code>WeekAgendaView</code>, which already routes clicks
+    through the same planning path as the day agenda — so the fix is one click in place.
+  </div>
+
+  <div class="annot" data-annot>
+    <span class="n">4</span><b>Re-arm and dismissal are the same mechanism.</b> Both answer
+    "when does this come back?", so both get the same control shape rather than two
+    bespoke ones — a mode plus a parameter. In code that's one small
+    <code>ReturnPolicy</code> value type with a <code>nextReturn(from)</code> function,
+    used twice, instead of two similar-but-subtly-different implementations. The
+    second-consumer rule earning its keep on the first day rather than the third.
+  </div>
+
+  <div class="questions">
+    <h2>Still open</h2>
+    <div class="sub">Down to three.</div>
+    <ol>
+      <li><b>Should a dismissal survive a re-arm?</b>
+        <span class="mine">Right now they're independent clocks: the review can re-arm at
+        06:00 while a task dismissed "until end of day" stays quiet. That seems right —
+        dismissing is per-task, re-arming is per-review — but it does mean the gate can
+        open onto a list shorter than the real backlog.</span></li>
+      <li><b>Does "Find time" offer days other than today?</b>
+        <span class="mine">Currently today only, on both views. But if a task is due Friday
+        and today is full, the useful answer is Thursday. The week view makes that offer
+        natural — it just isn't built here.</span></li>
+      <li><b>A task dismissed every day for a week.</b>
+        <span class="mine">Still unanswered. The app now knows the count; the question is
+        whether it should say anything, and what wouldn't be obnoxious.</span></li>
+    </ol>
+  </div>
+
+</div>
+
+<!-- ================= SETTINGS ================= -->
+<div class="scrim" id="scrim"></div>
+<div class="modal" id="modal">
+  <h2>Settings — Needs a block</h2>
+  <div class="msub">Which open tasks get flagged as having no time set aside, and when the
+    prompt comes back.</div>
+
+  <div class="srow">
+    <div class="sl">Always flag these priorities</div>
+    <div class="sd">Flagged whatever the due date — including tasks with no due date.</div>
+    <div class="chips" id="pri-chips">
+      <button class="chipbtn on" data-p="urgent">Urgent</button>
+      <button class="chipbtn" data-p="medium">Medium</button>
+      <button class="chipbtn" data-p="low">Low</button>
+    </div>
+  </div>
+
+  <div class="srow">
+    <div class="sl">Also flag anything due within</div>
+    <div class="sd">Catches an ordinary task whose deadline is closing in.</div>
+    <select id="win-select">
+      <option value="0">Off — priority only</option>
+      <option value="1">1 day</option>
+      <option value="3" selected>3 days</option>
+      <option value="7">7 days</option>
+      <option value="14">14 days</option>
+    </select>
+  </div>
+
+  <div class="srow">
+    <div class="sl">When a block counts as covering a task</div>
+    <div class="fixednote">Not configurable — a block only counts if it falls
+      <b>on or before the deadline</b> and <b>hasn't already passed</b>. Anything else
+      would let the app call a task handled when it isn't, which is the failure this
+      feature exists to prevent.</div>
+  </div>
+
+  <div class="srow">
+    <div class="sl">Bring the review back</div>
+    <div class="sd">How often the panel re-arms and asks for a fresh look.</div>
+    <div class="chips" id="rearm-chips">
+      <button class="chipbtn on" data-m="daily">Daily at a set time</button>
+      <button class="chipbtn" data-m="hours">Every N hours</button>
+      <button class="chipbtn" data-m="new">Only when something new qualifies</button>
+    </div>
+    <div class="inline" id="rearm-daily-row">
+      <span style="font-size:12px;color:var(--ink-soft)">at</span>
+      <input type="time" id="rearm-time" value="06:00">
+    </div>
+    <div class="inline" id="rearm-hours-row" style="display:none">
+      <span style="font-size:12px;color:var(--ink-soft)">every</span>
+      <input type="number" id="rearm-hours" value="4" min="1" max="24" style="width:70px">
+      <span style="font-size:12px;color:var(--ink-soft)">hours</span>
+    </div>
+  </div>
+
+  <div class="srow">
+    <div class="sl">"Not today" lasts</div>
+    <div class="sd">How long a dismissed task stays quiet before it can be flagged again.</div>
+    <div class="chips" id="dis-chips">
+      <button class="chipbtn on" data-m="eod">Until end of day</button>
+      <button class="chipbtn" data-m="time">Until a set time</button>
+      <button class="chipbtn" data-m="hours">For N hours</button>
+    </div>
+    <div class="inline" id="dis-time-row" style="display:none">
+      <span style="font-size:12px;color:var(--ink-soft)">until</span>
+      <input type="time" id="dis-time" value="18:00">
+    </div>
+    <div class="inline" id="dis-hours-row" style="display:none">
+      <span style="font-size:12px;color:var(--ink-soft)">for</span>
+      <input type="number" id="dis-hours" value="4" min="1" max="48" style="width:70px">
+      <span style="font-size:12px;color:var(--ink-soft)">hours</span>
+    </div>
+  </div>
+
+  <div class="srow">
+    <div class="checkrow">
+      <input type="checkbox" id="gate-check" checked>
+      <div>
+        <div class="sl">Hold today's numbers until I've looked</div>
+        <div class="sd" style="margin-bottom:0">The glance panel shows this list first.
+          Your totals appear once you've reviewed it — or immediately, if nothing needs
+          a block.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="srow">
+    <div class="sl">Tone</div>
+    <div class="sd">Still undecided in the design — try both.</div>
+    <div class="chips" id="tone-chips">
+      <button class="chipbtn on" data-t="gentle">Gentle</button>
+      <button class="chipbtn" data-t="urgent">Urgent</button>
+    </div>
+  </div>
+
+  <div class="live" id="live-preview"></div>
+
+  <div class="foot"><button class="primary" id="modal-close">Done</button></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Prototype state. Crude on purpose. Day offsets are relative to TODAY (0).
+// ---------------------------------------------------------------------------
+const DAY_START = 8*60, DAY_END = 20*60;
+const PX_PER_MIN = 600/(DAY_END-DAY_START);
+const WEEK_H = 300, W_PX_PER_MIN = WEEK_H/(DAY_END-DAY_START);
+
+const CATS = {
+  school:{name:'School', raw:'#4A7CC4'}, health:{name:'Health', raw:'#2F7E6E'},
+  home:  {name:'Home',   raw:'#B0679A'}, work:  {name:'Work',   raw:'#C4703A'},
+};
+const TODAY = new Date(2026,6,21);                 // Tue 21 July 2026
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const WEEK_OFFSETS = [-1,0,1,2,3,4,5];             // Mon 20 .. Sun 26
+
+let settings = {
+  priorities:{urgent:true, medium:false, low:false},
+  dueWithinDays:3,
+  rearmMode:'daily', rearmTime:'06:00', rearmHours:4,
+  dismissMode:'eod',  dismissTime:'18:00', dismissHours:4,
+  gateEnabled:true, tone:'gentle',
+};
+
+let events=[], tasks=[], gateOpen=false, stripExpanded=false,
+    dismissedExpanded=false, placing=null, view='day', showAnnot=true;
+
+function seed(){
+  events = [
+    {id:'e1', day:0,  start: 9*60,    end:10*60+30, label:'GTI350 lecture', cat:'school'},
+    {id:'e2', day:0,  start:12*60,    end:12*60+30, label:'Lunch',          cat:'home'},
+    {id:'e3', day:0,  start:14*60,    end:15*60,    label:'Gym',            cat:'health'},
+    {id:'e4', day:0,  start:17*60+30, end:18*60+30, label:'Shift prep',     cat:'work'},
+    {id:'e5', day:-1, start:10*60,    end:11*60,    label:'Renew health card',
+     cat:'home', taskId:'t3'},                       // PAST block — didn't happen
+    {id:'e6', day:1,  start: 9*60,    end:10*60,    label:'Seminar',        cat:'school'},
+    {id:'e7', day:2,  start:13*60,    end:14*60,    label:'Read chapter 7',
+     cat:'school', taskId:'t6'},                     // LATE block — due day 1
+    {id:'e8', day:3,  start:16*60,    end:17*60,    label:'Shift',          cat:'work'},
+  ];
+  tasks = [
+    {id:'t1', title:'Lab 4 — Exigences contractuelles (5%)', cat:'school',
+     priority:'urgent', dueIn:3,  dismissedUntil:null},
+    {id:'t2', title:'LOG410 final — study sheet', cat:'school',
+     priority:'urgent', dueIn:6,  dismissedUntil:null},
+    {id:'t3', title:'Renew health card', cat:'home',
+     priority:'medium', dueIn:-2, dismissedUntil:null},   // overdue, past block only
+    {id:'t4', title:'Reply to internship email', cat:'work',
+     priority:'medium', dueIn:1,  dismissedUntil:null},
+    {id:'t5', title:'Book dentist', cat:'health',
+     priority:'low',    dueIn:12, dismissedUntil:null},
+    {id:'t6', title:'Read chapter 7', cat:'school',
+     priority:'medium', dueIn:1,  dismissedUntil:null},   // due Wed, blocked Thu
+    {id:'t7', title:'Groceries', cat:'home',
+     priority:'low',    dueIn:null, dismissedUntil:null},
+  ];
+  gateOpen=false; stripExpanded=false; dismissedExpanded=false; placing=null;
+}
+
+// ---- COVERAGE ------------------------------------------------------------
+// deadline = max(dueDay, today). A block covers the task only if it lands in
+// [today, deadline] — not already spent, not after the wire.
+function blocksFor(t){ return events.filter(e => e.taskId === t.id); }
+function deadlineOf(t){
+  if (t.dueIn === null) return Infinity;
+  return Math.max(t.dueIn, 0);
+}
+function isCovered(t){
+  const dl = deadlineOf(t);
+  return blocksFor(t).some(b => b.day >= 0 && b.day <= dl);
+}
+// Why an existing block failed to cover — the app must explain itself when it
+// flags something the user believes is handled.
+function uncoveredReason(t){
+  const bs = blocksFor(t);
+  if (bs.length === 0) return null;
+  const dl = deadlineOf(t);
+  const late = bs.filter(b => b.day > dl);
+  const past = bs.filter(b => b.day < 0);
+  if (late.length) return `Blocked ${dayLabel(late[0].day)} — after the ${dayLabel(dl)} deadline`;
+  if (past.length) return `Time was set aside ${dayLabel(past[0].day)} — it didn't happen`;
+  return null;
+}
+
+function needsBlock(t){
+  if (t.dismissedUntil !== null) return false;
+  if (isCovered(t)) return false;
+  if (settings.priorities[t.priority]) return true;
+  if (t.dueIn === null) return false;
+  if (t.dueIn < 0) return true;
+  return settings.dueWithinDays > 0 && t.dueIn <= settings.dueWithinDays;
+}
+function rank(t){
+  if (t.dueIn !== null && t.dueIn < 0) return 0;
+  if (t.priority === 'urgent') return 1;
+  return 2;
+}
+function qualifying(){
+  return tasks.filter(needsBlock).sort((a,b) =>
+    rank(a)-rank(b) ||
+    (a.dueIn===null?999:a.dueIn)-(b.dueIn===null?999:b.dueIn));
+}
+function dismissedTasks(){ return tasks.filter(t => t.dismissedUntil !== null); }
+
+// ---- dates ---------------------------------------------------------------
+function dateAt(off){ const d=new Date(TODAY); d.setDate(d.getDate()+off); return d; }
+function dayLabel(off){
+  if (off === Infinity) return 'no';
+  if (off === 0) return 'today';
+  if (off === 1) return 'tomorrow';
+  if (off === -1) return 'yesterday';
+  const d = dateAt(off);
+  return `${DAYS[d.getDay()]} ${d.getDate()}`;
+}
+function absLabel(t){
+  if (t.dueIn === null) return 'no due date';
+  const d = dateAt(t.dueIn);
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONS[d.getMonth()]}`;
+}
+function relLabel(t){
+  if (t.dueIn === null) return null;
+  if (t.dueIn < 0) return `${-t.dueIn}d overdue`;
+  if (t.dueIn === 0) return 'today';
+  if (t.dueIn === 1) return 'tomorrow';
+  return `in ${t.dueIn}d`;
+}
+function fmt(m){
+  const h=Math.floor(m/60), mm=m%60, ap=h>=12?'PM':'AM', hh=h%12===0?12:h%12;
+  return mm===0?`${hh} ${ap}`:`${hh}:${String(mm).padStart(2,'0')} ${ap}`;
+}
+
+// ---- return policy (used twice: re-arm and dismissal) --------------------
+function describeRearm(){
+  if (settings.rearmMode==='daily') return `daily at ${settings.rearmTime}`;
+  if (settings.rearmMode==='hours') return `every ${settings.rearmHours}h`;
+  return 'when something new qualifies';
+}
+function describeDismiss(){
+  if (settings.dismissMode==='eod')  return 'end of day';
+  if (settings.dismissMode==='time') return settings.dismissTime;
+  return `${settings.dismissHours}h from now`;
+}
+
+// ---- free slots ----------------------------------------------------------
+function freeRuns(dayOff, minMinutes){
+  const busy = events.filter(e => e.day===dayOff).sort((a,b)=>a.start-b.start);
+  const runs=[]; let c=DAY_START;
+  for (const e of busy){
+    if (e.start-c >= minMinutes) runs.push({start:c,end:e.start});
+    c = Math.max(c,e.end);
+  }
+  if (DAY_END-c >= minMinutes) runs.push({start:c,end:DAY_END});
+  return runs;
+}
+
+// ---- render: day ---------------------------------------------------------
+function y(m){ return (m-DAY_START)*PX_PER_MIN; }
+
+function dayViewHtml(){
+  return `<h2>Today's plan</h2>
+    <div class="sub">Click a highlighted slot while placing a task.</div>
+    <div id="placing-host"></div>
+    <div class="agenda-track" id="agenda" style="height:600px;"></div>`;
+}
+
+function paintDayAgenda(){
+  const host=document.getElementById('agenda'); if(!host) return;
+  host.innerHTML='';
+  for(let m=DAY_START;m<=DAY_END;m+=30){
+    const l=document.createElement('div');
+    l.className=(m%60===0)?'hour-line':'half-line'; l.style.top=y(m)+'px'; host.appendChild(l);
+    if(m%60===0&&m<DAY_END){
+      const lb=document.createElement('div');
+      lb.className='hour-label'; lb.style.top=y(m)+'px'; lb.textContent=fmt(m);
+      host.appendChild(lb);
+    }
+  }
+  for(const e of events.filter(x=>x.day===0)){
+    const el=document.createElement('div');
+    el.className='event'+(e.fresh?' fresh':'');
+    el.style.top=y(e.start)+'px';
+    el.style.height=Math.max(20,(e.end-e.start)*PX_PER_MIN-3)+'px';
+    el.style.background=CATS[e.cat].raw;
+    el.innerHTML=`<div class="name">${e.label}</div>`+
+      ((e.end-e.start)>=45?`<div class="span">${fmt(e.start)} – ${fmt(e.end)}</div>`:'');
+    host.appendChild(el); e.fresh=false;
+  }
+  if(placing){
+    const t=tasks.find(x=>x.id===placing);
+    const dl=deadlineOf(t);
+    const tooLate = 0 > dl;
+    freeRuns(0,60).forEach((r,i)=>{
+      const el=document.createElement('div');
+      el.className='cand'+(i===0?' best':'')+(tooLate?' late':'');
+      el.style.top=y(r.start)+'px';
+      el.style.height=Math.max(24,(r.end-r.start)*PX_PER_MIN-3)+'px';
+      el.innerHTML=`${fmt(r.start)} – ${fmt(r.end)} free`+
+        (i===0?`<span class="badge">earliest</span>`:'');
+      el.onclick=()=>placeInto(t,0,r);
+      host.appendChild(el);
+    });
+  }
+  const ph=document.getElementById('placing-host');
+  if(ph){
+    if(!placing) ph.innerHTML='';
+    else{
+      const t=tasks.find(x=>x.id===placing);
+      ph.innerHTML=`<div class="placing-banner">
+        <span>Placing <b>${t.title}</b> — deadline ${absLabel(t)}. Pick a free run.</span>
+        <button onclick="cancelPlacing()">Cancel</button></div>`;
+    }
+  }
+}
+
+// ---- render: week --------------------------------------------------------
+function weekViewHtml(){
+  const heads = WEEK_OFFSETS.map(off=>{
+    const d=dateAt(off);
+    const cls = off===0?'today':(off<0?'past':'');
+    return `<div class="wcol-head ${cls}">
+        <div class="dn">${DAYS[d.getDay()]}</div>
+        <div class="dd">${d.getDate()} ${MONS[d.getMonth()]}</div></div>`;
+  }).join('');
+
+  const flags = WEEK_OFFSETS.map(off=>{
+    const due = tasks.filter(t=>t.dueIn===off);
+    return `<div class="dueflags">` + due.map(t=>
+      `<div class="dueflag${needsBlock(t)?' unsched':''}"
+            style="background:${CATS[t.cat].raw}"
+            title="${t.title} — due ${absLabel(t)}">${t.title}</div>`).join('') + `</div>`;
+  }).join('');
+
+  const cols = WEEK_OFFSETS.map(off=>{
+    const cls = off===0?'today':(off<0?'past':'');
+    const evs = events.filter(e=>e.day===off).map(e=>{
+      const t = e.taskId ? tasks.find(x=>x.id===e.taskId) : null;
+      const late = t && (e.day > deadlineOf(t) || e.day < 0);
+      const h = Math.max(13,(e.end-e.start)*W_PX_PER_MIN-2);
+      return `<div class="wev${late?' late':''}"
+        style="top:${(e.start-DAY_START)*W_PX_PER_MIN}px;height:${h}px;
+               background:${CATS[e.cat].raw}"
+        title="${e.label} ${fmt(e.start)}–${fmt(e.end)}${late?' — outside its deadline':''}">${e.label}</div>`;
+    }).join('');
+    const cands = placing ? placeCandidatesHtml(off) : '';
+    return `<div class="wcol ${cls}" style="height:${WEEK_H}px">${evs}${cands}</div>`;
+  }).join('');
+
+  let ticks='';
+  for(let m=DAY_START;m<=DAY_END;m+=120){
+    ticks += `<div class="tl" style="top:${(m-DAY_START)*W_PX_PER_MIN}px">${fmt(m)}</div>`;
+  }
+
+  return `<h2>This week</h2>
+    <div class="sub">Deadline flags sit above each day. A block outlined in red is on the
+      wrong side of its task's deadline.</div>
+    <div id="placing-host"></div>
+    <div class="weekwrap">
+      <div class="week-cols">
+        <div></div>${heads}
+        <div></div>${flags}
+        <div class="wtime" style="height:${WEEK_H}px">${ticks}</div>${cols}
+      </div>
+    </div>
+    <div class="weeklegend">
+      <span><i class="lgbox flag"></i> deadline / block</span>
+      <span><i class="lgbox late"></i> outside the deadline</span>
+    </div>`;
+}
+
+function placeCandidatesHtml(off){
+  const t = tasks.find(x=>x.id===placing);
+  if (off < 0) return '';                       // can't plan the past
+  const dl = deadlineOf(t);
+  const late = off > dl;
+  return freeRuns(off,60).map(r=>
+    `<div class="cand${late?' late':''}"
+       style="left:2px;right:2px;top:${(r.start-DAY_START)*W_PX_PER_MIN}px;
+              height:${Math.max(16,(r.end-r.start)*W_PX_PER_MIN-2)}px;font-size:9px"
+       title="${late?'After the deadline — will not count as covered':'Free'}"
+       onclick="placeInto(tasks.find(x=>x.id==='${placing}'),${off},{start:${r.start},end:${r.end}})">
+     </div>`).join('');
+}
+
+// ---- render: glance ------------------------------------------------------
+function taskRowHtml(t){
+  const chips=[];
+  if(t.dueIn!==null && t.dueIn<0) chips.push(`<span class="pchip overdue">overdue</span>`);
+  else if(t.priority==='urgent')  chips.push(`<span class="pchip urgent">urgent</span>`);
+  else if(t.dueIn!==null && t.dueIn<=3) chips.push(`<span class="pchip soon">due soon</span>`);
+
+  const dateBit = t.dueIn===null
+    ? `<span>no due date</span>`
+    : `<span><b>${absLabel(t)}</b></span><span class="sep">·</span><span>${relLabel(t)}</span>`;
+  const why = uncoveredReason(t);
+
+  return `<div class="nb-task">
+      <span class="dot" style="background:${CATS[t.cat].raw}"></span>
+      <div class="body">
+        <div class="t">${t.title}</div>
+        <div class="meta">${chips.join('')}${dateBit}
+          <span class="sep">·</span><span>${CATS[t.cat].name}</span></div>
+        ${why?`<div class="whyline">⚠ ${why}</div>`:''}
+        <div class="nb-acts">
+          <button class="primary" onclick="startPlacing('${t.id}')">Find time</button>
+          <button onclick="dismiss('${t.id}')">Not today</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function dismissedHtml(){
+  const d = dismissedTasks();
+  if (d.length === 0) return '';
+  const rows = dismissedExpanded ? d.map(t=>
+    `<div class="drow"><span>${t.title}</span>
+       <button onclick="undismiss('${t.id}')">bring back</button></div>`).join('') : '';
+  return `<div class="dismissed-strip" onclick="toggleDismissed()">
+      ${d.length} dismissed · returns ${describeDismiss()} ${dismissedExpanded?'▲':'▼'}
+    </div>${rows?`<div class="nb-expand">${rows}</div>`:''}`;
+}
+
+function gatedContentHtml(){
+  return `<div class="reveal">
+    <div class="stat-row">
+      <div class="stat focus"><div class="k">Focus</div><div class="v">2h 10m</div></div>
+      <div class="stat brk"><div class="k">Break</div><div class="v">35m</div></div>
+    </div>
+    <div class="catbar"><div class="lab"><span class="t">
+      <span class="dotc" style="background:#4A7CC4"></span>School</span><span>1h 30m</span></div>
+      <div class="bar"><i style="width:62%;background:#4A7CC4"></i></div></div>
+    <div class="catbar"><div class="lab"><span class="t">
+      <span class="dotc" style="background:#2F7E6E"></span>Health</span><span>1h 00m</span></div>
+      <div class="bar"><i style="width:41%;background:#2F7E6E"></i></div></div>
+    <div class="catbar"><div class="lab"><span class="t">
+      <span class="dotc" style="background:#B0679A"></span>Home</span><span>30m</span></div>
+      <div class="bar"><i style="width:20%;background:#B0679A"></i></div></div>
+    <div class="catbar"><div class="lab"><span class="t">
+      <span class="dotc" style="background:#C4703A"></span>Work</span><span>1h 00m</span></div>
+      <div class="bar"><i style="width:41%;background:#C4703A"></i></div></div>
+    <div class="encourage">Four life areas got real time today. That's a balanced day.</div>
+  </div>`;
+}
+
+function renderGlance(){
+  const host=document.getElementById('glance-host');
+  const sub=document.getElementById('glance-sub');
+  const list=qualifying(), tone=settings.tone;
+
+  if(list.length===0){
+    sub.textContent='Where today actually went';
+    host.innerHTML=`<div class="nb-strip clear">✓ Everything's on the calendar</div>`
+      + dismissedHtml() + gatedContentHtml();
+    return;
+  }
+
+  if(settings.gateEnabled && !gateOpen){
+    sub.textContent='First, a look at what has no time set aside';
+    host.innerHTML=`<div class="${tone}">
+        <div class="nb-head"><h3>Needs a block</h3>
+          <span class="nb-count">${list.length}</span></div>
+        <div class="nb-sub">${tone==='gentle'
+          ? 'Open work with no time set aside yet.'
+          : 'No time booked for these. Deadlines are closing in.'}</div>
+        ${list.map(taskRowHtml).join('')}
+        <div class="gate-foot">
+          <button onclick="openGate()">Show my day →</button>
+          <div class="note">Nothing is dismissed. Review returns ${describeRearm()}.</div>
+        </div>
+      </div>` + dismissedHtml();
+    return;
+  }
+
+  sub.textContent='Where today actually went';
+  const strip=`<div class="nb-strip ${tone}" onclick="toggleStrip()">
+      <span><b>${list.length}</b> still ${list.length===1?'needs':'need'} a block</span>
+      <span class="chev">${stripExpanded?'▲':'▼'}</span></div>`;
+  const exp = stripExpanded?`<div class="nb-expand">${list.map(taskRowHtml).join('')}</div>`:'';
+  host.innerHTML = strip + exp + dismissedHtml() + gatedContentHtml();
+}
+
+function renderAnnot(){
+  document.querySelectorAll('[data-annot]').forEach(el=>
+    el.classList.toggle('hidden',!showAnnot));
+}
+
+function renderAll(){
+  document.getElementById('main-host').innerHTML =
+    (view==='day') ? dayViewHtml() : weekViewHtml();
+  if(view==='day') paintDayAgenda();
+  else{
+    const ph=document.getElementById('placing-host');
+    if(ph){
+      if(!placing) ph.innerHTML='';
+      else{
+        const t=tasks.find(x=>x.id===placing);
+        ph.innerHTML=`<div class="placing-banner">
+          <span>Placing <b>${t.title}</b> — deadline ${absLabel(t)}. Green slots count;
+          red ones are past the deadline.</span>
+          <button onclick="cancelPlacing()">Cancel</button></div>`;
+      }
+    }
+  }
+  const dl=document.getElementById('date-label'), dh=document.getElementById('date-hint');
+  if(view==='day'){ dl.textContent='Tuesday, 21 July 2026';
+                    dh.textContent='Plan vs. actual · 30-minute slots'; }
+  else{ dl.textContent='Week of 20 July 2026';
+        dh.textContent='Deadlines and blocks, side by side'; }
+  renderGlance(); renderAnnot();
+}
+
+// ---- actions -------------------------------------------------------------
+function startPlacing(id){
+  placing=id;
+  if(view==='day'){
+    const t=tasks.find(x=>x.id===id);
+    if(deadlineOf(t) > 0 && freeRuns(0,60).length===0)
+      toast('Today is full — switch to Week to find time before the deadline');
+  }
+  renderAll();
+}
+function cancelPlacing(){ placing=null; renderAll(); }
+function openGate(){ gateOpen=true; renderAll(); toast('Numbers unlocked — nothing dismissed'); }
+function toggleStrip(){ stripExpanded=!stripExpanded; renderAll(); }
+function toggleDismissed(){ dismissedExpanded=!dismissedExpanded; renderAll(); }
+
+function placeInto(task,dayOff,run){
+  const dur=Math.min(60,run.end-run.start);
+  events.push({id:'ev'+Date.now(), day:dayOff, start:run.start, end:run.start+dur,
+               label:task.title, cat:task.cat, taskId:task.id, fresh:true});
+  placing=null; renderAll();
+  const late = dayOff > deadlineOf(task);
+  toast(late
+    ? `Blocked ${dayLabel(dayOff)} — after the deadline, so it still needs a block`
+    : `Blocked ${dayLabel(dayOff)}, ${fmt(run.start)} – ${fmt(run.start+dur)}`);
+}
+
+function dismiss(id){
+  const t=tasks.find(x=>x.id===id);
+  t.dismissedUntil = describeDismiss();
+  if(placing===id) placing=null;
+  renderAll();
+  toast(`"${t.title}" quiet until ${describeDismiss()}`);
+}
+function undismiss(id){
+  const t=tasks.find(x=>x.id===id);
+  t.dismissedUntil=null; renderAll(); toast(`"${t.title}" back on the list`);
+}
+
+let toastTimer=null;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),2800);
+}
+
+// ---- settings wiring -----------------------------------------------------
+const scrim=document.getElementById('scrim'), modal=document.getElementById('modal');
+document.getElementById('settings-btn').onclick=()=>{
+  scrim.classList.add('show'); modal.classList.add('show'); livePreview();
+};
+function closeSettings(){ scrim.classList.remove('show'); modal.classList.remove('show'); }
+document.getElementById('modal-close').onclick=closeSettings;
+scrim.onclick=closeSettings;
+
+document.querySelectorAll('#pri-chips .chipbtn').forEach(b=>{
+  b.onclick=()=>{ const p=b.dataset.p;
+    settings.priorities[p]=!settings.priorities[p];
+    b.classList.toggle('on',settings.priorities[p]); renderAll(); livePreview(); };
+});
+document.getElementById('win-select').onchange=function(){
+  settings.dueWithinDays=parseInt(this.value,10); renderAll(); livePreview(); };
+
+document.querySelectorAll('#rearm-chips .chipbtn').forEach(b=>{
+  b.onclick=()=>{
+    settings.rearmMode=b.dataset.m;
+    document.querySelectorAll('#rearm-chips .chipbtn').forEach(x=>x.classList.toggle('on',x===b));
+    document.getElementById('rearm-daily-row').style.display =
+      settings.rearmMode==='daily'?'flex':'none';
+    document.getElementById('rearm-hours-row').style.display =
+      settings.rearmMode==='hours'?'flex':'none';
+    renderAll(); livePreview();
+  };
+});
+document.getElementById('rearm-time').onchange=function(){
+  settings.rearmTime=this.value; renderAll(); livePreview(); };
+document.getElementById('rearm-hours').onchange=function(){
+  settings.rearmHours=parseInt(this.value,10)||1; renderAll(); livePreview(); };
+
+document.querySelectorAll('#dis-chips .chipbtn').forEach(b=>{
+  b.onclick=()=>{
+    settings.dismissMode=b.dataset.m;
+    document.querySelectorAll('#dis-chips .chipbtn').forEach(x=>x.classList.toggle('on',x===b));
+    document.getElementById('dis-time-row').style.display =
+      settings.dismissMode==='time'?'flex':'none';
+    document.getElementById('dis-hours-row').style.display =
+      settings.dismissMode==='hours'?'flex':'none';
+    renderAll(); livePreview();
+  };
+});
+document.getElementById('dis-time').onchange=function(){
+  settings.dismissTime=this.value; renderAll(); livePreview(); };
+document.getElementById('dis-hours').onchange=function(){
+  settings.dismissHours=parseInt(this.value,10)||1; renderAll(); livePreview(); };
+
+document.getElementById('gate-check').onchange=function(){
+  settings.gateEnabled=this.checked;
+  if(!this.checked) gateOpen=false;
+  renderAll(); livePreview(); };
+document.querySelectorAll('#tone-chips .chipbtn').forEach(b=>{
+  b.onclick=()=>{ settings.tone=b.dataset.t;
+    document.querySelectorAll('#tone-chips .chipbtn').forEach(x=>x.classList.toggle('on',x===b));
+    renderAll(); };
+});
+
+function livePreview(){
+  const n=qualifying().length;
+  const pri=Object.entries(settings.priorities).filter(([,v])=>v).map(([k])=>k);
+  const priTxt=pri.length?pri.join(' + '):'no priority rule';
+  const winTxt=settings.dueWithinDays>0
+    ? `anything due within ${settings.dueWithinDays} day${settings.dueWithinDays>1?'s':''}`
+    : 'no due-date rule';
+  document.getElementById('live-preview').innerHTML =
+    `<b>Right now:</b> ${priTxt}, plus ${winTxt} → <b>${n}</b> of ${tasks.length} flagged.<br>` +
+    `Review returns <b>${describeRearm()}</b> · dismissals last until <b>${describeDismiss()}</b>.`;
+}
+
+document.querySelectorAll('#view-switch button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('#view-switch button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); view=b.dataset.v; renderAll();
+  };
+});
+document.getElementById('annot-btn').onclick=function(){
+  showAnnot=!showAnnot; this.classList.toggle('on',showAnnot);
+  this.textContent='Design notes: '+(showAnnot?'on':'off'); renderAnnot(); };
+document.getElementById('rearm-btn').onclick=()=>{
+  gateOpen=false; stripExpanded=false; renderAll();
+  toast(`Re-armed (${describeRearm()}) — the review is asking again`); };
+document.getElementById('reset-btn').onclick=()=>{ seed(); renderAll(); toast('Reset'); };
+
+seed(); renderAll();
+</script>
+</body>
+</html>

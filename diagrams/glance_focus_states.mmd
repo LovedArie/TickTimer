@@ -1,0 +1,33 @@
+%% The glance panel's states after design A (v22.4). One panel, four shapes,
+%% chosen by two derived booleans — no mode flag is ever stored.
+stateDiagram-v2
+    [*] --> Derive
+
+    Derive: refresh(now)
+    Derive: list = tasksNeedingBlock(...)
+    Derive: looked = nextReturn(lastReview) > now
+
+    Derive --> Hidden: list empty<br/>and none put off
+    Derive --> Clear: list empty<br/>but some put off
+    Derive --> Focus: list non-empty<br/>and not looked
+    Derive --> Strip: list non-empty<br/>and looked
+
+    Hidden: card hidden entirely
+    Hidden: panel is what it always was
+
+    Clear: "Everything's on the calendar"
+    Clear: put-off strip only
+
+    Focus: GATE — card takes the panel's stretch
+    Focus: ONE task, hero density
+    Focus: counter "1 of N" expands to the list
+    Focus: "Show my day" releases the gate
+
+    Strip: reviewed — day content returns
+    Strip: pinned rows stay visible
+    Strip: card sizes to its content
+
+    Focus --> Strip: Show my day<br/>(writes lastReview)
+    Strip --> Focus: nextReturn passes<br/>(re-arms at 06:00)
+    Focus --> Clear: last task planned
+    Strip --> Hidden: nothing left at all

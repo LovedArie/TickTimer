@@ -27,6 +27,31 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON) # modern, but nothing newer than needed)
 # Finds your installed Qt (any 6.x — built against 6.4 here, your 6.8 kit
 # works unchanged). Widgets = the UI module; Test = the QTest framework.
 find_package(Qt6 REQUIRED COMPONENTS Widgets Test Network)
+# Sound is optional equipment (v19.8): with Qt Multimedia the app plays
+# real chimes from resources; without it, Windows' own winmm plays them;
+# failing both, it beeps. A missing module must cost sound, never builds.
+find_package(Qt6 QUIET COMPONENTS Multimedia)
+
+# The sound tier as an INTERFACE library (v19.9.1 — the owner's Windows
+# build taught the lesson: MainWindow.cpp is compiled into THREE targets,
+# and hanging winmm on just the app left test_ui.exe with an undefined
+# `__imp_PlaySoundW`). An INTERFACE library owns no code; it carries
+# usage requirements — link lines, compile definitions — to every target
+# that links it. The rule it encodes: a dependency belongs to the SOURCE
+# that needs it, so it must travel with that source into every target;
+# per-target sprinkling is how one of them gets forgotten.
+add_library(ticktimer_sound INTERFACE)
+if(Qt6Multimedia_FOUND)
+    target_link_libraries(ticktimer_sound INTERFACE Qt6::Multimedia)
+    target_compile_definitions(ticktimer_sound INTERFACE TICKTIMER_HAS_MULTIMEDIA)
+    message(STATUS "TickTimer sound: QSoundEffect (Qt Multimedia found)")
+elseif(WIN32)
+    # Tier 2: Windows' own waveform API — always present, no extra DLLs.
+    target_link_libraries(ticktimer_sound INTERFACE winmm)
+    message(STATUS "TickTimer sound: winmm PlaySound (Qt Multimedia NOT in this kit — chimes still play)")
+else()
+    message(STATUS "TickTimer sound: system beep only (no Qt Multimedia on a non-Windows platform)")
+endif()
 
 # Turns on AUTOMOC and friends: Qt classes with Q_OBJECT need generated
 # meta-code (signals/slots machinery); this makes CMake run Qt's moc tool
@@ -46,6 +71,10 @@ qt_standard_project_setup()
 set(DOMAIN_SOURCES
     include/Activity.h
     include/AppData.h
+    include/AssistantVerbs.h
+    src/AssistantVerbs.cpp
+    include/Intake.h
+    src/Intake.cpp
     include/Category.h
     include/Event.h
     include/Folder.h
@@ -54,11 +83,27 @@ set(DOMAIN_SOURCES
     include/Segment.h
     include/SpecialDay.h
     include/Task.h
+    include/TaskCoverage.h
+    include/MissedBlocks.h
+    include/Reschedule.h
+    include/Affordability.h
+    include/NudgePhrasing.h
+    include/Mood.h
+    include/CheckIn.h
+    include/ReturnPolicy.h
     include/Stats.h
+    include/DayBriefing.h
     include/TrackerService.h
+    include/BlockAlarmService.h
+    src/BlockAlarmService.cpp
+    include/PomodoroEngine.h
+    include/PomodoroLink.h
+    src/PomodoroEngine.cpp
+    src/PomodoroLink.cpp
     src/AppData.cpp
     src/JsonStore.cpp
     src/Stats.cpp
+    src/DayBriefing.cpp
     src/TrackerService.cpp
 )
 
@@ -72,10 +117,44 @@ set(UI_SOURCES
     include/PickActivityDialog.h
     include/PlannerPage.h
     include/PomodoroPage.h
+    include/PomodoroMiniWindow.h
+    src/PomodoroMiniWindow.cpp
+    include/NotificationToast.h
+    src/NotificationToast.cpp
+    include/Affordability.h
+    include/AffordabilityService.h
+    src/AffordabilityService.cpp
+    include/DebugPanel.h
+    src/DebugPanel.cpp
+    include/ProposalCard.h
+    src/ProposalCard.cpp
+    include/NudgePhrasing.h
+    include/Mood.h
+    include/CheckIn.h
+    include/CheckInService.h
+    src/CheckInService.cpp
+    include/NudgeClient.h
+    src/NudgeClient.cpp
     include/ReviewWidgets.h
     include/SpecialDaysPage.h
     include/TaskDetailDialog.h
-    include/TaskRow.h
+    include/TaskDetailForm.h
+    include/TaskDetailPanel.h
+    include/QuickAddParser.h
+    include/LlmProvider.h
+    include/LlmQuickAdd.h
+    include/LlmQuickAddClient.h
+    include/ChatSession.h
+    include/ChatClient.h
+    include/ChatPage.h
+    include/QuickAddPreview.h
+    include/QuickCaptureOverlay.h
+    include/TaskSnapshotModel.h
+    include/CategoryTaskModel.h
+    include/CategoryTaskDelegate.h
+    include/TaskListModel.h
+    include/TaskFilterProxy.h
+    include/TaskCardDelegate.h
     include/UpcomingPage.h
     include/WeekAgendaView.h
     include/Theme.h
@@ -85,6 +164,10 @@ set(UI_SOURCES
     src/DueDateDialog.cpp
     src/EventDialog.cpp
     src/GlancePanel.cpp
+    include/NeedsBlockCard.h
+    src/NeedsBlockCard.cpp
+    include/SlidePanel.h
+    src/SlidePanel.cpp
     src/MainWindow.cpp
     src/PickActivityDialog.cpp
     src/PlannerPage.cpp
@@ -92,7 +175,25 @@ set(UI_SOURCES
     src/ReviewWidgets.cpp
     src/SpecialDaysPage.cpp
     src/TaskDetailDialog.cpp
-    src/TaskRow.cpp
+    src/TaskDetailForm.cpp
+    src/TaskDetailPanel.cpp
+    src/QuickAddParser.cpp
+    src/LlmProvider.cpp
+    src/LlmQuickAdd.cpp
+    src/IntakeExtract.cpp
+    src/LlmQuickAddClient.cpp
+    include/IntakeClient.h
+    src/IntakeClient.cpp
+    src/ChatSession.cpp
+    src/ChatClient.cpp
+    src/ChatPage.cpp
+    src/QuickCaptureOverlay.cpp
+    src/TaskSnapshotModel.cpp
+    src/CategoryTaskModel.cpp
+    src/CategoryTaskDelegate.cpp
+    src/TaskListModel.cpp
+    src/TaskFilterProxy.cpp
+    src/TaskCardDelegate.cpp
     src/UpcomingPage.cpp
     src/WeekAgendaView.cpp
     src/AuthClient.cpp
@@ -103,6 +204,13 @@ set(UI_SOURCES
     src/ShareClient.cpp
     src/SharingDialog.cpp
     src/CompareDialog.cpp
+    include/Prefs.h
+    include/SettingsDialog.h
+    src/SettingsDialog.cpp
+    include/SettingsPages.h
+    src/SettingsPages.cpp
+    include/CatchUpCard.h
+    src/CatchUpCard.cpp
     src/UpdateClient.cpp
     src/UpdateBanner.cpp
     src/ArchivePage.cpp
@@ -138,6 +246,13 @@ qt_add_executable(ticktimer
 target_include_directories(ticktimer PRIVATE include)
 
 target_link_libraries(ticktimer PRIVATE Qt6::Widgets Qt6::Network)
+target_link_libraries(ticktimer PRIVATE ticktimer_sound)
+# The chime WAVs ride inside the binary as Qt resources — nothing to
+# copy beside the .exe, nothing for the installer to forget.
+qt_add_resources(ticktimer "sounds" PREFIX "/sounds" BASE resources FILES
+    resources/notify_phase.wav
+    resources/notify_block.wav
+)
 
 # On Windows this hides the console window behind the GUI; harmless elsewhere.
 set_target_properties(ticktimer PROPERTIES WIN32_EXECUTABLE ON)
@@ -186,6 +301,62 @@ target_link_libraries(test_domain PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
 
 add_test(NAME domain COMMAND test_domain)
 
+# The model/view suite: unit-tests TaskListModel + TaskFilterProxy directly,
+# through the QAbstractItemModel interface (rowCount / data / roles / filter /
+# sort) — no widgets, so it links like the domain suite (Gui for QColor only).
+# The DELEGATE, being paint code, is exercised by test_ui driving the real page;
+# this suite proves the data side that a delegate merely renders.
+qt_add_executable(test_taskmodel
+    ${DOMAIN_SOURCES}
+    include/TaskSnapshotModel.h
+    include/CategoryTaskModel.h
+    include/TaskListModel.h
+    include/TaskFilterProxy.h
+    src/TaskSnapshotModel.cpp
+    src/CategoryTaskModel.cpp
+    src/TaskListModel.cpp
+    src/TaskFilterProxy.cpp
+    tests/test_taskmodel.cpp
+)
+target_include_directories(test_taskmodel PRIVATE include)
+target_link_libraries(test_taskmodel PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+
+add_test(NAME taskmodel COMMAND test_taskmodel)
+
+# The quick-add parser suite: a PURE function, so the leanest target in the
+# project — parser + tests, Core/Test only. No domain, no widgets, no Gui.
+# This is what "parse is a pure function" buys: microsecond tests, zero setup.
+qt_add_executable(test_nlp
+    include/QuickAddParser.h
+    include/LlmProvider.h
+    include/LlmQuickAdd.h
+    src/QuickAddParser.cpp
+    # v24: the provider layer joins this target rather than starting its own.
+    # It is pure (QUrl/QJson/QSettings, no QNetworkAccessManager), so it earns
+    # a seat in the Core-only suite — which is the whole argument for having
+    # written it as free functions over a value instead of a network class.
+    src/LlmProvider.cpp
+    src/LlmQuickAdd.cpp
+    # v25: chat:: is pure too — a transcript, a budget and a prompt, no
+    # sockets — so the conversation layer is asserted here, offline, in
+    # microseconds. Note what is NOT here: brief::, which reads AppData and
+    # therefore belongs to test_domain. Two pure AI layers, two suites,
+    # neither able to drag the other's dependencies in.
+    include/ChatSession.h
+    src/ChatSession.cpp
+    # v29.1: intake's extraction half is pure too (values in, JSON out —
+    # the prompt takes the area NAME, not AppData, precisely so it can sit
+    # here). Its domain-reading brain stays in Intake.cpp / test_domain.
+    include/Intake.h
+    src/IntakeExtract.cpp
+    tests/test_nlp.cpp
+)
+target_include_directories(test_nlp PRIVATE include)
+target_link_libraries(test_nlp PRIVATE Qt6::Core Qt6::Test)
+
+add_test(NAME nlp COMMAND test_nlp)
+set_tests_properties(taskmodel PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # The UI regression suite: real widgets, driven headlessly on the
 # "offscreen" platform (same trick as the screenshot tool). It exists for
 # bugs the domain suite CANNOT see — widget lifetime, signal re-entrancy,
@@ -197,7 +368,11 @@ qt_add_executable(test_ui
     tests/test_ui.cpp
 )
 target_include_directories(test_ui PRIVATE include)
-target_link_libraries(test_ui PRIVATE Qt6::Widgets Qt6::Test Qt6::Network)
+target_link_libraries(test_ui PRIVATE Qt6::Widgets Qt6::Test Qt6::Network
+                                      ticktimer_sound)
+# (No sound RESOURCES here on purpose: the tests never reach the chime
+# code — setupNotifications bails on the headless tray guard — and if a
+# desktop run ever did, empty resource bytes fall back to the beep.)
 
 add_test(NAME ui COMMAND test_ui)
 set_tests_properties(ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -215,7 +390,8 @@ if(BUILD_TOOLS)
         tools/screenshot.cpp
     )
     target_include_directories(screenshot-tool PRIVATE include)
-    target_link_libraries(screenshot-tool PRIVATE Qt6::Widgets Qt6::Network)
+    target_link_libraries(screenshot-tool PRIVATE Qt6::Widgets Qt6::Network
+                                                  ticktimer_sound)
 endif()
 
 # ---- auth: shared account/hashing code, the server, and its tests ----------

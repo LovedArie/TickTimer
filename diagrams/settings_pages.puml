@@ -1,0 +1,91 @@
+@startuml settings_pages
+' ---------------------------------------------------------------------------
+' settings_pages — the v26.1 shell/page split (design-addendum-settings-nav).
+'
+' The point of the picture: SettingsDialog has NO arrow to any concrete page.
+' It knows the abstract SettingsPage and nothing else, so adding a page adds
+' zero lines to save(). Contrast the "before" note at the bottom.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title Settings — shell, contract, pages (v26.1)
+
+abstract class SettingsPage {
+  {abstract} +title(): QString
+  {abstract} +save(): void
+  ..
+  no load() — pages read prefs::
+  in their constructor, because a
+  page is built exactly once
+}
+
+class SettingsDialog {
+  -m_nav: QListWidget*
+  -m_stack: QStackedWidget*
+  -m_pages: QVector<SettingsPage*>
+  ..
+  -addPage(SettingsPage*): void
+  -save(): void
+  ..
+  OK  -> save() on every page
+  Cancel -> writes nothing
+}
+
+class AgendaSettingsPage {
+  day start / end
+  week start
+  block-start alarm
+}
+
+class NeedsBlockSettingsPage {
+  flag rule (priorities, window)
+  review + dismissal clocks
+  escalation ladder, gate
+}
+
+class AssistantSettingsPage {
+  provider, key, model
+  Test probe (reads the SCREEN)
+  persona, fallback seat
+}
+
+class "settingsui" as helpers <<namespace>> {
+  +makePolicyEditor(): PolicyEditor
+  +readPolicyEditor(): ReturnPolicy
+  +rowOf(): QWidget*
+}
+
+class "prefs::" as prefs <<namespace>> {
+  typed accessors over QSettings
+  defaults + clamping live here
+}
+
+SettingsPage <|-- AgendaSettingsPage
+SettingsPage <|-- NeedsBlockSettingsPage
+SettingsPage <|-- AssistantSettingsPage
+
+SettingsDialog o--> "0..*" SettingsPage : holds, in nav order
+
+NeedsBlockSettingsPage ..> helpers : two policy editors
+AssistantSettingsPage  ..> helpers : one composite row
+
+AgendaSettingsPage     ..> prefs : read + write
+NeedsBlockSettingsPage ..> prefs : read + write
+AssistantSettingsPage  ..> prefs : QSettings direct\n(key names from ai:: / chat::)
+
+note bottom of SettingsDialog
+  BEFORE (v26.0): one 579-line constructor,
+  one flat QFormLayout, one save() that every
+  feature edited. The junk drawer its own
+  header comment warned about.
+end note
+
+note right of SettingsPage
+  Pages are constructed EAGERLY.
+  Lazy would be the obvious win and is
+  wrong: test_ui.cpp finds widgets with
+  findChild(objectName), and an
+  unconstructed page has no children.
+end note
+
+@enduml

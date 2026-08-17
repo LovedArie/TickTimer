@@ -1,0 +1,47 @@
+%% v23 — restoring the window's memory. FOUR ways in, ONE way out: every
+%% failure lands on the same default rectangle, so no path needs its own
+%% recovery code. The interesting node is the last check, because it is the
+%% one Qt cannot do for you (restoreGeometry validates BYTES, not monitors).
+flowchart TD
+    Start([MainWindow constructor ends]) --> Default
+
+    Default["resize(kDefaultWidth, kDefaultHeight)<br/>set FIRST, so every exit below<br/>already stands on a sane window"]
+    Default --> Restore["restoreWindowState()"]
+
+    Restore --> Rail
+
+    Rail["RAIL<br/>m_nav->setVisible(<br/>&nbsp;&nbsp;prefs::sidebarVisible(!isCompactScreen()))"]
+    Rail --> Compact{isCompactScreen()?}
+
+    Compact -->|yes| DoneSmall[/"DONE — geometry is<br/>neither saved nor restored<br/>on phone-sized screens"/]
+
+    Compact -->|no| Blob{"prefs::windowGeometry()<br/>empty?"}
+    Blob -->|"yes — first run<br/>on this machine"| DoneDefault
+    Blob -->|no| Parse{"restoreGeometry(blob)"}
+
+    Parse -->|"false — Qt refused the<br/>bytes: wrong version,<br/>corrupt, hand-edited"| DoneDefault
+    Parse -->|true| Reach{"overlapsAnyScreen(<br/>&nbsp;&nbsp;frameGeometry(),<br/>&nbsp;&nbsp;availableScreenRects())"}
+
+    Reach -->|"false — the monitor<br/>it lived on is gone"| Rescue
+    Reach -->|true| DoneRestored[/"DONE — window is<br/>where you left it,<br/>maximized state and all"/]
+
+    Rescue["setWindowState(WindowNoState)<br/>— drop a maximize aimed at<br/>a screen that no longer exists<br/>resize + centre on primary"]
+    Rescue --> DoneDefault
+
+    DoneDefault[/"DONE — default rectangle.<br/>Silent: an unreadable preference<br/>is not an error the user can act on"/]
+
+    %% ---- the save side --------------------------------------------------
+    %% v23.1: closeEvent demoted from "the" save to "the last" save. The
+    %% debounce is the load-bearing path now — it works no matter how the
+    %% process dies, which closeEvent never did (Stop button, crash, kill).
+    Move([moveEvent / resizeEvent /<br/>changeEvent: WindowStateChange]) --> Gate{"m_windowStateRestored<br/>&& isVisible()<br/>&& !isMinimized()?"}
+    Gate -->|"no — construction or<br/>restore in progress: saving now<br/>would erase the memory<br/>with the default"| Drop[/"drop"/]
+    Gate -->|yes| Timer["restart 1s single-shot QTimer<br/>(start() on a running timer<br/>restarts it — that fact IS<br/>the debounce)"]
+    Timer -->|"1s of silence"| SaveRail
+
+    Close([closeEvent — the courtesy pass,<br/>no longer load-bearing]) --> SaveRail
+
+    SaveRail["prefs::setSidebarVisible(...)<br/>(belt-and-braces: already written<br/>on every Ctrl+B / toggle click)"]
+    SaveRail --> SaveGuard{isCompactScreen()?}
+    SaveGuard -->|yes| SkipSave[/"skip — never store a<br/>phone-shaped rectangle"/]
+    SaveGuard -->|no| SaveGeo["prefs::setWindowGeometry(saveGeometry())"]

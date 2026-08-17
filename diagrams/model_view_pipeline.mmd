@@ -1,0 +1,21 @@
+%% Upcoming: rebuild-on-change to model/view (v20) — see docs/design-addendum-model-view.md
+flowchart TB
+    subgraph OLD["BEFORE — rebuild-on-change (every OTHER page still works this way)"]
+        direction TB
+        OA["AppData<br/><i>the truth</i>"] -->|"changed()"| OP["UpcomingPage::rebuild()"]
+        OP -->|"deleteLater the whole list"| OD["discard N QFrames,<br/>N checkboxes, 2N labels,<br/>2N buttons"]
+        OP -->|"buildContent(): build them<br/>ALL again from upcomingTasks()"| ON["N fresh card widget trees"]
+        ON --> OV["shown in a QScrollArea"]
+    end
+
+    subgraph NEW["AFTER — model/view (this refactor)"]
+        direction TB
+        NA["AppData<br/><i>the truth</i>"] -->|"changed()"| NM["TaskListModel::refresh()<br/>beginResetModel -> snapshot -> endResetModel"]
+        NM -->|"rowCount() / data(index, role)"| NX["TaskFilterProxy<br/>filterAcceptsRow() · lessThan()<br/><i>priority lens + due-date sort</i>"]
+        NX -->|"visible, ordered rows"| NV["QListView"]
+        ND["TaskCardDelegate<br/>paint() card + section header<br/>sizeHint() row height"] -.->|"paints each row"| NV
+        NV -.->|"editorEvent(): which zone was clicked?"| NS["doneToggled /<br/>deleteRequested /<br/>editRequested"]
+        NS -->|"page turns intent into a domain call"| NA
+    end
+
+    OLD -.->|"identical on screen —<br/>but no widget churn, and<br/>the model is unit-testable"| NEW

@@ -1,0 +1,48 @@
+@startuml catch_up_chip_states
+' ---------------------------------------------------------------------------
+' catch_up_chip_states — v26.7 (catch-up §K.5).
+'
+' The point of the picture: every transition into MUTED is reversible from
+' TWO directions — the user's tap (transient, snooze survives) or the
+' evening reset (automatic, snooze lapses) — and NO state locks the drawer.
+' Access and attention are separate axes; only attention has states.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title The catch-up chip — three intensities, one always-open door
+
+state "ABSENT\n(card hidden)" as absent
+state "PROMINENT\namber · «N to catch up»" as prom
+state "MUTED\ngray · «N · back 22:30»" as muted
+
+[*] --> absent
+
+absent --> prom : a block ends short\n(at a moment, not snoozed)
+absent --> muted : resolved blocks exist\n(«N resolved» — the way back)
+
+prom --> muted : «Later»\n(snooze until the reset)
+prom --> muted : moment toggle off\n(Settings → Catch-up)
+muted --> prom : the reset\n(evening moment / snooze lapses)
+
+prom --> absent : last block resolved\nand recovery window empty
+muted --> absent : horizon ages the\nlast block out (§C)
+
+note right of muted
+  Clicking the MUTED chip opens the
+  drawer but does NOT clear the snooze:
+  the midday review is transient —
+  prominence returns only at the reset.
+  (Owner's workflow: quiet workday,
+  deliberate re-summon, guaranteed
+  evening return.)
+end note
+
+note bottom of prom
+  The drawer is reachable from every
+  visible state. It holds ALL verbs:
+  Move → , Done, Skip, Skip all,
+  the undo receipt, bring-back, Later.
+  The glance panel reads; the drawer does.
+end note
+
+@enduml

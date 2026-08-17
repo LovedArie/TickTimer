@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="1531px" preserveAspectRatio="none" style="width:452px;height:1531px;" version="1.1" viewBox="0 0 452 1531" width="452px" zoomAndPan="magnify"><defs/><g><text fill="#2A2E33" font-family="Segoe UI" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="301" x="74.75" y="22.9951">ChatClient — one turn walks the route (v26)</text><ellipse cx="169.5" cy="36.2969" fill="#000000" rx="10" ry="10" style="stroke: none; stroke-width: 1.0;"/><rect fill="#FFFFFF" height="61.9063" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="313" x="13" y="66.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="221" x="23" y="87.4355">route = ai::routeFor(Feature::Chat)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="230" x="23" y="101.4043">read at fire time; a missing route key</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="293" x="23" y="115.373">DERIVES the v25 provider — no migration write</text><rect fill="#FFFFFF" height="47.9375" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="275" x="32" y="148.2031"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="211" x="42" y="169.3418">planRoute() — drop seats cooling</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="255" x="42" y="183.3105">in the breaker (unreachable &lt; 20 s ago)</text><rect fill="#F7E9E8" height="47.9375" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="242" x="48.5" y="264.543"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="170" x="58.5" y="285.6816">fail FAST, naming the seats</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="222" x="58.5" y="299.6504">"… unreachable — will retry shortly"</text><ellipse cx="169.5" cy="345.0117" fill="#FFFFFF" rx="11" ry="11" style="stroke: #000000; stroke-width: 1.0;"/><ellipse cx="169.5" cy="345.0117" fill="#000000" rx="6" ry="6" style="stroke: #7F7F7F; stroke-width: 1.0;"/><polygon fill="#EDF4F1" points="127.5,216.1406,211.5,216.1406,223.5,228.1406,211.5,240.1406,127.5,240.1406,115.5,228.1406,127.5,216.1406" style="stroke: #2F7E6E; stroke-width: 1.5;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="14" x="173.5" y="250.3511">no</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="84" x="127.5" y="232.2949">any seat left?</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="20" x="223.5" y="225.5464">yes</text><rect fill="#FFFFFF" height="61.9063" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="221" x="59" y="398.0117"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="16" x="69" y="419.1504">try</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="54" x="89" y="419.1504">seat #1</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="170" x="69" y="433.1191">(TICKTIMER_AI_DOWN forces</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="201" x="69" y="447.0879">unreachable before any socket)</text><rect fill="#EDF4F1" height="33.9688" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="212" x="63.5" y="528.3203"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="192" x="73.5" y="549.459">breaker.noteOk — reply shown</text><ellipse cx="169.5" cy="601.8047" fill="#FFFFFF" rx="11" ry="11" style="stroke: #000000; stroke-width: 1.0;"/><ellipse cx="169.5" cy="601.8047" fill="#000000" rx="6" ry="6" style="stroke: #7F7F7F; stroke-width: 1.0;"/><polygon fill="#EDF4F1" points="93.5,479.918,245.5,479.918,257.5,491.918,245.5,503.918,93.5,503.918,81.5,491.918,93.5,479.918" style="stroke: #2F7E6E; stroke-width: 1.5;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="20" x="173.5" y="514.1284">yes</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="152" x="93.5" y="496.0723">answered 200 with text?</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="14" x="257.5" y="489.3237">no</text><rect fill="#F7E9E8" height="61.9063" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="316" x="11.5" y="703.207"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="206" x="21.5" y="724.3457">fail LOUDLY — never falls through</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="296" x="21.5" y="738.3145">a wrong key masked by a quieter seat costs an</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="286" x="21.5" y="752.2832">evening of "why did the answers get dumber"</text><ellipse cx="169.5" cy="796.1133" fill="#FFFFFF" rx="11" ry="11" style="stroke: #000000; stroke-width: 1.0;"/><ellipse cx="169.5" cy="796.1133" fill="#000000" rx="6" ry="6" style="stroke: #7F7F7F; stroke-width: 1.0;"/><polygon fill="#EDF4F1" points="35,654.8047,304,654.8047,316,666.8047,304,678.8047,35,678.8047,23,666.8047,35,654.8047" style="stroke: #2F7E6E; stroke-width: 1.5;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="20" x="173.5" y="689.0151">yes</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="269" x="35" y="670.959">REFUSED? 401 403 404 429 5xx / bad reply</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="114" x="316" y="664.2104">no — UNREACHABLE</text><rect fill="#FFFFFF" height="61.9063" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="319" x="10" y="849.1133"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="222" x="20" y="870.252">breaker.noteUnreachable(seat #1)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="131" x="20" y="884.2207">transcript, local-only:</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="299" x="20" y="898.1895">"⚠ &lt;seat 1&gt; unreachable — trying &lt;seat 2&gt;…"</text><rect fill="#F7E9E8" height="33.9688" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="262" x="38.5" y="979.4219"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="242" x="48.5" y="1000.5605">failed — "couldn't reach the AI service"</text><ellipse cx="169.5" cy="1052.9063" fill="#FFFFFF" rx="11" ry="11" style="stroke: #000000; stroke-width: 1.0;"/><ellipse cx="169.5" cy="1052.9063" fill="#000000" rx="6" ry="6" style="stroke: #7F7F7F; stroke-width: 1.0;"/><polygon fill="#EDF4F1" points="92,931.0195,247,931.0195,259,943.0195,247,955.0195,92,955.0195,80,943.0195,92,931.0195" style="stroke: #2F7E6E; stroke-width: 1.5;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="14" x="173.5" y="965.23">no</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="155" x="92" y="947.1738">a next seat in the route?</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="20" x="259" y="940.4253">yes</text><rect fill="#FFFFFF" height="33.9688" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="239" x="50" y="1105.9063"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="16" x="60" y="1127.0449">try</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="54" x="80" y="1127.0449">seat #2</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="141" x="138" y="1127.0449">— same three verdicts</text><rect fill="#EDF4F1" height="61.9063" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="253" x="43" y="1208.2773"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="74" x="53" y="1229.416">reply shown</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="111" x="131" y="1229.416">plus attribution</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="4" x="242" y="1229.416">:</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="233" x="53" y="1243.3848">"answered by &lt;seat 2&gt;" — a fallback</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="156" x="53" y="1257.3535">answer names its author</text><ellipse cx="169.5" cy="1301.1836" fill="#FFFFFF" rx="11" ry="11" style="stroke: #000000; stroke-width: 1.0;"/><ellipse cx="169.5" cy="1301.1836" fill="#000000" rx="6" ry="6" style="stroke: #7F7F7F; stroke-width: 1.0;"/><polygon fill="#EDF4F1" points="93.5,1159.875,245.5,1159.875,257.5,1171.875,245.5,1183.875,93.5,1183.875,81.5,1171.875,93.5,1159.875" style="stroke: #2F7E6E; stroke-width: 1.5;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="20" x="173.5" y="1194.0854">yes</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="152" x="93.5" y="1176.0293">answered 200 with text?</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="14" x="257.5" y="1169.2808">no</text><rect fill="#F7E9E8" height="61.9063" rx="12.5" ry="12.5" style="stroke: #616974; stroke-width: 1.5;" width="267" x="36" y="1354.1836"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="247" x="46" y="1375.3223">refused -&gt; loud; unreachable -&gt; noted,</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="240" x="46" y="1389.291">and the LAST seat has nowhere to go:</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="188" x="46" y="1403.2598">"couldn't reach the AI service"</text><path d="M200.5,1426.0898 L200.5,1468.9961 L180.5,1472.9961 L200.5,1476.9961 L200.5,1519.9023 A0,0 0 0 0 200.5,1519.9023 L440.5,1519.9023 A0,0 0 0 0 440.5,1519.9023 L440.5,1436.0898 L430.5,1426.0898 L200.5,1426.0898 A0,0 0 0 0 200.5,1426.0898 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M430.5,1426.0898 L430.5,1436.0898 L440.5,1436.0898 L430.5,1426.0898 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="184" x="206.5" y="1442.2285">§E's one rule, drawn: only the</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="182" x="206.5" y="1456.1973">UNREACHABLE class (nothing</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="219" x="206.5" y="1470.166">answered) moves to the next seat.</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="204" x="206.5" y="1484.1348">Everything a server actually SAID</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="171" x="206.5" y="1498.1035">is config feedback the user</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="68" x="206.5" y="1512.0723">must hear.</text><ellipse cx="169.5" cy="1472.9961" fill="#FFFFFF" rx="11" ry="11" style="stroke: #000000; stroke-width: 1.0;"/><ellipse cx="169.5" cy="1472.9961" fill="#000000" rx="6" ry="6" style="stroke: #7F7F7F; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="46.2969" y2="66.2969"/><polygon fill="#616974" points="165.5,56.2969,169.5,66.2969,173.5,56.2969,169.5,60.2969" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="128.2031" y2="148.2031"/><polygon fill="#616974" points="165.5,138.2031,169.5,148.2031,173.5,138.2031,169.5,142.2031" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="312.4805" y2="334.0117"/><polygon fill="#616974" points="165.5,324.0117,169.5,334.0117,173.5,324.0117,169.5,328.0117" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="240.1406" y2="264.543"/><polygon fill="#616974" points="165.5,254.543,169.5,264.543,173.5,254.543,169.5,258.543" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="223.5" x2="300.5" y1="228.1406" y2="228.1406"/><polygon fill="#616974" points="296.5,304.0117,300.5,314.0117,304.5,304.0117,300.5,308.0117" style="stroke: #616974; stroke-width: 1.5;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="300.5" x2="300.5" y1="228.1406" y2="378.0117"/><line style="stroke: #616974; stroke-width: 1.5;" x1="300.5" x2="169.5" y1="378.0117" y2="378.0117"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="378.0117" y2="398.0117"/><polygon fill="#616974" points="165.5,388.0117,169.5,398.0117,173.5,388.0117,169.5,392.0117" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="196.1406" y2="216.1406"/><polygon fill="#616974" points="165.5,206.1406,169.5,216.1406,173.5,206.1406,169.5,210.1406" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="562.2891" y2="590.8047"/><polygon fill="#616974" points="165.5,580.8047,169.5,590.8047,173.5,580.8047,169.5,584.8047" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="503.918" y2="528.3203"/><polygon fill="#616974" points="165.5,518.3203,169.5,528.3203,173.5,518.3203,169.5,522.3203" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="257.5" x2="285.5" y1="491.918" y2="491.918"/><polygon fill="#616974" points="281.5,560.8047,285.5,570.8047,289.5,560.8047,285.5,564.8047" style="stroke: #616974; stroke-width: 1.5;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="285.5" x2="285.5" y1="491.918" y2="634.8047"/><line style="stroke: #616974; stroke-width: 1.5;" x1="285.5" x2="169.5" y1="634.8047" y2="634.8047"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="634.8047" y2="654.8047"/><polygon fill="#616974" points="165.5,644.8047,169.5,654.8047,173.5,644.8047,169.5,648.8047" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="459.918" y2="479.918"/><polygon fill="#616974" points="165.5,469.918,169.5,479.918,173.5,469.918,169.5,473.918" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="765.1133" y2="785.1133"/><polygon fill="#616974" points="165.5,775.1133,169.5,785.1133,173.5,775.1133,169.5,779.1133" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="678.8047" y2="703.207"/><polygon fill="#616974" points="165.5,693.207,169.5,703.207,173.5,693.207,169.5,697.207" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="316" x2="337.5" y1="666.8047" y2="666.8047"/><polygon fill="#616974" points="333.5,749.6602,337.5,759.6602,341.5,749.6602,337.5,753.6602" style="stroke: #616974; stroke-width: 1.5;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="337.5" x2="337.5" y1="666.8047" y2="829.1133"/><line style="stroke: #616974; stroke-width: 1.5;" x1="337.5" x2="169.5" y1="829.1133" y2="829.1133"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="829.1133" y2="849.1133"/><polygon fill="#616974" points="165.5,839.1133,169.5,849.1133,173.5,839.1133,169.5,843.1133" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="1013.3906" y2="1041.9063"/><polygon fill="#616974" points="165.5,1031.9063,169.5,1041.9063,173.5,1031.9063,169.5,1035.9063" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="955.0195" y2="979.4219"/><polygon fill="#616974" points="165.5,969.4219,169.5,979.4219,173.5,969.4219,169.5,973.4219" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="259" x2="310.5" y1="943.0195" y2="943.0195"/><polygon fill="#616974" points="306.5,1011.9063,310.5,1021.9063,314.5,1011.9063,310.5,1015.9063" style="stroke: #616974; stroke-width: 1.5;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="310.5" x2="310.5" y1="943.0195" y2="1085.9063"/><line style="stroke: #616974; stroke-width: 1.5;" x1="310.5" x2="169.5" y1="1085.9063" y2="1085.9063"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="1085.9063" y2="1105.9063"/><polygon fill="#616974" points="165.5,1095.9063,169.5,1105.9063,173.5,1095.9063,169.5,1099.9063" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="911.0195" y2="931.0195"/><polygon fill="#616974" points="165.5,921.0195,169.5,931.0195,173.5,921.0195,169.5,925.0195" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="1270.1836" y2="1290.1836"/><polygon fill="#616974" points="165.5,1280.1836,169.5,1290.1836,173.5,1280.1836,169.5,1284.1836" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="1183.875" y2="1208.2773"/><polygon fill="#616974" points="165.5,1198.2773,169.5,1208.2773,173.5,1198.2773,169.5,1202.2773" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="257.5" x2="306" y1="1171.875" y2="1171.875"/><polygon fill="#616974" points="302,1254.7305,306,1264.7305,310,1254.7305,306,1258.7305" style="stroke: #616974; stroke-width: 1.5;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="306" x2="306" y1="1171.875" y2="1334.1836"/><line style="stroke: #616974; stroke-width: 1.5;" x1="306" x2="169.5" y1="1334.1836" y2="1334.1836"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="1334.1836" y2="1354.1836"/><polygon fill="#616974" points="165.5,1344.1836,169.5,1354.1836,173.5,1344.1836,169.5,1348.1836" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="1139.875" y2="1159.875"/><polygon fill="#616974" points="165.5,1149.875,169.5,1159.875,173.5,1149.875,169.5,1153.875" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.5;" x1="169.5" x2="169.5" y1="1416.0898" y2="1461.9961"/><polygon fill="#616974" points="165.5,1451.9961,169.5,1461.9961,173.5,1451.9961,169.5,1455.9961" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[1804b045c31f550b3e83ee9efd09215a]
+@startuml chat_route_walk
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+title ChatClient — one turn walks the route (v26)
+
+start
+:route = ai::routeFor(Feature::Chat)
+<i>read at fire time; a missing route key</i>
+<i>DERIVES the v25 provider — no migration write</i>;
+:planRoute() — drop seats cooling
+in the breaker (unreachable < 20 s ago);
+if (any seat left?) then (no)
+  #F7E9E8:fail FAST, naming the seats
+  "… unreachable — will retry shortly";
+  stop
+else (yes)
+endif
+:try **seat #1**
+(TICKTIMER_AI_DOWN forces
+unreachable before any socket);
+if (answered 200 with text?) then (yes)
+  #EDF4F1:breaker.noteOk — reply shown;
+  stop
+else (no)
+endif
+if (REFUSED? 401 403 404 429 5xx / bad reply) then (yes)
+  #F7E9E8:fail LOUDLY — never falls through
+  <i>a wrong key masked by a quieter seat costs an</i>
+  <i>evening of "why did the answers get dumber"</i>;
+  stop
+else (no — UNREACHABLE)
+endif
+:breaker.noteUnreachable(seat #1)
+transcript, local-only:
+"⚠ <seat 1> unreachable — trying <seat 2>…";
+if (a next seat in the route?) then (no)
+  #F7E9E8:failed — "couldn't reach the AI service";
+  stop
+else (yes)
+endif
+:try **seat #2** — same three verdicts;
+if (answered 200 with text?) then (yes)
+  #EDF4F1:reply shown **plus attribution**:
+  "answered by <seat 2>" — a fallback
+  answer names its author;
+  stop
+else (no)
+endif
+#F7E9E8:refused -> loud; unreachable -> noted,
+and the LAST seat has nowhere to go:
+"couldn't reach the AI service";
+stop
+
+note right
+  §E's one rule, drawn: only the
+  UNREACHABLE class (nothing
+  answered) moves to the next seat.
+  Everything a server actually SAID
+  is config feedback the user
+  must hear.
+end note
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

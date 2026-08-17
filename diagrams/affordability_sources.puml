@@ -1,0 +1,31 @@
+@startuml affordability_sources
+' ---------------------------------------------------------------------------
+' affordability_sources — v28.4 (§J.2): where "the work" comes from.
+' Read top-down: one question, two sources, one honest admission. The
+' multiplier box is the §J.2 payoff: history turned into a coefficient.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+rectangle "**affordability(task)**\n« how much is still to do? »" as q #E8F0EC
+
+rectangle "**estimate exists?**\n(own — or the SUM of its\npieces' estimates)" as est #FFFFFF
+
+rectangle "**ESTIMATE PATH** (v28.4)\noutstanding =\nestimate × **personal rate** − tracked" as epath #E8F0EC
+rectangle "**PROXY PATH** (v28.0, kept)\noutstanding =\nblocks planned − tracked" as ppath #FFFFFF
+rectangle "**UNKNOWN**\nno estimate AND no blocks —\n« I can't tell », said out loud" as unknown #FDF3F2
+
+rectangle "**personalMultiplier()**\nmedian of actual ÷ estimate\nover finished, tracked,\nestimated tasks\n(1.0 under 3 samples;\nclamped 0.5–3.0;\nderived, never stored)" as mult #E8F0EC
+
+q --> est
+est --> epath : yes
+est --> ppath : no, but blocks\nwere planned
+est --> unknown : no, and none\never were
+mult -right-> epath : the rate
+
+legend bottom
+  One verdict pipeline, two sizing sources: the user's **estimate** (scaled by
+  their own measured rate) outranks the planned-blocks **proxy**; Unknown has
+  shrunk to the case where BOTH are absent. Format unchanged — everything
+  here is derived.
+endlegend
+@enduml

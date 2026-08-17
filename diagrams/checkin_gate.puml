@@ -1,0 +1,47 @@
+@startuml checkin_gate
+' ---------------------------------------------------------------------------
+' checkin_gate — v28.2 part 1: WHEN the morning check-in knocks. Pure.
+' The §A spine's third application: the model will HOLD the conversation
+' (part 2), but whether to knock is code — deterministic and stingy.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title The check-in gate — once, in the morning, only when the day is heavy
+
+start
+:a sweep asks checkin::shouldOffer(data, now, lastOffered);
+
+if (06:00 ≤ now < 11:00?) then (no)
+  :silence — a morning check-in at
+  15:40 is a different, worse feature;
+  stop
+else (yes)
+endif
+
+if (already offered today?\nlastOffered == today) then (yes)
+  :silence — once means once,
+  asking twice is nagging squared;
+  stop
+else (no)
+endif
+
+if (isDayHeavy?\n≥5h planned  OR\n≥2 tasks due within 2 days) then (no)
+  :silence — a quiet Tuesday does
+  not need a wellness interview
+  (§G.1, verbatim);
+  stop
+else (yes)
+  :OFFER — part 2 turns this into a
+  toast whose action opens the chat
+  with the check-in waiting;
+  note right
+    Mood, once answered, is the first
+    stored fact the app cannot derive:
+    data.json, format v12, one per day,
+    trimmed at 14 by the midnight knock.
+    The NOTE never enters a briefing —
+    pinned by test, not by comment.
+  end note
+  stop
+endif
+@enduml

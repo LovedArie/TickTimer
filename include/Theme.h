@@ -162,6 +162,21 @@ inline QString appStyleSheet()
         QTreeWidget#railTree::item:selected {
             background: rgba(47,126,110,0.12); color: #2F7E6E;
         }
+
+        /* Settings nav (v26.1). Deliberately the SAME selected/hover wash as
+           #railTree above: two vertical pickers in one app that highlight
+           differently is the kind of small inconsistency that makes a UI feel
+           assembled rather than designed. Copied rather than shared because
+           QSS has no variables — the duplication is in the stylesheet, not in
+           the palette, which still lives in exactly one place. */
+        QListWidget#settingsNav { border: none; background: transparent; }
+        QListWidget#settingsNav::item {
+            padding: 9px 10px; border-radius: 8px; margin: 1px 0;
+        }
+        QListWidget#settingsNav::item:hover { background: rgba(47,126,110,0.06); }
+        QListWidget#settingsNav::item:selected {
+            background: rgba(47,126,110,0.12); color: #2F7E6E;
+        }
         QScrollArea { border: none; background: transparent; }
         QStatusBar { color: #616974; }
 

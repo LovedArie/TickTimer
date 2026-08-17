@@ -1,0 +1,40 @@
+@startuml checkin_surfaces
+' ---------------------------------------------------------------------------
+' checkin_surfaces — v28.2 part 2: the knock, the tap, and the two walls
+' that keep mood on the machine. Companion to checkin_gate (the WHEN).
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title Check-in part 2 — one tap to answer, two walls around the answer
+
+component "CheckInService\n10-min timer · lastOffered\nin QSettings (per-device)" as svc
+component "NotificationToast\nToastSpec + action row\n(the v28.0 seam's first consumer)" as toast
+component "ChatPage::beginCheckIn\nC++ opener + 3 buttons\nall bubbles localOnly" as chat
+database "AppData\nrecordMood (upsert)\nformat v12" as data
+component "brief::dayBriefing\nOptions.includeMood\n<b>default false</b>" as brief
+cloud "cloud seat" as cloud
+component "local seat\n(loopback only —\nai::isLocal)" as local
+
+svc --> toast : offer(title, body)\nmark lastOffered AT EMIT
+toast --> chat : tap «Check in»\n→ showPage(6)
+chat --> data : one tap = recordMood
+data ..> brief : coarse level only
+
+brief --> local : MOOD line rides\n(every route seat local)
+brief -[#C25B54]-> cloud : <b>never</b> — mixed or remote\nroutes get silence
+
+note bottom of chat
+  §E.4 in part 2, satisfied by SUBTRACTION:
+  no model is in the check-in loop at all —
+  opener and acknowledgement are C++ citing
+  evidence (§G.3). The model joins when
+  per-role primaries exist.
+end note
+
+note bottom of svc
+  Marked at EMIT, not at tap: a dismissed
+  toast was still an ask. Marking at tap
+  would re-knock at someone who already
+  said "not now" with their thumb.
+end note
+@enduml

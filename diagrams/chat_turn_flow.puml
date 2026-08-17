@@ -1,0 +1,54 @@
+@startuml chat_turn_flow
+' One turn of the v25 assistant. See docs/design-addendum-chat.md
+!include _style.puml
+title One chat turn — the briefing is rebuilt every time (v25)
+
+actor You as USER
+participant "ChatPage\n(UI)" as PAGE
+participant "brief::\n(pure, domain)" as BRIEF
+database "AppData" as DATA
+participant "chat::\n(pure, core)" as CHAT
+participant "ai::\n(pure, core)" as AI
+participant "ChatClient\n(wire)" as WIRE
+participant "provider\n(cloud or localhost)" as NET
+
+USER -> PAGE : Enter / Send
+PAGE -> PAGE : append user Turn\n+ bubble (optimistic)
+PAGE -> BRIEF : dayBriefing(data, today, <b>now</b>)
+BRIEF -> DATA : eventsOn · summarizeDay ·\nupcomingTasks · specialDays
+DATA --> BRIEF : facts
+BRIEF --> PAGE : one text block\n<i>[past]/[NOW]/[upcoming], counts stated,\nno ids, no notes</i>
+PAGE -> CHAT : systemPrompt(briefing)
+PAGE -> CHAT : transcript.window(6000 chars)
+note right of CHAT
+  whole turns, newest-biased;
+  localOnly turns NEVER sent;
+  leading assistant turn dropped
+  (both dialects open with the user)
+end note
+CHAT --> PAGE : system + messages
+PAGE -> WIRE : send(system, messages)
+WIRE -> AI : configured() · endpoint() ·\nchatRequestBody(…, 800) · headers()
+AI --> WIRE : url, json, headers
+WIRE -> NET : POST (timeout 60 s)
+NET --> WIRE : reply bytes
+WIRE -> AI : extractText(dialect, bytes)
+AI --> WIRE : the model's prose
+WIRE --> PAGE : replied(text)
+PAGE -> PAGE : append assistant Turn + bubble
+
+group failure, any step
+  WIRE --> PAGE : failed(reason)
+  PAGE -> PAGE : append <b>localOnly</b> Turn\n(warning bubble in the log,\nnever in the next window)
+end
+
+group Stop pressed mid-flight
+  PAGE -> WIRE : cancel()
+  note right of WIRE
+    generation++ BEFORE abort():
+    the abort-triggered reply is
+    discarded as stale — silence,
+    not a spurious error
+  end note
+end
+@enduml

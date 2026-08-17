@@ -88,13 +88,31 @@ In your **server's data directory** (where `accounts.json` lives), create
 
 No restart needed — the server re-reads the file on every check.
 
-## The release routine, forever after
+## The release routine, forever after — with proof points
 
-1. Bump `include/Version.h` (one file — the exes and the check follow).
-2. Build + zip (`deploy-windows.bat`).
-3. `git add . && git commit -m "..." && git push`
-4. GitHub → new release, tag `vX.Y.Z`, attach zip, publish.
-5. Edit `version.json` on the server: `"latest": "X.Y.Z"`.
+A version change is an **act, not a side effect**: nothing in the build
+invents a number, a human declares one. Each step below has a checkpoint
+that PROVES it took — skip the proofs and you'll ship ghosts.
+
+1. Bump the version in **TWO** places: `include/Version.h` (feeds the
+   code, both exes, and the update check) **and** `installer/ticktimer.iss`
+   (Inno can't include C headers — this is the one seam kept in sync by
+   hand, and it has been forgotten before).
+   *Proof: open both files, same number.*
+2. Build + package: `tools\deploy-windows.bat` (app and server CLOSED —
+   Windows won't replace running exes).
+   *Proof: `dist\TickTimer\ticktimer.exe` → Properties → Details →
+   File version matches.*
+3. Compile the installer: open the `.iss` → F9.
+   *Proof: run the new Setup — Add/Remove Programs shows the new number.*
+4. `git add . && git commit -m "vX.Y.Z - ..." && git push`
+5. GitHub → new release, tag `vX.Y.Z` (type it, then CLICK "Create new
+   tag on publish"), attach the fresh zip **and** Setup.exe, publish.
+   *Proof: download from `releases/latest` yourself — `releases/latest`
+   serves whatever you last PUBLISHED, and announcing a version the shelf
+   doesn't hold yet makes the banner promise what "Get it" can't deliver.*
+6. Edit `version.json` on the server: `"latest": "X.Y.Z"` (the server
+   window prints the folder). No restart.
 
 Everyone on the old version sees the banner at next launch. That's the
 whole loop the networked arc was building toward.

@@ -18,12 +18,17 @@ TrackerService::TrackerService(AppData* data, QObject* parent)
     // Qt signal->signal connection: the QTimer's timeout IS our tick; no
     // forwarding slot needed.
     connect(&m_secondTimer, &QTimer::timeout, this, &TrackerService::tick);
+    // Same heartbeat, second job: watch for the tracked block's window
+    // closing. Order deliberate — enforce AFTER tick, so the final second
+    // still paints before the stop lands.
+    connect(&m_secondTimer, &QTimer::timeout,
+            this, &TrackerService::enforceWindow);
 
     // The heartbeat: every 30 s, stamp "still alive at <now>" into the
     // RunningState. touchRunning() emits changed(), changed() triggers a
     // save — so the insurance on disk is never more than 30 s stale.
     connect(&m_heartbeatTimer, &QTimer::timeout, this, [this]() {
-        m_data->touchRunning(QDateTime::currentDateTime());
+        m_data->touchRunning(nowProvider());
     });
 }
 
@@ -31,7 +36,41 @@ qint64 TrackerService::liveSeconds() const
 {
     if (m_state == State::Idle)
         return 0;
-    return m_startedAt.secsTo(QDateTime::currentDateTime());
+    // nowProvider, NOT currentDateTime(). The v19.6 audit found FOUR
+    // wall-clock reads past the seam (here, beginInterval, the heartbeat,
+    // and commit's end-stamp) — caught by a visual check whose fake-clock
+    // badge refused to tick, then by a test that had been green for the
+    // wrong reason. A seam that's only mostly installed is worse than
+    // none: every test trusts it, and each hole lies to all of them. The
+    // repair rule: grep the whole file for currentDateTime, not just the
+    // symptom's line — holes come in families (the same habit that made
+    // one made the others).
+    return m_startedAt.secsTo(nowProvider());
+}
+
+void TrackerService::enforceWindow()
+{
+    if (m_state == State::Idle)
+        return;
+    if (canTrackNow(m_eventId))
+        return; // window still open (or door still says yes) — nothing to do
+
+    // The window has passed (or the block vanished — a deleted block ends
+    // its own tracking, which is the honest reading of deletion). stop()
+    // commits the in-flight interval with real timestamps: at most one
+    // tick past the boundary, which is the truth of when tracking ended.
+    const QString ended = m_eventId;
+    stop();
+    emit trackedBlockEnded(ended);
+}
+
+QString TrackerService::liveEventNow() const
+{
+    const QDateTime now = nowProvider();
+    for (const Event* e : m_data->eventsOn(now.date()))
+        if (e->isLiveAt(now))
+            return e->id; // at most one — the no-overlap rule at work
+    return {};
 }
 
 bool TrackerService::canTrackNow(const QString& eventId) const
@@ -105,7 +144,7 @@ void TrackerService::beginInterval(const QString& eventId, SegmentKind kind)
 {
     m_eventId   = eventId;
     m_kind      = kind;
-    m_startedAt = QDateTime::currentDateTime();
+    m_startedAt = nowProvider();
 
     // Write the crash insurance FIRST, before a single second elapses —
     // if we die right now, the start timestamp is already on disk.
@@ -128,7 +167,7 @@ void TrackerService::commitCurrentInterval()
     Segment s;
     s.kind  = m_kind;
     s.start = m_startedAt;
-    s.end   = QDateTime::currentDateTime();
+    s.end   = nowProvider();
 
     // Order matters: clear the insurance before appending, so the single
     // save triggered by appendSegment writes both effects at once and the

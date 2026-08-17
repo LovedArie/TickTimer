@@ -98,11 +98,10 @@ PeriodSummary summarizeDay(const AppData& data, QDate day,
 }
 
 PeriodSummary summarizeWeek(const AppData& data, QDate anyDayInWeek,
-                            const QDateTime& now)
+                            Qt::DayOfWeek firstDay, const QDateTime& now)
 {
-    // Qt: Monday==1 .. Sunday==7, so this lands on the week's Monday.
-    const QDate monday = anyDayInWeek.addDays(1 - anyDayInWeek.dayOfWeek());
-    return summarize(data, monday, monday.addDays(6), now);
+    const QDate start = weekStart(anyDayInWeek, firstDay);
+    return summarize(data, start, start.addDays(6), now);
 }
 
 PeriodSummary summarizeMonth(const AppData& data, QDate anyDayInMonth,

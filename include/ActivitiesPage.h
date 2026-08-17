@@ -31,6 +31,12 @@ class AppData;
 class QScrollArea;
 class QTreeWidgetItem;
 class QDropEvent;
+class QStackedWidget;
+class QLineEdit;
+class QListView;
+class QLabel;
+class CategoryTaskModel;
+class CategoryTaskDelegate;
 
 // Item-data role keys, shared between CategoryTree (drops) and ActivitiesPage
 // (building the tree): read the role to learn what an item IS. Declared in the
@@ -76,13 +82,32 @@ public:
 
 public slots:
     void rebuild();
+    // v28.7 — the TickTick door: create a piece under this task and open
+    // the panel on it, title pre-selected for naming. PUBLIC because it
+    // is the behavior the right-click menu merely triggers — the test
+    // drives this directly instead of simulating a QMenu exec (untestable
+    // chrome). Domain-guarded: addSubtask refuses a piece parent, so the
+    // one-level rule holds even if a menu ever offers this on a piece.
+    void startPieceUnder(const QString& parentTaskId);
+
+private slots:
+    // A task row's affordances, wired from CategoryTaskDelegate's signals.
+    void editTask(const QString& taskId);      // opens TaskDetailDialog
+    void chooseDueDate(const QString& taskId); // opens DueDateDialog
+    void updateTaskViewHeight();               // fit the list to its rows
+    void updateQuickAddPreview();              // live parse of the task input
 
 private:
     void rebuildRail();
-    void rebuildDetail();
-    QWidget* buildDetailContent();
+    void buildDetailPane();  // ONCE, in the ctor — the persistent skeleton
+    void refreshDetail();    // update in place: header + task model + activities
+    void refreshHeader();
+    void refreshActivities();
     void onRailItemClicked(QTreeWidgetItem* item, int column);
     void onRailContextMenu(const QPoint& pos);
+    // '#school' -> the matching category id (exact name, case-insensitive),
+    // or the currently selected life area when there is no/unknown hint.
+    QString resolveCategoryHint(const QString& hint) const;
 
     AppData*     m_data;
     CategoryTree* m_rail  = nullptr;
@@ -91,4 +116,19 @@ private:
     QSet<QString> m_collapsedFolders;    // presentation: session-only, unsaved
     bool         m_rebuilding = false;   // guards collapse tracking during rebuild
     QColor       m_newCategoryColor{"#4C6FE0"};
+
+    // Persistent detail-pane widgets — built once, updated in place. This is the
+    // heart of the v20.2 conversion: the task input is never destroyed, so it
+    // can no longer be freed mid-signal (the crash rebuildDetail guarded with
+    // deleteLater). The task list itself is a model/view QListView, not a stack
+    // of rebuilt TaskRow widgets.
+    QStackedWidget*       m_detailStack  = nullptr; // [0] empty · [1] content
+    QWidget*              m_headerHost   = nullptr;  // dot/name/button, refilled
+    QLineEdit*            m_taskInput    = nullptr;
+    QLabel*               m_quickAddPreview = nullptr; // live parse readout
+    CategoryTaskModel*    m_taskModel    = nullptr;
+    CategoryTaskDelegate* m_taskDelegate = nullptr;
+    QListView*            m_taskView     = nullptr;
+    QLineEdit*            m_actInput     = nullptr;
+    QWidget*              m_actHost      = nullptr;  // activity rows, refilled
 };

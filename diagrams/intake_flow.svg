@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="1129px" preserveAspectRatio="none" style="width:682px;height:1129px;" version="1.1" viewBox="0 0 682 1129" width="682px" zoomAndPan="magnify"><defs/><g><text fill="#2A2E33" font-family="Segoe UI" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="441" x="124.5" y="12.9951">The intake interview (v29.1) — three answer tiers, one boundary</text><!--MD5=[799e9543975076390d2a6ceafec8df6c]
+entity queue--><rect fill="#FFFFFF" height="47.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="160" x="376.5" y="24.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="139" x="386.5" y="45.4355">NEEDS DETAILS queue</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="140" x="386.5" y="59.4043">(derived, briefing §K.1)</text><!--MD5=[e15e3d08f6b9246c8cb4380450f015e8]
+entity triage--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="146" x="383.5" y="133.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="112" x="393.5" y="154.4355">triage (C++, §K.6)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="126" x="393.5" y="168.4043">deadline ∨ urgent ∨</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="119" x="393.5" y="182.373">heavy-history area;</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="112" x="393.5" y="196.3418">never if dismissed</text><!--MD5=[1e5d867ae92f7bc24a16b161b744b158]
+entity question--><rect fill="#FFFFFF" height="89.8438" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="189" x="362" y="270.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="155" x="372" y="291.4355">the question (C++, §K.2)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="169" x="372" y="305.4043">+ guess from history (§K.3)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="125" x="372" y="319.373">\"Lab 4 — how long?</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="150" x="372" y="333.3418">(2 finished School tasks</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="163" x="372" y="347.3105">ran ~2h — sound right?)\"</text><!--MD5=[2ccedafc8bf29f0fc25fd803b8226d81]
+entity guessbtn--><rect fill="#FFFFFF" height="33.9688" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="118" x="553.5" y="552.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="98" x="563.5" y="573.4355">≈ guess button</text><!--MD5=[6df4567c7ecb479c34bf44457c60ee5a]
+entity typed--><rect fill="#FFFFFF" height="33.9688" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="104" x="210.5" y="474.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="84" x="220.5" y="495.4355">typed answer</text><!--MD5=[55e3b276a5f19dc78f17d001279ee491]
+entity skipbtn--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="158" x="435.5" y="460.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="26" x="445.5" y="481.4355">Skip</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="123" x="445.5" y="495.4043">→ dismissTask(+1y)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="138" x="445.5" y="509.373">owner's act, own door</text><!--MD5=[25fbdca325f255a4cc2c41c29ae4734d]
+entity crisp--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="188" x="124.5" y="616.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="112" x="134.5" y="637.4355">crisp parse (C++)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="168" x="134.5" y="651.4043">\"2h\" / \"1h30\" / \"90 min\"</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="163" x="134.5" y="665.373">refuses prose on purpose</text><!--MD5=[76aeba0ab875879ea5d21554d0007a3a]
+entity model--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="150" x="67.5" y="765.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="130" x="77.5" y="786.4355">IntakeClient → model</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="129" x="77.5" y="800.4043">JSON out, no tool API</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="126" x="77.5" y="814.373">(runs on every seat,</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="104" x="77.5" y="828.3418">Ollama included)</text><!--MD5=[ee598753b08e093ad1dc6a89dd6a274b]
+entity hint--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="159" x="6" y="928.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="72" x="16" y="949.4355">honest hint</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="127" x="16" y="963.4043">\"give me something</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="139" x="16" y="977.373">like 2h\" — stays open</text><!--MD5=[0568ea600d1c2ace8679ac75c80dfc89]
+entity card--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="158" x="255.5" y="928.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="97" x="265.5" y="949.4355">verbs::Proposal</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="112" x="265.5" y="963.4043">→ the Slice 1 card</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="138" x="265.5" y="977.373">→ your tap → the door</text><path d="M174,1055.2969 L174,1113.1719 A4,4 0 0 0 178,1117.1719 L491,1117.1719 A4,4 0 0 0 495,1113.1719 L495,1061.2969 L485,1051.2969 L338.5,1051.2969 L334.5,990.3869 L330.5,1051.2969 L178,1051.2969 A4,4 0 0 0 174,1055.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M485,1051.2969 L485,1059.2969 A2,2 0 0 0 487,1061.2969 L495,1061.2969 L485,1051.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="264" x="180" y="1067.4355">Slice 1 unchanged: validate, re-validate at</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="263" x="180" y="1081.4043">the tap, additive only, copy-aside, receipt.</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="300" x="180" y="1095.373">The model swapped in as a proposer — nothing</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="151" x="180" y="1109.3418">right of the card moved.</text><!--MD5=[493743c2a45e76766e38f94db8a54565]
+link queue to triage--><path d="M456.5,72.3369 C456.5,88.0069 456.5,109.2069 456.5,127.8769 " fill="none" id="queue-&gt;triage" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="456.5,133.0669,460.5,124.0669,456.5,128.0669,452.5,124.0669,456.5,133.0669" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[1708aa665bd1f0d40f9fddeaa145ecb6]
+link triage to question--><path d="M456.5,209.6069 C456.5,226.5769 456.5,246.8969 456.5,265.1069 " fill="none" id="triage-&gt;question" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="456.5,270.1769,460.5,261.1769,456.5,265.1769,452.5,261.1769,456.5,270.1769" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[a0dee2403a64907c7b77fa1a5e478d4a]
+link question to guessbtn--><path d="M551.12,349.2469 C569.66,359.7169 587.16,373.1769 599.5,390.2969 C633.52,437.4969 624.63,511.2169 617.47,547.1569 " fill="none" id="question-&gt;guessbtn" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="616.43,552.1769,622.1713,544.1745,617.4435,547.2807,614.3373,542.5529,616.43,552.1769" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[92b76fdd9f67b5476debfef2dfb43642]
+link question to typed--><path d="M393.26,360.4169 C380.76,369.8769 367.96,380.1069 356.5,390.2969 C327.62,415.9769 297.6,449.2569 279.48,470.1969 " fill="none" id="question-&gt;typed" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="276.02,474.2169,284.922,470.0033,279.281,470.4267,278.8577,464.7857,276.02,474.2169" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[eee536d3431233c18fe918c896db66ff]
+link question to skipbtn--><path d="M461.33,360.3269 C464.61,381.9069 469.96,407.9869 478.5,430.2969 C481.8,438.9169 486.31,447.6969 491.02,455.7869 " fill="none" id="question-&gt;skipbtn" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="493.65,460.2069,492.4878,450.4268,491.0943,455.9094,485.6118,454.5159,493.65,460.2069" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[d9430a9219530da31c2af4ea002a6b17]
+link skipbtn to question--><path d="M504.49,460.2569 C495.8,434.2069 483.06,395.9869 472.9,365.4869 " fill="none" id="skipbtn-&gt;question" style="stroke: #616974; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><polygon fill="#616974" points="471.29,360.6569,470.3236,370.4582,472.8626,365.4031,477.9176,367.9421,471.29,360.6569" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="52" x="517" y="401.5073">next task</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="95" x="495.5" y="414.312">(ask once: never</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="85" x="500.5" y="427.1167">this one again)</text><!--MD5=[e6a460e7949aac32ac4eef752c079546]
+link guessbtn to card--><path d="M604.83,586.5869 C580.73,636.7169 502.56,791.6969 408.5,898.2969 C400.19,907.7169 390.3,916.8169 380.5,924.9769 " fill="none" id="guessbtn-&gt;card" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="376.61,928.1669,386.107,925.5578,380.4779,924.9984,381.0374,919.3692,376.61,928.1669" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="107" x="539.5" y="719.5073">the guess crosses</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="69" x="558.5" y="732.312">the card too</text><!--MD5=[44931bdefe4ebb90fd8d4b82b10f61ba]
+link typed to crisp--><path d="M257.87,508.4869 C250.96,532.6769 237.77,578.8469 228.57,611.0569 " fill="none" id="typed-&gt;crisp" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="227.13,616.0969,233.4486,608.542,228.5036,611.2893,225.7564,606.3443,227.13,616.0969" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[817184f18ae11cfaa03d3b68a457d73b]
+link crisp to card--><path d="M240.45,678.4869 C246.54,687.7469 252.76,698.1669 257.5,708.2969 C291.73,781.4769 315.57,873.6669 326.93,923.1169 " fill="none" id="crisp-&gt;card" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="328.06,928.0569,329.9794,918.3969,326.9587,923.1797,322.1759,920.1589,328.06,928.0569" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="40" x="306.5" y="807.5073">parsed</text><!--MD5=[40bbae385013a8b15206e06a4d67dbf3]
+link crisp to model--><path d="M203.67,678.3569 C192.12,701.7569 175.95,734.5169 163.14,760.4769 " fill="none" id="crisp-&gt;model" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="160.79,765.2369,168.3605,758.9371,163.0032,760.7534,161.1869,755.396,160.79,765.2369" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="60" x="188.5" y="719.5073">not a plain</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="47" x="195" y="732.312">duration</text><!--MD5=[9643b88d12768cb7b41f34291950b69d]
+link model to card--><path d="M161.68,841.7569 C172.77,860.5969 188.17,882.6769 206.5,898.2969 C219.54,909.4069 234.98,918.9169 250.54,926.8769 " fill="none" id="model-&gt;card" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="255.37,929.2969,249.0993,921.7023,250.895,927.0665,245.5307,928.8622,255.37,929.2969" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="53" x="207.5" y="889.0073">extracted</text><!--MD5=[4aa433089e42e1665b2bf7c5775fe7a5]
+link model to hint--><path d="M100.9,841.3769 C93.38,850.3569 86.63,860.5069 82.5,871.2969 C76.34,887.4069 76.27,906.4369 78.08,922.5869 " fill="none" id="model-&gt;hint" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="78.76,927.9469,81.5961,918.5152,78.131,922.9866,73.6596,919.5215,78.76,927.9469" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="82" x="83.5" y="882.5073">couldn't read /</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="59" x="95" y="895.312">seat down</text><!--MD5=[2e64057a2589af4499835e3ffa7ac12d]
+link card to question--><path d="M349.82,928.1869 C363.87,897.7569 382.5,848.9669 382.5,804.2969 C382.5,490.2969 382.5,490.2969 382.5,490.2969 C382.5,445.3669 403.65,398.7569 423.33,365.0869 " fill="none" id="card-&gt;question" style="stroke: #616974; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><polygon fill="#616974" points="425.97,360.6369,417.9458,366.3476,423.4249,364.9407,424.8319,370.4197,425.97,360.6369" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="73" x="383.5" y="651.5073">settle → next</text><!--MD5=[b78f11eb4e0b9df35e036cd07c5255b3]
+@startuml intake_flow
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+
+title The intake interview (v29.1) — three answer tiers, one boundary
+
+rectangle "NEEDS DETAILS queue\n(derived, briefing §K.1)" as queue
+rectangle "triage (C++, §K.6)\ndeadline ∨ urgent ∨\nheavy-history area;\nnever if dismissed" as triage
+rectangle "the question (C++, §K.2)\n+ guess from history (§K.3)\n\"Lab 4 — how long?\n(2 finished School tasks\nran ~2h — sound right?)\"" as question
+rectangle "≈ guess button" as guessbtn
+rectangle "typed answer" as typed
+rectangle "Skip\n→ dismissTask(+1y)\nowner's act, own door" as skipbtn
+rectangle "crisp parse (C++)\n\"2h\" / \"1h30\" / \"90 min\"\nrefuses prose on purpose" as crisp
+rectangle "IntakeClient → model\nJSON out, no tool API\n(runs on every seat,\nOllama included)" as model
+rectangle "honest hint\n\"give me something\nlike 2h\" — stays open" as hint
+rectangle "verbs::Proposal\n→ the Slice 1 card\n→ your tap → the door" as card
+
+queue - -> triage
+triage - -> question
+question - -> guessbtn
+question - -> typed
+question - -> skipbtn
+guessbtn - -> card : the guess crosses\nthe card too
+typed - -> crisp
+crisp - -> card : parsed
+crisp - -> model : not a plain\nduration
+model - -> card : extracted
+model - -> hint : couldn't read /\nseat down
+skipbtn ..> question : next task\n(ask once: never\nthis one again)
+card ..> question : settle → next
+
+note bottom of card
+  Slice 1 unchanged: validate, re-validate at
+  the tap, additive only, copy-aside, receipt.
+  The model swapped in as a proposer — nothing
+  right of the card moved.
+end note
+
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

@@ -1,0 +1,44 @@
+@startuml assistant_roadmap
+' PLANNED sequencing. See docs/design-addendum-assistant.md §N.
+!include _style.puml
+title Assistant roadmap — what blocks what (PLANNED)
+
+rectangle "**v25 — shipped**\nAssistant page · briefing ·\ntranscript window · read-only" as V25 #EDF4F1
+
+rectangle "**v26 — AI foundation**\n<b>1.</b> reasoning-model handling\n   <i>(<think> strip; ships first —\n   nothing works locally without it)</i>\n<b>2.</b> persona (rules → floors → voice)\n<b>3.</b> per-role provider routing" as V26
+
+rectangle "**v27 — Subtasks & sizing**\n<b><i>no AI in this iteration</i></b>\nsubtasks · estimateMinutes ·\nchunkable · multiplier · affordability()\n<i>all visible in the UI on its own</i>" as V27
+
+rectangle "**v28 — Proactive assistant**\n<b><i>still read-only</i></b>\nnudges · morning check-in ·\nmood (14d, format v10) ·\naffordability, phrased" as V28
+
+rectangle "**v29 — Tool use**\nconfirm loop · <b>intake first</b> ·\nthen rescheduling\n<i>dialect strategy promotion?</i>" as V29
+
+rectangle "**v30 — Memory**\nthe residue file · updated,\nnot appended" as V30
+
+V25 --> V26
+V26 --> V28 : persona + routing\nneeded to speak well
+V27 --> V28 : affordability;\notherwise use the\nplanned-block proxy
+V28 --> V29 : live with its judgment\nBEFORE granting a write
+V29 --> V30 : memory writes ARE\ntool use — one loop, not two
+
+note right of V27
+  justified on its OWN merits:
+  "break the scary thing into
+  startable pieces" is worth
+  building if the AI never ships.
+  BEFORE estimation, or estimation
+  gets written twice.
+end note
+
+note right of V29
+  intake is the safest first write:
+  purely additive · self-confirmed ·
+  tiny blast radius
+end note
+
+note bottom of V28
+  the read-only iteration is the cheap way
+  to find out whether its judgment deserves
+  a write at all
+end note
+@enduml

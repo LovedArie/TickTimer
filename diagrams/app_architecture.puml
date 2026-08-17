@@ -1,0 +1,179 @@
+@startuml app_architecture
+' ---------------------------------------------------------------------------
+' app_architecture — the whole of TickTimer at v26.8, in one picture.
+'
+' Why this diagram did not exist until the v26.8 audit, and why that was a
+' gap: every other diagram in this folder zooms in on ONE arc (catch-up, the
+' chat route, model/view). Twenty-nine close-ups and no establishing shot.
+' Someone opening this repo cold had to infer the shape of the system from
+' the shape of the file list.
+'
+' The three rules the picture is really about:
+'
+'   1. ONE aggregate, ONE signal. Every mutation goes through AppData, and
+'      AppData announces exactly one thing: changed(). Views repaint, the
+'      store saves. Nobody subscribes to "task added" — there is no such
+'      signal, on purpose (see design-doc, "the single-signal decision").
+'
+'   2. PURE / WIRE SPLIT. Every namespace in the Domain package is header-
+'      mostly, Qt-value-only, and testable with no network and no widgets.
+'      Every class in the Wire package is a QObject that does nothing BUT
+'      talk to a socket. The AI arc is the clearest case: `ai::` and `chat::`
+'      compute the request body and parse the reply; ChatClient only posts
+'      it. That is why 273 of the tests run headless and offline.
+'
+'   3. THE STACK INDEX IS AN IDENTITY. Pages are numbered by insertion, not
+'      by where their button sits in the rail — ChatPage is index 6 although
+'      its button is above Archive's. Renumbering a page to match the visuals
+'      would silently break every showPage(n) call site.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title TickTimer v26.8 — the whole system
+
+package "Shell" {
+  component "MainWindow" as mw
+  note right of mw
+    owns the app-lifetime objects:
+    AppData, JsonStore, TrackerService,
+    PomodoroEngine + Link, BlockAlarmService,
+    the tray icon, the nav rail
+  end note
+
+  component "QStackedWidget\n(7 pages, index = identity)" as stack
+}
+
+package "Pages" {
+  component "PlannerPage (0)" as pg0
+  component "UpcomingPage (1)" as pg1
+  component "ActivitiesPage (2)" as pg2
+  component "SpecialDaysPage (3)" as pg3
+  component "PomodoroPage (4)" as pg4
+  component "ArchivePage (5)" as pg5
+  component "ChatPage (6)" as pg6
+}
+
+package "Model / View" {
+  component "TaskSnapshotModel\n(shared base, v20.3)" as msnap
+  component "TaskListModel\nfixed query · granular diff" as mlist
+  component "CategoryTaskModel\nparameterised · reset" as mcat
+  component "TaskFilterProxy\npriority lens + due sort" as mproxy
+  component "TaskCardDelegate\nCategoryTaskDelegate" as mdel
+}
+
+package "Domain — pure, headers, no Qt widgets, no sockets" {
+  database "AppData\nthe one aggregate\nsignal: changed()" as data
+  component "Task · Activity · Category\nEvent · Segment · Folder\nSpecialDay" as values
+  component "coverage:: · missed:: · reschedule::\nstats:: · compare:: · returnPolicy::" as pure1
+  component "nlp:: (quick-add grammar)\nchat:: · brief:: · ai::" as pure2
+  component "prefs::\n(QSettings facade)" as prefs
+}
+
+package "Services — app-lifetime QObjects" {
+  component "TrackerService" as svc1
+  component "PomodoroEngine\n+ PomodoroLink" as svc2
+  component "BlockAlarmService" as svc3
+  component "SyncService" as svc4
+}
+
+package "Wire — QObjects that only talk to sockets" {
+  component "ChatClient\nLlmQuickAddClient" as w1
+  component "AuthClient · SyncClient\nShareClient · UpdateClient" as w2
+}
+
+package "Persistence" {
+  database "JsonStore\ndata.json · format v11" as store
+  database "QSettings\n(per-user prefs)" as qs
+}
+
+cloud "LLM provider\nAnthropic · OpenAI · Groq · Ollama" as llm
+node "ticktimer-server\nAuthServer · PlannerStore\nAccountStore · ShareStore" as server
+
+' ---- layout hints ----------------------------------------------------------
+' Hidden edges are pure layout, no meaning: without them Graphviz lays the
+' seven pages out side by side and the diagram becomes three screens wide.
+' Worth knowing as a technique — it is the standard way to shape a PlantUML
+' drawing without lying about the relationships.
+pg0 -[hidden]down- pg1
+pg1 -[hidden]down- pg2
+pg2 -[hidden]down- pg3
+pg3 -[hidden]down- pg4
+pg4 -[hidden]down- pg5
+pg5 -[hidden]down- pg6
+mlist -[hidden]down- mcat
+mcat -[hidden]down- mproxy
+mproxy -[hidden]down- mdel
+svc1 -[hidden]down- svc2
+svc2 -[hidden]down- svc3
+svc3 -[hidden]down- svc4
+w1 -[hidden]down- w2
+values -[hidden]down- pure1
+pure1 -[hidden]down- pure2
+pure2 -[hidden]down- prefs
+
+' ---- structure -------------------------------------------------------------
+mw --> stack
+stack --> pg0
+stack --> pg6
+
+msnap <|-- mlist
+msnap <|-- mcat
+mlist --> mproxy
+mproxy --> mdel
+mcat --> mdel
+
+pg1 ..> mlist
+pg2 ..> mcat
+
+' ---- the one signal --------------------------------------------------------
+data --> values
+data ..> pure1 : queried by
+pg0 --> data : the two doors\n(mutating)
+pg2 --> data
+data -[#2F7E6E]-> mlist : <b>changed()</b>
+data -[#2F7E6E]-> mcat : <b>changed()</b>
+data -[#2F7E6E]-> pg0 : <b>changed()</b>
+data -[#2F7E6E]-> store : <b>changed()</b> → save
+
+note bottom of data
+  <b>One signal, not twenty.</b> A "taskAdded" /
+  "eventMoved" family would need every future
+  mutation to remember to fire the right one.
+  changed() cannot be forgotten, and the cost —
+  repainting slightly more than necessary — is
+  paid back by the models' granular diffing.
+end note
+
+' ---- services --------------------------------------------------------------
+svc1 --> data
+svc2 --> svc1
+svc3 ..> data : derives alarms\n(never stores them)
+svc4 --> w2
+mw --> svc1
+mw --> svc2
+mw --> svc3
+
+' ---- AI: pure computes, wire posts ----------------------------------------
+pg6 --> pure2 : systemPrompt + window
+pure2 --> w1 : request body (a value)
+w1 --> llm : HTTPS
+llm --> w1
+w1 --> pg6 : replied / failed / seatUnreachable
+pg6 ..> data : <b>reads only</b>
+
+note right of w1
+  ai::/chat:: build and parse; the client
+  only posts. Swapping Anthropic for a local
+  Ollama is a value change, not a code change
+  — and the seat route can fall through when
+  one is <i>unreachable</i> (never when it is
+  merely misconfigured).
+end note
+
+' ---- persistence -----------------------------------------------------------
+store --> data : load()
+prefs --> qs
+svc4 --> server
+w2 --> server
+
+@enduml

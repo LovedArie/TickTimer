@@ -84,13 +84,39 @@ SyncDialog::SyncDialog(SyncService* sync, QWidget* parent)
     });
 
     refreshInfo();
+
+    // Auto-sync can hold a conflict from BEFORE this dialog existed —
+    // signals only reach the living, so ask the STATE on open. (Bug
+    // confession: this block first shipped INSIDE the finished-lambda
+    // above — an anchored text edit matched the first refreshInfo() in
+    // the file, not the ctor's. It compiled, tests passed, and the owner
+    // met a ⚠ button with a dialog that offered no choice. Position bugs
+    // survive compilers; only reading the diff catches them.)
+    if (m_sync->hasPendingConflict()) {
+        m_status->setText(tr("A background sync found a conflict — "
+                             "choose which version wins."));
+        m_conflictBox->show();
+    }
 }
 
 void SyncDialog::refreshInfo()
 {
+    // Human words, human time (owner feedback: "revision 0" read as
+    // "synced zero times"). The revision still exists for machines and
+    // tests; people get a clock.
+    const QDateTime t = m_sync->lastSyncTime();
+    QString when;
+    if (!t.isValid())
+        when = tr("never on this device");
+    else if (t.date() == QDate::currentDate())
+        when = tr("today at %1").arg(t.time().toString(tr("h:mm AP")));
+    else if (t.date() == QDate::currentDate().addDays(-1))
+        when = tr("yesterday at %1").arg(t.time().toString(tr("h:mm AP")));
+    else
+        when = t.toString(tr("d MMM, h:mm AP"));
+
     m_info->setText(m_sync->dirty()
-                        ? tr("Local changes not yet on the server · last "
-                             "synced revision %1").arg(m_sync->lastRevision())
-                        : tr("Everything synced · revision %1")
-                              .arg(m_sync->lastRevision()));
+                        ? tr("Changes waiting to sync · last synced: %1")
+                              .arg(when)
+                        : tr("Everything synced · last synced: %1").arg(when));
 }

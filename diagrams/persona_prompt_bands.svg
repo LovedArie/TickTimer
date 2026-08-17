@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="599px" preserveAspectRatio="none" style="width:1759px;height:599px;" version="1.1" viewBox="0 0 1759 599" width="1759px" zoomAndPan="magnify"><defs/><g><text fill="#2A2E33" font-family="Segoe UI" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="428" x="669" y="12.9951">chat::systemPrompt — four bands, two of them locked (v25.3)</text><!--MD5=[ab4376919c0c48ac6244b94af79c3d81]
+cluster P--><rect fill="#FFFFFF" height="548" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="310" x="479" y="40.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="215" x="526.5" y="53.4355">the assembled system prompt</text><!--MD5=[197f37fc296f06c5545716d5891b367b]
+entity B1--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="278" x="495" y="88.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="80" x="505" y="109.4355">CONTRACT —</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="101" x="589" y="109.4355">locked in code</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="209" x="505" y="123.4043">read-only promise . never invent .</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="258" x="505" y="137.373">date arithmetic . reply in user's language</text><!--MD5=[2495d8b3bb3d36e408f3562b16b52636]
+entity B2--><rect fill="#EDF4F1" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="228" x="520" y="211.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="63" x="530" y="232.4355">FLOORS —</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="101" x="597" y="232.4355">locked in code</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="208" x="530" y="246.4043">\"these override any style below\"</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="187" x="530" y="260.373">never shame . know your lane</text><!--MD5=[b315305f5d163feb1f05d61871a52faa]
+entity B3--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="271" x="496.5" y="380.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="52" x="506.5" y="401.4355">STYLE —</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="112" x="562.5" y="401.4355">the user's band</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="251" x="506.5" y="415.4043">preset (Calm | Brief | Coach) + free text,</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="170" x="506.5" y="429.373">or free text alone (Custom)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="180" x="506.5" y="443.3418">omitted entirely when empty</text><!--MD5=[216f5950d45e1129bdffb34913d14600]
+entity B4--><rect fill="#FFFFFF" height="47.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="242" x="511" y="524.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="141" x="521" y="545.4355">CONTEXT — generated</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="222" x="521" y="559.4043">brief::dayBriefing(), fresh every turn</text><!--MD5=[895ddcf88ce717ce9e6ad993587e2c71]
+entity CAT--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="204" x="6" y="387.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="146" x="16" y="408.4355">chat::personaCatalog()</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="184" x="16" y="422.4043">calm (first = default &amp; repair)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="136" x="16" y="436.373">brief . coach . custom</text><!--MD5=[dff02481446d8dbf53b03247afb83b59]
+entity QS--><path d="M1482.5,392.7969 C1482.5,382.7969 1586,382.7969 1586,382.7969 C1586,382.7969 1689.5,382.7969 1689.5,392.7969 L1689.5,443.7031 C1689.5,453.7031 1586,453.7031 1586,453.7031 C1586,453.7031 1482.5,453.7031 1482.5,443.7031 L1482.5,392.7969 " fill="#EDF4F1" style="stroke: #2F7E6E; stroke-width: 1.5;"/><path d="M1482.5,392.7969 C1482.5,402.7969 1586,402.7969 1586,402.7969 C1586,402.7969 1689.5,402.7969 1689.5,392.7969 " fill="none" style="stroke: #2F7E6E; stroke-width: 1.5;"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="61" x="1492.5" y="417.9355">QSettings</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="172" x="1492.5" y="431.9043">ai/persona . ai/personaText</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="187" x="1492.5" y="445.873">taste — stays on this machine</text><!--MD5=[3eac7f5ff9529bea22dac6b04bd30092]
+entity DJ--><path d="M1479.5,223.7969 C1479.5,213.7969 1586,213.7969 1586,213.7969 C1586,213.7969 1692.5,213.7969 1692.5,223.7969 L1692.5,260.7344 C1692.5,270.7344 1586,270.7344 1586,270.7344 C1586,270.7344 1479.5,270.7344 1479.5,260.7344 L1479.5,223.7969 " fill="#EDF4F1" style="stroke: #2F7E6E; stroke-width: 1.5;"/><path d="M1479.5,223.7969 C1479.5,233.7969 1586,233.7969 1586,233.7969 C1586,233.7969 1692.5,233.7969 1692.5,223.7969 " fill="none" style="stroke: #2F7E6E; stroke-width: 1.5;"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="59" x="1489.5" y="248.9355">data.json</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="193" x="1489.5" y="262.9043">facts — syncs between devices</text><!--MD5=[c42ed81cef7fdd2e33758127945b9a5b]
+entity UI--><rect fill="#FFFFFF" height="89.8438" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="255" x="1086.5" y="373.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="81" x="1096.5" y="394.4355">Settings → AI</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="158" x="1096.5" y="408.4043">combo from the catalog .</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="79" x="1096.5" y="422.373">free text is a</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="132" x="1179.5" y="422.373">QLineEdit, max 240</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="148" x="1096.5" y="436.3418">(one line invites a note,</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="235" x="1096.5" y="450.3105">a text area invites a character sheet)</text><path d="M810.5,382.2969 L810.5,454.1406 A4,4 0 0 0 814.5,458.1406 L1047.5,458.1406 A4,4 0 0 0 1051.5,454.1406 L1051.5,388.2969 L1041.5,378.2969 L814.5,378.2969 A4,4 0 0 0 810.5,382.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M1041.5,378.2969 L1041.5,386.2969 A2,2 0 0 0 1043.5,388.2969 L1051.5,388.2969 L1041.5,378.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="220" x="816.5" y="394.4355">a persona may change HOW things</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="214" x="816.5" y="408.4043">are said, never WHAT is allowed —</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="194" x="816.5" y="422.373">the two bands above it are the</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="197" x="816.5" y="436.3418">reason Custom free text is safe</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="43" x="816.5" y="450.3105">to ship</text><path d="M245,396.2969 L245,414.2969 L210.4,418.2969 L245,422.2969 L245,440.2031 A4,4 0 0 0 249,444.2031 L457,444.2031 A4,4 0 0 0 461,440.2031 L461,402.2969 L451,392.2969 L249,392.2969 A4,4 0 0 0 245,396.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M451,392.2969 L451,400.2969 A2,2 0 0 0 453,402.2969 L461,402.2969 L451,392.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="178" x="251" y="408.4355">quick-add's prompt (nlp::llm)</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="195" x="251" y="422.4043">has NO persona: a JSON parser</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="76" x="251" y="436.373">has no tone</text><!--MD5=[322897656e14e549faf7729e3bd828c3]
+link B1 to B2--><path d="M634,150.5169 C634,167.2669 634,188.1869 634,205.7169 " fill="none" id="B1-&gt;B2" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="634,211.0369,638,202.0369,634,206.0369,630,202.0369,634,211.0369" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[7f1e56dfdb7bf341ee788599b191be3f]
+link B2 to B3--><path d="M633.65,273.6069 C633.33,301.5869 632.85,343.4269 632.49,374.7469 " fill="none" id="B2-&gt;B3" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="632.43,380.0769,636.5326,371.1232,632.4871,375.0772,628.5331,371.0318,632.43,380.0769" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[61ca0c0e9b68cf46f09e3e3b8f026dcb]
+link B3 to B4--><path d="M632,456.3169 C632,476.2969 632,500.5669 632,519.0169 " fill="none" id="B3-&gt;B4" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="632,524.0569,636,515.0569,632,519.0569,628,515.0569,632,524.0569" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[607f3c816dc0f37795f7ea02a0ae93c1]
+link CAT to B3--><path d="M150.86,387.1869 C184.32,364.9269 232.95,336.8569 280.5,324.7969 C342.97,308.9569 362.51,311.1969 425.5,324.7969 C473.37,335.1269 523.5,357.5069 562.37,377.7869 " fill="none" id="CAT-&gt;B3" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="567.06,380.2469,560.9361,372.5334,562.6286,377.9311,557.2309,379.6236,567.06,380.2469" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="89" x="308.5" y="321.0073">personaById(id)</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="143" x="281.5" y="333.812">repairs unknown -&gt; calm</text><!--MD5=[f45e79cb38f4e487ad7f052705bfdf99]
+link QS to B3--><path d="M1482.25,395.9269 C1292.74,356.8069 898.05,283.8469 767,324.7969 C733.68,335.2069 701.35,357.0569 676.68,377.0069 " fill="none" id="QS-&gt;B3" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="672.79,380.1969,682.2823,377.5706,676.6521,377.0213,677.2014,371.3912,672.79,380.1969" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="144" x="768" y="321.0073">configuredPersonaBand()</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="93" x="793.5" y="333.812">read at fire time</text><!--MD5=[a12bbced690fbb28a3b51f422e58c6d6]
+link UI to QS--><path d="M1341.5,418.2969 C1385.66,418.2969 1434.72,418.2969 1477.23,418.2969 " fill="none" id="UI-&gt;QS" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="1482.39,418.2969,1473.39,414.2969,1477.39,418.2969,1473.39,422.2969,1482.39,418.2969" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="104" x="1360" y="412.5073">save(), on OK only</text><!--MD5=[d560926b654f9902a29f92947a9620f4]
+link DJ to QS--><path d="M1586,270.8669 C1586,299.6069 1586,344.9369 1586,377.5469 " fill="none" id="DJ-&gt;QS" style="stroke: #C25B54; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><polygon fill="#C25B54" points="1586,382.6669,1590,373.6669,1586,377.6669,1582,373.6669,1586,382.6669" style="stroke: #C25B54; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="160" x="1587" y="314.5073">persona never goes here —</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="125" x="1604.5" y="327.312">another machine gets</text><text fill="#616974" font-family="Segoe UI" font-size="11" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="16" x="1602.5" y="340.1167">its</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="109" x="1622.5" y="340.1167">persona, not yours</text><!--MD5=[1506d951f4a4043c89ac21cf57e39422]
+link B2 to GMN19--><path d="M748.26,254.5969 C815.27,263.6569 891.16,278.9669 914,303.2969 C932.49,322.9869 936.21,353.6169 935.59,378.1669 " fill="none" id="B2-GMN19" style="stroke: #616974; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[c51451477911273a5af49089d631ef9d]
+@startuml persona_prompt_bands
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+title chat::systemPrompt — four bands, two of them locked (v25.3)
+
+rectangle "the assembled system prompt" as P {
+  rectangle "CONTRACT — <b>locked in code</b>\nread-only promise . never invent .\ndate arithmetic . reply in user's language" as B1
+  rectangle "FLOORS — <b>locked in code</b>\n\"these override any style below\"\nnever shame . know your lane" as B2 #EDF4F1
+  rectangle "STYLE — <b>the user's band</b>\npreset (Calm | Brief | Coach) + free text,\nor free text alone (Custom)\n<i>omitted entirely when empty</i>" as B3
+  rectangle "CONTEXT — generated\nbrief::dayBriefing(), fresh every turn" as B4
+  B1 -down-> B2
+  B2 -down-> B3
+  B3 -down-> B4
+}
+
+rectangle "chat::personaCatalog()\ncalm (first = default & repair)\nbrief . coach . custom" as CAT
+database "QSettings\nai/persona . ai/personaText\n<i>taste — stays on this machine</i>" as QS
+database "data.json\n<i>facts — syncs between devices</i>" as DJ
+rectangle "Settings → AI\ncombo from the catalog .\nfree text is a <b>QLineEdit, max 240</b>\n(one line invites a note,\na text area invites a character sheet)" as UI
+
+CAT -> B3 : personaById(id)\nrepairs unknown -> calm
+QS -> B3 : configuredPersonaBand()\nread at fire time
+UI -> QS : save(), on OK only
+DJ .[#C25B54].> QS : persona never goes here —\nanother machine gets\n<b>its</b> persona, not yours
+
+note bottom of B2
+  a persona may change HOW things
+  are said, never WHAT is allowed —
+  the two bands above it are the
+  reason Custom free text is safe
+  to ship
+end note
+note right of CAT
+  quick-add's prompt (nlp::llm)
+  has NO persona: a JSON parser
+  has no tone
+end note
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

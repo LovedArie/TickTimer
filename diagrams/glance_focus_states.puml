@@ -1,0 +1,42 @@
+@startuml glance_focus_states
+' ---------------------------------------------------------------------------
+' glance_focus_states — the glance panel after design A (v22.4).
+' Converted from Mermaid in the v26.8 audit (indexed, never rendered).
+'
+' The whole point: FOUR visible shapes and ZERO stored mode. Every state is
+' derived on refresh(now) from two booleans. A stored "panelMode" field would
+' have been the obvious design and would have rotted the first time a task
+' was planned from a different page — the stored mode would have said Focus
+' while the truth said Clear. Derive, don't store (design-doc §3.5).
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title The glance panel — four shapes, no stored mode
+
+state "Derive\nrefresh(now)\nlist = tasksNeedingBlock(...)\nlooked = nextReturn(lastReview) > now" as derive
+
+state "HIDDEN\ncard hidden entirely\npanel is what it always was" as hidden
+state "CLEAR\n«Everything's on the calendar»\nput-off strip only" as clear
+state "FOCUS\nGATE — card takes the panel's stretch\nONE task, hero density\n«1 of N» expands to the list" as focus
+state "STRIP\nreviewed — day content returns\npinned rows stay visible\ncard sizes to its content" as strip
+
+[*] --> derive
+
+derive --> hidden : list empty\nand none put off
+derive --> clear  : list empty\nbut some put off
+derive --> focus  : list non-empty\nand not looked
+derive --> strip  : list non-empty\nand looked
+
+focus --> strip : «Show my day»\n(writes lastReview)
+strip --> focus : nextReturn passes\n(re-arms at 06:00)
+focus --> clear : last task planned
+strip --> hidden : nothing left at all
+
+note right of focus
+  The gate is a <b>stretch factor</b>, not a
+  fixed height: the card CLAIMS the panel's
+  space rather than asking for it. See
+  needsblock_height_bound for why that
+  distinction cost a release to learn.
+end note
+@enduml

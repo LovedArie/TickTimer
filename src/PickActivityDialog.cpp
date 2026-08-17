@@ -200,11 +200,11 @@ void PickActivityDialog::buildChoiceList()
     // Folders first, each folder's categories — exactly the rail's order.
     for (const Folder& f : m_data->folders())
         for (const Category& c : m_data->categories())
-            if (c.folderId == f.id)
-                addCategory(c);
+            if (c.folderId == f.id && !c.archived)
+                addCategory(c); // retired life areas: not plannable
     // Then the top-level (folder-less) categories.
     for (const Category& c : m_data->categories())
-        if (c.folderId.isEmpty())
+        if (c.folderId.isEmpty() && !c.archived)
             addCategory(c);
 
     if (m_list->count() == 0) {

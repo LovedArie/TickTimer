@@ -1,0 +1,72 @@
+@startuml needs_block_rule
+' "Needs a block" part 1 — the pure brain and the two clocks.
+' See docs/design-addendum-needs-a-block.md. Self-contained style:
+' _style.puml is referenced by quickadd_flow.puml but missing from the
+' repo (flagged in the addendum §H) — this diagram carries its own.
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Helvetica
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #616974
+  FontColor #272C33
+}
+skinparam database {
+  BackgroundColor #EDF4F1
+  BorderColor #2F7E6E
+}
+skinparam note {
+  BackgroundColor #FBF3E4
+  BorderColor #DD9B4A
+}
+title "Needs a block" — one pure rule, one derived list, two clocks (v21.5, parts 1–3)
+
+database "AppData\n(tasks + events)" as AD
+rectangle "bounded scan (§F)\nONE pass over events:\ntask-linked, dated **today or later**,\nbucketed by taskId" as SCAN #EDF4F1
+
+rectangle "coverage::isCovered (pure, §A)\nblock date in [today, deadline]\ndeadline = **max(due, today)**\npast blocks never count\nlate blocks never count" as COV
+
+rectangle "coverage::needsBlock (pure, §B)\nopen? not dismissed (until > now)?\nnot covered?\n**priority in flag set** OR\noverdue OR **due within window**" as NB
+
+rectangle "coverage::rung (pure, §D)\nDERIVED from dismissCount:\n0 ordinary / 1 decision / 2 pinned\nnever stored" as RUNG
+
+rectangle "AppData::tasksNeedingBlock\nTHE derived list — every surface\nrenders this one query\nsorted: pinned, overdue, urgent, rest" as LIST #EDF4F1
+
+rectangle "coverage::uncoveredReason (§A)\nfull history, flagged tasks only:\nNoBlock / BlockAfterDeadline /\nBlockInPast — the owed \"why\"" as WHY
+
+rectangle "ReturnPolicy (pure, §C)\nEndOfDay / AtTime / AfterHours\none nextReturn(from), used twice" as RP
+rectangle "review clock\nprefs:: · default 06:00" as RC #FBF3E4
+rectangle "PLACEMENT (part 3)\nFind time -> placing mode:\nday strip + highlight runs;\nintercepted at planAt — the ONE\nplanning step, so week view\nworks for free" as PLACE
+rectangle "THE GATE (part 2)\nNeedsBlockCard in GlancePanel\n**open = nextReturn(lastReview) > now**\nlastReview: QSettings, per-DEVICE\nno stored open/closed flag" as GATE
+rectangle "dismissal clock\nprefs:: · default 21:00\n\"while I plan tomorrow\"" as DC #FBF3E4
+
+rectangle "doors (AppData, §C/§D)\ndismissTask(id, until) — counts++\nclearDismissal — count stays\nexpireDismissals(now) — housekeeping\nsetTaskDone(true) — **resets evidence**" as DOORS
+
+AD --> SCAN
+SCAN --> COV
+COV --> NB : covered?
+NB --> LIST
+RUNG --> LIST : ordering
+LIST ..> WHY : per flagged task,\non demand
+RP --> RC
+RP --> DC
+RC --> GATE : the third consumer —\nzero new code
+LIST --> GATE : card / strip / clear
+GATE ..> PLACE : "Find time"
+PLACE --> AD : addTaskEvent\n(the existing door)
+DC ..> DOORS : computes `until`;\nthe domain stores the FACT
+DOORS --> AD
+
+note bottom of NB
+  pure functions of their arguments —
+  no widget, no QSettings, no clock.
+  the glance panel (part 2) and the
+  week view (part 3) cannot drift,
+  because there is nothing to copy.
+end note
+
+note bottom of DC
+  two clocks, deliberately independent:
+  dismissal = defer to a better moment,
+  not "shut up until morning".
+end note
+@enduml

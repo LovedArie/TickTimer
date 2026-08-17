@@ -5,6 +5,7 @@
 #include "EventDialog.h"
 #include "JsonStore.h"
 #include "PickActivityDialog.h"
+#include "Prefs.h"
 #include "Stats.h"
 #include "Widgets.h"
 
@@ -13,6 +14,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QStyle>
 #include <QVBoxLayout>
 
 namespace
@@ -30,11 +32,12 @@ QString formatDelta(qint64 seconds)
 } // namespace
 
 CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
-                             const QString& peerName,
+                             const QString& myName, const QString& peerName,
                              const QJsonObject& peerBlob, QWidget* parent)
     : QDialog(parent)
     , m_mine(mine)
     , m_tracker(tracker)
+    , m_myName(myName.isEmpty() ? tr("You") : myName)
     , m_peerName(peerName)
     , m_day(QDate::currentDate())
 {
@@ -75,17 +78,6 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
     agendaRow->setContentsMargins(0, 0, 0, 0);
     agendaRow->setSpacing(14);
 
-    const auto column = [&](const QString& heading, AgendaWidget* agenda) {
-        auto* col  = new QVBoxLayout;
-        auto* head = new QLabel(heading, agendaHost);
-        head->setStyleSheet(
-            "font-weight:700; color:#4A505A; font-size:13px;");
-        col->addWidget(head);
-        col->addWidget(agenda);
-        col->addStretch(1);
-        return col;
-    };
-
     // YOUR agenda: the live data, the real tracker — a first-class planning
     // surface, not a preview of one.
     m_myAgenda = new AgendaWidget(m_mine, m_tracker, agendaHost);
@@ -99,13 +91,48 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
     m_peerAgenda = new AgendaWidget(&m_peer, m_tracker, agendaHost);
     m_peerAgenda->setAttribute(Qt::WA_TransparentForMouseEvents);
 
-    agendaRow->addLayout(column(tr("You"), m_myAgenda), 1);
-    agendaRow->addLayout(column(m_peerName, m_peerAgenda), 1);
+    agendaRow->addWidget(m_myAgenda, 1);
+    agendaRow->addWidget(m_peerAgenda, 1);
 
     auto* scroll = new QScrollArea(this);
     makeTouchScrollable(scroll);
     scroll->setWidgetResizable(true);
     scroll->setWidget(agendaHost);
+
+    // ---- identity headers, PINNED above the scroll (owner request) ----------
+    // v2 put "You"/peer inside the scrolled host — correct at 6 AM, gone by
+    // 9 PM, exactly when two look-alike columns need naming most. Headers
+    // that answer "whose side is this?" belong OUTSIDE the thing that
+    // scrolls, like a table's header row. They mirror the columns' layout
+    // (same 1:1 stretch, same spacing) so each name sits over its agenda;
+    // the right margin reserves the scrollbar's width so the second column
+    // and its header agree on where the middle is.
+    const auto headerCell = [&](const QString& name, const QString& note) {
+        auto* cell   = new QWidget(this);
+        auto* stack  = new QVBoxLayout(cell);
+        stack->setContentsMargins(0, 0, 0, 0);
+        stack->setSpacing(1);
+        auto* head = new QLabel(name, cell);
+        head->setStyleSheet(
+            "font-weight:700; color:#4A505A; font-size:13px;");
+        // The staleness, written where the eyes are: the peer side is
+        // whatever they last PUSHED, not their live screen. One quiet
+        // line kills the "why don't I see their newest block?" mystery
+        // before it starts.
+        auto* sub = new QLabel(note, cell);
+        sub->setStyleSheet("color:#8A9098; font-size:11px;");
+        stack->addWidget(head);
+        stack->addWidget(sub);
+        return cell;
+    };
+    auto* headerRow = new QHBoxLayout;
+    headerRow->setSpacing(14); // mirror agendaRow, column for column
+    headerRow->setContentsMargins(
+        0, 0, scroll->style()->pixelMetric(QStyle::PM_ScrollBarExtent), 0);
+    headerRow->addWidget(
+        headerCell(tr("%1 (you)").arg(m_myName), tr("live — edit freely")), 1);
+    headerRow->addWidget(
+        headerCell(m_peerName, tr("as of their last sync")), 1);
 
     // ---- the numbers, in a side column --------------------------------------
     auto* statsCol = new QVBoxLayout;
@@ -113,7 +140,7 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
     grid->setHorizontalSpacing(14);
     const QStringList rowNames = {tr("Focus"), tr("Break"),
                                   tr("Distracted"), tr("Total")};
-    const QStringList colNames = {tr("You"), m_peerName, tr("Δ")};
+    const QStringList colNames = {m_myName, m_peerName, tr("Δ")};
     for (int c = 0; c < colNames.size(); ++c) {
         auto* head = new QLabel(colNames[c], this);
         head->setObjectName("sub");
@@ -139,8 +166,18 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
 
     auto* mainRow = new QHBoxLayout;
     mainRow->setSpacing(16);
-    mainRow->addWidget(scroll, 1);
+    // agendaSide (headers + scroll) is built just below, then inserted
+    // here — declaration order in C++ vs layout order on screen don't have
+    // to match; the insert index says where things GO.
     mainRow->addWidget(statsHost);
+
+    // The pinned headers live in the LEFT column of mainRow, wrapped with
+    // the scroll so they span exactly the agendas' width (not the stats').
+    auto* agendaSide = new QVBoxLayout;
+    agendaSide->setSpacing(6);
+    agendaSide->addLayout(headerRow);
+    agendaSide->addWidget(scroll, 1);
+    mainRow->insertLayout(0, agendaSide, 1); // agendas left, stats right
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(24, 20, 24, 20);
@@ -221,6 +258,21 @@ void CompareDialog::refresh()
 
     m_myAgenda->setDate(m_day);
     m_peerAgenda->setDate(m_day);
+
+    // The hours preference applies here too — through the same union rule
+    // as the week view, but across DATASETS instead of days: your 6 AM row
+    // and their 6 AM row must be one horizontal line, so both sides show
+    // the wider of the two needs. (Recomputed every refresh: your edits or
+    // a date step can change what must be covered.)
+    const auto pref   = prefs::agendaWindow();
+    const auto mineW  = AgendaWidget::windowCovering(m_mine, m_day,
+                                                     pref.first, pref.second);
+    const auto theirW = AgendaWidget::windowCovering(&m_peer, m_day,
+                                                     pref.first, pref.second);
+    const int start = qMin(mineW.first, theirW.first);
+    const int end   = qMax(mineW.second, theirW.second);
+    m_myAgenda->setVisibleWindow(start, end);
+    m_peerAgenda->setVisibleWindow(start, end);
 
     // The same pure summarizer on both datasets — the numbers are
     // comparable because the code path is identical (share addendum §E).

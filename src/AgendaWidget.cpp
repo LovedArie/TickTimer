@@ -142,13 +142,10 @@ namespace
 // file-private — nobody outside needs it.
 constexpr int kRadius = 8; // rounded corners
 
-// The ONE place a slot index becomes a y-pixel. Every consumer — grid lines,
-// labels, hover, event blocks, hit-testing — goes through here, so painting
-// and clicking can never drift apart.
-int slotTop(int slotIndex)
-{
-    return AgendaWidget::kTopPad + slotIndex * AgendaWidget::kSlotHeight;
-}
+// slotTop — the ONE place a slot index becomes a y-pixel — used to live here
+// as a free function. The visible-window feature made it depend on widget
+// state (WHICH slot sits at the top now varies), so it moved into the class.
+// Same single-source-of-truth rule, new address: see AgendaWidget::slotTop.
 } // namespace
 
 AgendaWidget::AgendaWidget(const AppData* data, const TrackerService* tracker,
@@ -157,11 +154,40 @@ AgendaWidget::AgendaWidget(const AppData* data, const TrackerService* tracker,
     , m_data(data)
     , m_tracker(tracker)
     , m_date(QDate::currentDate())
+    , m_windowStart(plan::kDayStartMinutes) // full day until a page says less
+    , m_windowEnd(plan::kDayEndMinutes)
 {
     // Without this, mouseMoveEvent only fires while a button is held.
     // We want hover feedback ("+ plan"), so track all movement.
     setMouseTracking(true);
-    setMinimumHeight(sizeHint().height());
+    syncHeight();
+
+    // Observe the data we paint — for GEOMETRY, not policy. The shown
+    // window is derived from the date's events (data always wins), so an
+    // event appearing outside the window must be able to change this
+    // widget's height without a page remembering to tell it. Repainting
+    // stays the pages' habit too; duplicate update() calls coalesce.
+    // (Note connect() happily takes a const sender — observing doesn't
+    // require the right to mutate, and m_data stays const.)
+    connect(m_data, &AppData::changed, this, [this]() {
+        syncHeight();
+        update();
+    });
+
+    // The live badge (below) ticks once a second, on every agenda that can
+    // see the tracked block — not just the day view whose page happens to
+    // forward ticks. Subscribing here is the same self-sufficiency as the
+    // changed() connect above: a widget that paints live state must be
+    // able to repaint when that state moves. Hidden widgets ignore
+    // update() for free, so seven idle week columns cost nothing.
+    if (m_tracker) {
+        connect(m_tracker, &TrackerService::tick, this, [this]() {
+            if (m_tracker->state() != TrackerService::State::Idle)
+                update();
+        });
+        connect(m_tracker, &TrackerService::stateChanged,
+                this, qOverload<>(&QWidget::update));
+    }
 }
 
 void AgendaWidget::setDate(QDate date)
@@ -169,7 +195,78 @@ void AgendaWidget::setDate(QDate date)
     if (m_date == date)
         return;
     m_date = date;
-    update(); // schedule a repaint — NEVER paint directly from here
+    syncHeight(); // the shown window is per-date (its events stretch it)
+    update();     // schedule a repaint — NEVER paint directly from here
+}
+
+void AgendaWidget::setVisibleWindow(int startMinutes, int endMinutes)
+{
+    if (m_windowStart == startMinutes && m_windowEnd == endMinutes)
+        return;
+    m_windowStart = startMinutes;
+    m_windowEnd   = endMinutes;
+    syncHeight();
+    update();
+}
+
+QPair<int, int> AgendaWidget::windowCovering(const AppData* data, QDate date,
+                                             int prefStartMin, int prefEndMin)
+{
+    // Sanitize the preference against the DOMAIN grid first (prefs:: already
+    // clamps, but this function is public — trust no caller):
+    const auto snap = [](int m) {
+        return (m / plan::kSlotMinutes) * plan::kSlotMinutes;
+    };
+    int start = qBound(plan::kDayStartMinutes, snap(prefStartMin),
+                       plan::kDayEndMinutes - plan::kSlotMinutes);
+    int end   = qBound(start + plan::kSlotMinutes, snap(prefEndMin),
+                       plan::kDayEndMinutes);
+
+    // Data always wins: stretch (never shrink) over every block on `date`.
+    // A window that can hide a block isn't a preference, it's a trap — the
+    // block would still refuse new plans over its slots (isFree says no)
+    // while being invisible, an unexplainable "haunted agenda".
+    for (const Event* e : data->eventsOn(date)) {
+        start = qMin(start, snap(e->plannedStartMinutes));
+        // Ceil the end to its slot line so a block ending mid-slot (can't
+        // happen today, but this function shouldn't rely on that) still
+        // fits entirely inside the shown range.
+        const int ceilEnd = ((e->plannedEndMinutes + plan::kSlotMinutes - 1)
+                             / plan::kSlotMinutes) * plan::kSlotMinutes;
+        end = qMax(end, qMin(ceilEnd, plan::kDayEndMinutes));
+    }
+    return {start, end};
+}
+
+QPair<int, int> AgendaWidget::shownWindow() const
+{
+    return windowCovering(m_data, m_date, m_windowStart, m_windowEnd);
+}
+
+int AgendaWidget::firstShownSlot() const
+{
+    return (shownWindow().first - plan::kDayStartMinutes) / plan::kSlotMinutes;
+}
+
+int AgendaWidget::shownSlotCount() const
+{
+    const auto w = shownWindow();
+    return (w.second - w.first) / plan::kSlotMinutes;
+}
+
+int AgendaWidget::slotTop(int slotIndex) const
+{
+    // The ONE place a (domain) slot index becomes a y-pixel. Every consumer
+    // — grid lines, labels, hover, event blocks, hit-testing — goes through
+    // here, so painting and clicking can never drift apart. Window-aware:
+    // the first SHOWN slot sits at the top pad, whatever its index.
+    return kTopPad + (slotIndex - firstShownSlot()) * kSlotHeight;
+}
+
+void AgendaWidget::syncHeight()
+{
+    setMinimumHeight(sizeHint().height());
+    updateGeometry(); // the preferred size changed — let layouts re-ask
 }
 
 void AgendaWidget::setGutter(int px)
@@ -193,8 +290,10 @@ QSize AgendaWidget::sizeHint() const
 {
     // With a gutter it's a full day panel; without one it's a slim week
     // column that a horizontal layout will stretch to share the row.
+    // Height follows the SHOWN window, not the whole domain grid — that is
+    // the entire visible payoff of the hours setting.
     const int width = (m_gutter > 0) ? 560 : 150;
-    return {width, kTopPad + plan::kSlotsPerDay * kSlotHeight + 12};
+    return {width, kTopPad + shownSlotCount() * kSlotHeight + 12};
 }
 
 QRect AgendaWidget::spanRect(int startMin, int endMin) const
@@ -216,8 +315,11 @@ QRect AgendaWidget::eventRect(const Event& e) const
 int AgendaWidget::minutesAtY(int y) const
 {
     // Snap to the NEAREST slot line so dragging feels magnetic to the grid.
-    int slot = qRound(double(y - kTopPad) / kSlotHeight);
-    slot = qBound(0, slot, plan::kSlotsPerDay);
+    // Slot indices stay DOMAIN indices (0 == 6 AM) — the window only shifts
+    // which of them y == kTopPad lands on.
+    int slot = firstShownSlot() + qRound(double(y - kTopPad) / kSlotHeight);
+    slot = qBound(firstShownSlot(), slot,
+                  firstShownSlot() + shownSlotCount());
     return plan::kDayStartMinutes + slot * plan::kSlotMinutes;
 }
 
@@ -251,8 +353,14 @@ int AgendaWidget::slotAt(const QPoint& pos) const
     // boundary bug in C++ and Java alike.
     if (pos.x() < m_gutter || pos.y() < kTopPad)
         return -1;
-    const int slot = (pos.y() - kTopPad) / kSlotHeight;
-    return (slot < plan::kSlotsPerDay) ? slot : -1;
+    const int slot = firstShownSlot() + (pos.y() - kTopPad) / kSlotHeight;
+    return (slot < firstShownSlot() + shownSlotCount()) ? slot : -1;
+}
+
+void AgendaWidget::setHighlightRuns(QVector<QPair<int, int>> runs)
+{
+    m_highlightRuns = std::move(runs);
+    update(); // input writes state + update(); paint only reads — the rule
 }
 
 void AgendaWidget::paintEvent(QPaintEvent*)
@@ -269,7 +377,11 @@ void AgendaWidget::paintEvent(QPaintEvent*)
     const QFont small = scaledFont(font(), -1.5);
 
     // 1) The time grid: solid line + label on the hour, dashed on the half.
-    for (int i = 0; i < plan::kSlotsPerDay; ++i) {
+    //    Only the shown window's slots — i stays a DOMAIN index throughout,
+    //    so the hour labels and the "on the hour" test need no translation.
+    const int firstSlot = firstShownSlot();
+    const int lastSlot  = firstSlot + shownSlotCount();
+    for (int i = firstSlot; i < lastSlot; ++i) {
         const int y = slotTop(i);
         const bool onTheHour = (i % 2 == 0);
 
@@ -372,9 +484,56 @@ void AgendaWidget::paintEvent(QPaintEvent*)
         const bool taskIsLine1 = linkedTask && label == linkedTask->title;
         if (taskIsLine1 && linkedTask->done)
             label.prepend(QStringLiteral("✓ "));
+
+        // THE LIVE BADGE (owner report: "I don't see any update") — the
+        // plan-vs-actual bar below is honest but nearly mute: on a 2-hour
+        // block, a minute of tracking is under 1% of a 5-px strip. The
+        // tracked block now says so out loud: "● Focusing · 7:12", in the
+        // state's own colour, ticking every second. It answers BOTH halves
+        // of the owner's doubt at a glance — is it recording, and as WHAT
+        // (a paused Pomodoro driving Distracted shows red and says so,
+        // instead of silently growing a red sliver). Day view only
+        // (m_gutter > 0): week columns are too narrow for line-1 real
+        // estate, and their bar still carries the totals.
+        int line1Right = inner.width();
+        if (m_gutter > 0 && m_tracker->isTrackingEvent(e->id)) {
+            QColor liveColor = theme::danger(); // Distracted
+            QString liveWord = tr("Distracted");
+            if (m_tracker->state() == TrackerService::State::Focusing) {
+                liveColor = theme::focus();
+                liveWord  = tr("Focusing");
+            } else if (m_tracker->state() == TrackerService::State::OnBreak) {
+                liveColor = theme::brk();
+                liveWord  = tr("On break");
+            }
+            const qint64 s = m_tracker->liveSeconds();
+            // Digital m:ss (h:mm:ss past the hour) rather than the app's
+            // "7m" prose style: the visibly ticking seconds ARE the
+            // feedback — a value that only moves once a minute would
+            // re-create the very silence being fixed.
+            const QString clock =
+                s >= 3600 ? QStringLiteral("%1:%2:%3")
+                                .arg(s / 3600)
+                                .arg((s % 3600) / 60, 2, 10, QChar('0'))
+                                .arg(s % 60, 2, 10, QChar('0'))
+                          : QStringLiteral("%1:%2")
+                                .arg(s / 60)
+                                .arg(s % 60, 2, 10, QChar('0'));
+            const QString badge =
+                QStringLiteral("● %1 · %2").arg(liveWord, clock);
+            p.setFont(small);
+            const int badgeW = QFontMetrics(small).horizontalAdvance(badge);
+            p.setPen(theme::deep(liveColor));
+            p.drawText(inner, Qt::AlignRight | Qt::AlignTop, badge);
+            p.setFont(bold);
+            p.setPen(theme::deep(color));
+            line1Right -= badgeW + 8; // the title yields; the badge never
+                                      // fights an elided name for pixels
+        }
+
         p.drawText(inner, Qt::AlignLeft | Qt::AlignTop,
                    QFontMetrics(bold).elidedText(label, Qt::ElideRight,
-                                                 inner.width()));
+                                                 line1Right));
 
         // Line 2 (needs a 2-slot block) — what you're DOING in the block:
         // the custom label wins (the user typed it to be shown), else the
@@ -392,10 +551,16 @@ void AgendaWidget::paintEvent(QPaintEvent*)
         const bool hasComments = !body.isEmpty() && body != label;
         const int slotCount = (e->plannedEndMinutes - e->plannedStartMinutes)
                           / plan::kSlotMinutes;
-        const QString timeLine = QStringLiteral("%1 – %2 · %3")
-                                     .arg(timeLabel(e->plannedStartMinutes),
-                                          timeLabel(e->plannedEndMinutes),
-                                          durationLabel(slotCount));
+        QString timeLine = QStringLiteral("%1 – %2 · %3")
+                               .arg(timeLabel(e->plannedStartMinutes),
+                                    timeLabel(e->plannedEndMinutes),
+                                    durationLabel(slotCount));
+        // Recurrence rides the anatomy line (v19.10): the ⟳ chip is the
+        // same vocabulary the task rows already speak, so a glance reads
+        // both kinds of repetition identically.
+        if (e->repeat != Task::Repeat::None)
+            timeLine += QStringLiteral(" · \u27F3 %1")
+                            .arg(repeatLabel(e->repeat));
         p.setFont(small);
         p.setPen(theme::inkSoft());
         const QFontMetrics smallFm(small);
@@ -518,6 +683,31 @@ void AgendaWidget::paintEvent(QPaintEvent*)
             p.drawRoundedRect(QRect(bar.left() + fw, bar.top(), bw, bar.height()), 2, 2);
             p.setBrush(theme::danger()); // distraction, in the danger hue
             p.drawRoundedRect(QRect(bar.left() + fw + bw, bar.top(), dw, bar.height()), 2, 2);
+        }
+    }
+
+    // 5) Placement invitations (needs-a-block part 3) — LAST, so they sit
+    //    on top of the empty grid they point at. Translucent fill + dashed
+    //    border in the focus green: unmistakably "click me", unmistakably
+    //    not a real block. spanRect does the geometry — the same one
+    //    formula every painted rectangle here already rides.
+    if (!m_highlightRuns.isEmpty()) {
+        QPen dash(theme::focus(), 1.5, Qt::DashLine);
+        QColor fill = theme::focus();
+        fill.setAlphaF(0.10f);
+        p.setFont(small);
+        for (const auto& run : m_highlightRuns) {
+            const QRect r = spanRect(run.first, run.second);
+            p.setPen(dash);
+            p.setBrush(fill);
+            p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 8, 8);
+            if (r.height() >= 18) {
+                p.setPen(theme::focus());
+                p.drawText(r, Qt::AlignCenter,
+                           tr("%1 – %2 free · click to place")
+                               .arg(timeLabel(run.first),
+                                    timeLabel(run.second)));
+            }
         }
     }
 }

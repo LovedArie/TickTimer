@@ -16,10 +16,29 @@
 // noted in a comment there) the installer script.
 // ---------------------------------------------------------------------------
 
-#define TICKTIMER_VERSION_MAJOR  19
+// ---- v26.8: the third act of this file's own drift story -------------------
+// Found by the v26.8 documentation audit, and it is worth the paragraph
+// because it is a DIFFERENT failure from the two below.
+//
+// This file sat at 26.0.0 while the tree contained the catch-up feature
+// (v26.2), the chip states (v26.7) and `lookBackDays = 3` (v26.8 — the code
+// is right there in MissedBlocks.h). Four drops shipped without touching it.
+// The README knew: it said "v26.8" in one line and "v27.0" in another.
+//
+// The guard below did not fire, and could not have. It proves the three
+// MACROS and the STRING agree with each other — internal consistency, and it
+// does that job perfectly. Nothing in a compiler knows what version the WORK
+// is at. That is not a checkable fact, it is an external one, and external
+// facts need a step in a human process, not a static_assert.
+//
+// So: **bumping this file is now item one of the release checklist**
+// (docs/SESSION_NOTES.md, "shipping a drop"). The lesson generalises past
+// this repo — when you catch a class of bug with a compile-time check, write
+// down what the check still cannot see, or you will trust it for that too.
+#define TICKTIMER_VERSION_MAJOR  29
 #define TICKTIMER_VERSION_MINOR  1
 #define TICKTIMER_VERSION_PATCH  0
-#define TICKTIMER_VERSION_STRING "19.1.0"
+#define TICKTIMER_VERSION_STRING "29.1.0"
 
 #ifndef RC_INVOKED
 
@@ -28,6 +47,57 @@
 
 namespace version
 {
+
+// ---- the guard this file forgot to give itself (v24) ----------------------
+// Two representations of one fact live above: three numbers for the resource
+// compiler, one string for everything else. v23.0 shipped with the numbers at
+// 22.0.0 and the notes at 23.0.0 — the anti-drift file drifting internally,
+// which the question bank duly recorded as the session's most ironic bug.
+//
+// The fix isn't discipline, it's the compiler. This constexpr parser reads
+// the STRING at compile time and compares it to the MACROS; disagree, and the
+// build stops with a message naming both. A single source of truth that isn't
+// enforced is just the first of several copies.
+//
+// (Why not build the string from the numbers with the ## / # stringify trick?
+// Because the .rc files consume TICKTIMER_VERSION_STRING as a single token in
+// a VALUE statement, and resource compilers are unreliable about adjacent
+// string-literal concatenation there. Checking is portable; generating isn't.)
+namespace guard
+{
+constexpr int digitsFrom(const char* s, int& pos)
+{
+    int  value = 0;
+    bool any   = false;
+    while (s[pos] >= '0' && s[pos] <= '9') {
+        value = value * 10 + (s[pos] - '0');
+        ++pos;
+        any = true;
+    }
+    return any ? value : -1;
+}
+
+constexpr bool stringMatchesMacros(const char* s)
+{
+    int       pos   = 0;
+    const int major = digitsFrom(s, pos);
+    if (s[pos] != '.')
+        return false;
+    ++pos;
+    const int minor = digitsFrom(s, pos);
+    if (s[pos] != '.')
+        return false;
+    ++pos;
+    const int patch = digitsFrom(s, pos);
+    return s[pos] == '\0' && major == TICKTIMER_VERSION_MAJOR
+           && minor == TICKTIMER_VERSION_MINOR
+           && patch == TICKTIMER_VERSION_PATCH;
+}
+} // namespace guard
+
+static_assert(guard::stringMatchesMacros(TICKTIMER_VERSION_STRING),
+              "Version.h: TICKTIMER_VERSION_STRING disagrees with the "
+              "MAJOR/MINOR/PATCH macros. Update BOTH — they are one fact.");
 
 // The app's own version, as code (not string) — comparisons never touch
 // string ordering.

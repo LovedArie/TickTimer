@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="824px" preserveAspectRatio="none" style="width:810px;height:824px;" version="1.1" viewBox="0 0 810 824" width="810px" zoomAndPan="magnify"><defs/><g><line style="stroke: #A9B0B8; stroke-width: 1.0; stroke-dasharray: 5.0,5.0;" x1="25" x2="25" y1="79.9688" y2="739.1406"/><line style="stroke: #A9B0B8; stroke-width: 1.0; stroke-dasharray: 5.0,5.0;" x1="174.5" x2="174.5" y1="79.9688" y2="739.1406"/><line style="stroke: #A9B0B8; stroke-width: 1.0; stroke-dasharray: 5.0,5.0;" x1="396.5" x2="396.5" y1="79.9688" y2="739.1406"/><line style="stroke: #A9B0B8; stroke-width: 1.0; stroke-dasharray: 5.0,5.0;" x1="524.5" x2="524.5" y1="79.9688" y2="739.1406"/><line style="stroke: #A9B0B8; stroke-width: 1.0; stroke-dasharray: 5.0,5.0;" x1="652.5" x2="652.5" y1="79.9688" y2="739.1406"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="29" x="8" y="77.1387">User</text><ellipse cx="25.5" cy="13" fill="#FEFECE" rx="8" ry="8" style="stroke: #A80036; stroke-width: 2.0;"/><path d="M25.5,21 L25.5,48 M12.5,29 L38.5,29 M25.5,48 L12.5,63 M25.5,48 L38.5,63 " fill="none" style="stroke: #A80036; stroke-width: 2.0;"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="29" x="8" y="749.2793">User</text><ellipse cx="25.5" cy="762.1094" fill="#FEFECE" rx="8" ry="8" style="stroke: #A80036; stroke-width: 2.0;"/><path d="M25.5,770.1094 L25.5,797.1094 M12.5,778.1094 L38.5,778.1094 M25.5,797.1094 L12.5,812.1094 M25.5,797.1094 L38.5,812.1094 " fill="none" style="stroke: #A80036; stroke-width: 2.0;"/><rect fill="#FFFFFF" height="41.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="164" x="92.5" y="37.0313"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="86" x="131.5" y="55.1699">runTaskDetail</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="150" x="99.5" y="69.1387">(free function, the loop)</text><rect fill="#FFFFFF" height="41.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="164" x="92.5" y="738.1406"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="86" x="131.5" y="756.2793">runTaskDetail</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="150" x="99.5" y="770.248">(free function, the loop)</text><rect fill="#FFFFFF" height="41.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="118" x="337.5" y="37.0313"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="104" x="344.5" y="55.1699">TaskDetailDialog</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="101" x="346" y="69.1387">(parent's panel)</text><rect fill="#FFFFFF" height="41.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="118" x="337.5" y="738.1406"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="104" x="344.5" y="756.2793">TaskDetailDialog</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="101" x="346" y="770.248">(parent's panel)</text><rect fill="#FFFFFF" height="41.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="118" x="465.5" y="37.0313"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="104" x="472.5" y="55.1699">TaskDetailDialog</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="93" x="478" y="69.1387">(piece's panel)</text><rect fill="#FFFFFF" height="41.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="118" x="465.5" y="738.1406"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="104" x="472.5" y="756.2793">TaskDetailDialog</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="93" x="478" y="770.248">(piece's panel)</text><rect fill="#FFFFFF" height="41.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="119" x="593.5" y="37.0313"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="54" x="626" y="55.1699">AppData</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="105" x="600.5" y="69.1387">(the single door)</text><rect fill="#FFFFFF" height="41.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="119" x="593.5" y="738.1406"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="54" x="626" y="756.2793">AppData</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="105" x="600.5" y="770.248">(the single door)</text><polygon fill="#616974" points="162.5,104.7734,172.5,108.7734,162.5,112.7734,166.5,108.7734" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="25.5" x2="168.5" y1="108.7734" y2="108.7734"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="125" x="32.5" y="104.1792">click "Study for finals"</text><polygon fill="#616974" points="641,131.5781,651,135.5781,641,139.5781,645,135.5781" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="174.5" x2="647" y1="135.5781" y2="135.5781"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="197" x="181.5" y="130.9839">taskById / subtasksOf (fresh read)</text><polygon fill="#616974" points="384.5,171.1875,394.5,175.1875,384.5,179.1875,388.5,175.1875" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="174.5" x2="390.5" y1="175.1875" y2="175.1875"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="135" x="181.5" y="157.7886">construct + seedPieces</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="198" x="181.5" y="170.5933">(rows carry "Aug 8 · 45 min" hints)</text><polygon fill="#616974" points="384.5,197.9922,394.5,201.9922,384.5,205.9922,388.5,201.9922" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="25.5" x2="390.5" y1="201.9922" y2="201.9922"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="114" x="32.5" y="197.3979">tick "Read the spec"</text><polygon fill="#616974" points="384.5,224.7969,394.5,228.7969,384.5,232.7969,388.5,228.7969" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="25.5" x2="390.5" y1="228.7969" y2="228.7969"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="119" x="32.5" y="224.2026">click title "Chapter 3"</text><path d="M401,245.7969 L401,288.7969 A4,4 0 0 0 405,292.7969 L617,292.7969 A4,4 0 0 0 621,288.7969 L621,251.7969 L611,241.7969 L405,241.7969 A4,4 0 0 0 401,245.7969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M611,241.7969 L611,249.7969 A2,2 0 0 0 613,251.7969 L621,251.7969 L611,241.7969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="195" x="407" y="257.9355">Records navigateTo = piece id,</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="199" x="407" y="271.9043">then accept() — the hop SAVES</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="184" x="407" y="285.873">the sitting. Performs nothing.</text><polygon fill="#616974" points="185.5,313.5078,175.5,317.5078,185.5,321.5078,181.5,317.5078" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0; stroke-dasharray: 2.0,2.0;" x1="179.5" x2="395.5" y1="317.5078" y2="317.5078"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="51" x="191.5" y="312.9136">Accepted</text><polygon fill="#616974" points="641,353.1172,651,357.1172,641,361.1172,645,357.1172" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="174.5" x2="647" y1="357.1172" y2="357.1172"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="138" x="181.5" y="339.7183">applyTaskDetailAnswers</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="160" x="181.5" y="352.5229">(one Batch — the tick lands)</text><line style="stroke: #616974; stroke-width: 1.0;" x1="174.5" x2="216.5" y1="383.9219" y2="383.9219"/><line style="stroke: #616974; stroke-width: 1.0;" x1="216.5" x2="216.5" y1="383.9219" y2="396.9219"/><line style="stroke: #616974; stroke-width: 1.0;" x1="175.5" x2="216.5" y1="396.9219" y2="396.9219"/><polygon fill="#616974" points="185.5,392.9219,175.5,396.9219,185.5,400.9219,181.5,396.9219" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="154" x="181.5" y="379.3276">taskId = navigationTarget()</text><polygon fill="#616974" points="641,419.7266,651,423.7266,641,427.7266,645,423.7266" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="174.5" x2="647" y1="423.7266" y2="423.7266"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="208" x="181.5" y="419.1323">taskById (fresh again — never stale)</text><polygon fill="#616974" points="512.5,446.5313,522.5,450.5313,512.5,454.5313,516.5,450.5313" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="174.5" x2="518.5" y1="450.5313" y2="450.5313"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="271" x="181.5" y="445.937">construct + setBreadcrumb("‹ Study for finals")</text><path d="M529,467.5313 L529,510.5313 A4,4 0 0 0 533,514.5313 L729,514.5313 A4,4 0 0 0 733,510.5313 L733,473.5313 L723,463.5313 L533,463.5313 A4,4 0 0 0 529,467.5313 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M723,463.5313 L723,471.5313 A2,2 0 0 0 725,473.5313 L733,473.5313 L723,463.5313 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="183" x="535" y="479.6699">A piece's panel: breadcrumb,</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="178" x="535" y="493.6387">no checklist (one level only).</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="172" x="535" y="507.6074">Full form — date, time, size.</text><polygon fill="#616974" points="512.5,535.2422,522.5,539.2422,512.5,543.2422,516.5,539.2422" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="25.5" x2="518.5" y1="539.2422" y2="539.2422"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="210" x="32.5" y="534.6479">set Aug 8 · 45 min, click breadcrumb</text><polygon fill="#616974" points="185.5,562.0469,175.5,566.0469,185.5,570.0469,181.5,566.0469" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0; stroke-dasharray: 2.0,2.0;" x1="179.5" x2="523.5" y1="566.0469" y2="566.0469"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="193" x="191.5" y="561.4526">Accepted (navigateTo = parent id)</text><polygon fill="#616974" points="641,601.6563,651,605.6563,641,609.6563,645,605.6563" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="174.5" x2="647" y1="605.6563" y2="605.6563"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="138" x="181.5" y="588.2573">applyTaskDetailAnswers</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="194" x="181.5" y="601.062">(the piece is now scheduled work)</text><polygon fill="#616974" points="384.5,641.2656,394.5,645.2656,384.5,649.2656,388.5,645.2656" style="stroke: #616974; stroke-width: 1.0;"/><line style="stroke: #616974; stroke-width: 1.0;" x1="174.5" x2="390.5" y1="645.2656" y2="645.2656"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="194" x="181.5" y="627.8667">loop continues — parent reopens,</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="138" x="181.5" y="640.6714">row now shows the chip</text><path d="M507,662.2656 L507,719.2656 A4,4 0 0 0 511,723.2656 L794,723.2656 A4,4 0 0 0 798,719.2656 L798,668.2656 L788,658.2656 L511,658.2656 A4,4 0 0 0 507,662.2656 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M788,658.2656 L788,666.2656 A2,2 0 0 0 790,668.2656 L798,668.2656 L788,658.2656 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="270" x="513" y="674.4043">Domain untouched by v28.5: a dated piece</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="217" x="513" y="688.373">already flows into tasksDueOn and</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="221" x="513" y="702.3418">tasksNeedingBlock — the door was</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="135" x="513" y="716.3105">the only missing part.</text><!--MD5=[59bc57e6cea341ca054bd00cde6fc180]
+@startuml piece_detail_sequence
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+
+actor User as U
+participant "runTaskDetail\n(free function, the loop)" as R
+participant "TaskDetailDialog\n(parent's panel)" as P
+participant "TaskDetailDialog\n(piece's panel)" as C
+participant "AppData\n(the single door)" as D
+
+U -> R : click "Study for finals"
+R -> D : taskById / subtasksOf (fresh read)
+R -> P : construct + seedPieces\n(rows carry "Aug 8 · 45 min" hints)
+U -> P : tick "Read the spec"
+U -> P : click title "Chapter 3"
+note right of P
+  Records navigateTo = piece id,
+  then accept() — the hop SAVES
+  the sitting. Performs nothing.
+end note
+P - -> R : Accepted
+R -> D : applyTaskDetailAnswers\n(one Batch — the tick lands)
+R -> R : taskId = navigationTarget()
+
+R -> D : taskById (fresh again — never stale)
+R -> C : construct + setBreadcrumb("‹ Study for finals")
+note right of C
+  A piece's panel: breadcrumb,
+  no checklist (one level only).
+  Full form — date, time, size.
+end note
+U -> C : set Aug 8 · 45 min, click breadcrumb
+C - -> R : Accepted (navigateTo = parent id)
+R -> D : applyTaskDetailAnswers\n(the piece is now scheduled work)
+R -> P : loop continues — parent reopens,\nrow now shows the chip
+
+note over D
+  Domain untouched by v28.5: a dated piece
+  already flows into tasksDueOn and
+  tasksNeedingBlock — the door was
+  the only missing part.
+end note
+
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

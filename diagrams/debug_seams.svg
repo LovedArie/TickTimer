@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="532px" preserveAspectRatio="none" style="width:1059px;height:532px;" version="1.1" viewBox="0 0 1059 532" width="1059px" zoomAndPan="magnify"><defs/><g><text fill="#2A2E33" font-family="Segoe UI" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="401" x="332.5" y="12.9951">Ctrl+Shift+D — the DebugPanel and the seams it presses</text><!--MD5=[0560f6b4e489db395e0d5816ede371d4]
+cluster panel--><rect fill="#FFFFFF" height="110" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="846" x="87" y="40.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="316" x="352" y="53.4355">DebugPanel  (glass: presses, never decides)</text><!--MD5=[7ab29d5a77da579a3d1f19f49a4e31e2]
+entity clock--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="126" x="268" y="72.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="76" x="278" y="93.4355">Pretend it is</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="86" x="278" y="107.4043">this moment /</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="106" x="278" y="121.373">Back to real time</text><!--MD5=[aabcb7fd79d1763c29c645e764655bfb]
+entity affbtn--><rect fill="#FFFFFF" height="47.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="120" x="616" y="79.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="70" x="626" y="100.4355">Sweep now</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="100" x="626" y="114.4043">Forget manners</text><!--MD5=[316e3bdf8b2f12d999125aa2882fd4d4]
+entity chkbtn--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="151" x="429.5" y="72.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="70" x="439.5" y="93.4355">Sweep now</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="131" x="439.5" y="107.4043">Offer now (skip gate)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="107" x="439.5" y="121.373">Clear today's ask</text><!--MD5=[86941a9738a147f333d91a285cf298dd]
+entity briefbtn--><rect fill="#FFFFFF" height="33.9688" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="129" x="103.5" y="86.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="109" x="113.5" y="107.4355">Show the briefing</text><!--MD5=[c47f730603065072c2c0d696fa0ae35a]
+entity aibtn--><rect fill="#FFFFFF" height="47.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="145" x="771.5" y="79.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="113" x="781.5" y="100.4355">All providers down</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="125" x="781.5" y="114.4043">this run  [checkbox]</text><!--MD5=[0dd18bf2c08d5614b47a61d653cca437]
+entity mw--><rect fill="#FFFFFF" height="47.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="136" x="220" y="210.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="76" x="230" y="231.4355">MainWindow</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="116" x="230" y="245.4043">(composition root)</text><!--MD5=[2ebcf7b9143b11f536e006c701c659ec]
+entity aff--><rect fill="#FFFFFF" height="33.9688" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="138" x="559" y="359.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="118" x="569" y="380.4355">AffordabilityService</text><!--MD5=[9428a0a79c88118a4dbc1eb4317cfb53]
+entity chk--><rect fill="#FFFFFF" height="33.9688" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="114" x="361" y="359.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="94" x="371" y="380.4355">CheckInService</text><!--MD5=[3190710d150df7ceb878476fc8975c34]
+entity brief--><rect fill="#FFFFFF" height="47.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="230" x="6" y="352.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="172" x="16" y="373.4355">ChatPage::currentBriefing()</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="210" x="16" y="387.4043">the exact text the model receives</text><!--MD5=[a8b6a60a23690f55464f9a38d4e118dd]
+entity env--><rect fill="#FFFFFF" height="47.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="206" x="804" y="210.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="138" x="814" y="231.4355">TICKTIMER_AI_DOWN=*</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="186" x="814" y="245.4043">process env, nothing persists</text><!--MD5=[0c35b04dcb1594f5a5db3685bec4368b]
+entity wires--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="218" x="798" y="345.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="157" x="808" y="366.4355">NudgeClient · quick-add ·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="97" x="808" y="380.4043">chat route walk</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="198" x="808" y="394.373">(every wire checks forcedDown)</text><path d="M251,472.2969 L251,516.2031 A4,4 0 0 0 255,520.2031 L581,520.2031 A4,4 0 0 0 585,516.2031 L585,478.2969 L575,468.2969 L422,468.2969 L418,393.4269 L414,468.2969 L255,468.2969 A4,4 0 0 0 251,472.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M575,468.2969 L575,476.2969 A2,2 0 0 0 577,478.2969 L585,478.2969 L575,468.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="275" x="257" y="484.4355">forceOffer(): the gate skipped ON PURPOSE,</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="313" x="257" y="498.4043">the ledger untouched ON PURPOSE — a rehearsal</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="275" x="257" y="512.373">must not spend the morning's one real ask.</text><!--MD5=[05a54bfa456d7694c3d21cd2da203fc2]
+link clock to mw--><path d="M320.92,134.5369 C313.79,155.9169 304.31,184.3569 297.36,205.2269 " fill="none" id="clock-&gt;mw" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="295.74,210.0869,302.3676,202.8016,297.3126,205.3406,294.7736,200.2855,295.74,210.0869" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="149" x="311" y="177.5073">applyClock(moment | real)</text><!--MD5=[a414af8fbb0d6dac0689caff1701bd34]
+link mw to aff--><path d="M344.14,258.4169 C411.42,286.1169 522.74,331.9569 584.07,357.2069 " fill="none" id="mw-&gt;aff" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="588.76,359.1369,581.9532,352.0188,584.1345,357.2382,578.9152,359.4195,588.76,359.1369" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="89" x="480" y="306.0073">setNowProvider</text><!--MD5=[4941e166bdef4104032008b8dbb147f3]
+link mw to chk--><path d="M268.77,258.4969 C257.3,275.3169 247.07,298.0469 259,315.2969 C280.75,346.7569 321.24,361.7369 355.92,368.8669 " fill="none" id="mw-&gt;chk" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="360.99,369.8569,352.9365,364.1875,356.0849,368.8873,351.3852,372.0356,360.99,369.8569" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="89" x="260" y="306.0073">setNowProvider</text><!--MD5=[af35e0b59cbd7876f5d59dc6ef88e2c1]
+link mw to brief--><path d="M221.28,258.3769 C204.64,266.1769 187.67,276.0769 174,288.2969 C155.77,304.5969 141.77,328.6669 132.75,347.3669 " fill="none" id="mw-&gt;brief" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="130.56,351.9969,138.0085,345.5533,132.6869,347.4718,130.7684,342.1502,130.56,351.9969" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="70" x="175" y="306.0073">nowProvider</text><!--MD5=[f9dc707dc91863463d6c8af7d3cd1583]
+link affbtn to aff--><path d="M671.91,127.4069 C662.74,179.1469 640.68,303.7269 631.8,353.8669 " fill="none" id="affbtn-&gt;aff" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="630.88,359.0369,636.39,350.8735,631.753,354.1137,628.5129,349.4767,630.88,359.0369" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="45" x="681" y="232.0073">sweep()</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="91" x="658" y="244.812">forgetManners()</text><!--MD5=[d5f36ce11abdc07d9594e5ba39fb82c5]
+link chkbtn to chk--><path d="M508.75,134.4769 C512.64,177.2169 514.6,256.6669 485,315.2969 C476.71,331.7169 461.86,345.7369 448.24,356.0769 " fill="none" id="chkbtn-&gt;chk" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="444.07,359.1669,453.6837,357.0273,448.0888,356.1921,448.924,350.5973,444.07,359.1669" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="45" x="538" y="225.5073">sweep()</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="66" x="527.5" y="238.312">forceOffer()</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="97" x="512" y="251.1167">clearTodaysAsk()</text><!--MD5=[fe02cc44bcbe998551ffdf744aa52c01]
+link briefbtn to brief--><path d="M158.97,120.5669 C148.26,140.8569 130.96,176.9469 124,210.2969 C114.16,257.4169 115.95,313.7569 118.33,346.9169 " fill="none" id="briefbtn-&gt;brief" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="118.72,352.0369,122.0139,342.7552,118.3343,347.0518,114.0377,343.3722,118.72,352.0369" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="76" x="125" y="232.0073">fetched fresh</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="56" x="135" y="244.812">per press</text><!--MD5=[e4c186bc92b2ace739341128f9653fdc]
+link aibtn to env--><path d="M855.26,127.3569 C865.95,149.2369 882.02,182.1469 893.41,205.4669 " fill="none" id="aibtn-&gt;env" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="895.62,209.9969,895.2483,200.155,893.4183,205.5077,888.0656,203.6777,895.62,209.9969" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="116" x="880" y="177.5073">qputenv / qunsetenv</text><!--MD5=[3fdeeed62111ff858e627bb72a3eca2d]
+link env to wires--><path d="M907,258.4169 C907,280.5269 907,314.1969 907,339.7269 " fill="none" id="env-&gt;wires" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="907,345.0469,911,336.0469,907,340.0469,903,336.0469,907,345.0469" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="85" x="935" y="299.5073">forcedDown(id)</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="139" x="908" y="312.312">→ the C++ voices speak</text><!--MD5=[6189456ca5dd7efe3c3eb0641bc50368]
+@startuml debug_seams
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+
+title Ctrl+Shift+D — the DebugPanel and the seams it presses
+
+rectangle "DebugPanel  (glass: presses, never decides)" as panel {
+  rectangle "Pretend it is\nthis moment /\nBack to real time" as clock
+  rectangle "Sweep now\nForget manners" as affbtn
+  rectangle "Sweep now\nOffer now (skip gate)\nClear today's ask" as chkbtn
+  rectangle "Show the briefing" as briefbtn
+  rectangle "All providers down\nthis run  [checkbox]" as aibtn
+}
+
+rectangle "MainWindow\n(composition root)" as mw
+rectangle "AffordabilityService" as aff
+rectangle "CheckInService" as chk
+rectangle "ChatPage::currentBriefing()\nthe exact text the model receives" as brief
+rectangle "TICKTIMER_AI_DOWN=*\nprocess env, nothing persists" as env
+rectangle "NudgeClient · quick-add ·\nchat route walk\n(every wire checks forcedDown)" as wires
+
+clock - -> mw : applyClock(moment | real)
+mw - -> aff : setNowProvider
+mw - -> chk : setNowProvider
+mw - -> brief : nowProvider
+
+affbtn - -> aff : sweep()\nforgetManners()
+chkbtn - -> chk : sweep()\nforceOffer()\nclearTodaysAsk()
+briefbtn - -> brief : fetched fresh\nper press
+aibtn - -> env : qputenv / qunsetenv
+env - -> wires : forcedDown(id)\n→ the C++ voices speak
+
+note bottom of chk
+  forceOffer(): the gate skipped ON PURPOSE,
+  the ledger untouched ON PURPOSE — a rehearsal
+  must not spend the morning's one real ask.
+end note
+
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

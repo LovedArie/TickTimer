@@ -1,0 +1,62 @@
+@startuml assistant_spine
+' PLANNED architecture. See docs/design-addendum-assistant.md §A, §B.
+!include _style.puml
+title The assistant's spine — code computes, the model phrases (PLANNED)
+
+rectangle "**1. WHEN** — deterministic triggers\n<i>code only, no model</i>" as WHEN #EDF4F1 {
+  rectangle "BlockAlarmService\n<i>block starting</i>" as T1
+  rectangle "midnight knock\nrollRepeats · expireDismissals" as T2
+  rectangle "coverage::Rule + ReturnPolicy\n<i>does this deserve a nudge?\nhave I already asked today?</i>" as T3
+  rectangle "morning check-in\n<i>only when the day is\ncomputably heavy</i>" as T4
+}
+
+rectangle "**2. WHAT IS TRUE** — pure domain queries\n<i>code only, no model</i>" as TRUE #EDF4F1 {
+  rectangle "brief::dayBriefing\nplan · tracked · tasks" as Q1
+  rectangle "stats::summarize(from,to)\nfocus vs <b>distracted</b>, by day\n<i>segments kept since v1</i>" as Q2
+  rectangle "affordability(task, now)\nverdict · days left · slack" as Q3
+  rectangle "estimate multiplier\n<i>derived, never stored</i>" as Q4
+  rectangle "isFree() — where it could go" as Q5
+}
+
+rectangle "**3. WORDS** — the model's <b>only</b> job" as SAY {
+  rectangle "chat::systemPrompt\n<b>rules → floors → persona → context</b>\n<i>voice never overrides contract</i>" as P
+  rectangle "provider seat for this ROLE\n<i>check-in = local, always</i>" as R
+}
+
+rectangle "**4. EFFECT**" as OUT {
+  rectangle "a sentence\n<i>toast · bubble · check-in</i>" as O1
+  rectangle "a PROPOSAL\n<i>never a mutation</i>" as O2
+}
+
+rectangle "**5. THE TRUST BOUNDARY**" as GATE #F7E9E8 {
+  rectangle "you tap <b>Apply</b>" as G1
+  rectangle "AppData guarded doors\n<i>refuse illegal mutations</i>" as G2
+  rectangle "no destructive verbs\n<b>archive, never delete</b>" as G3
+}
+
+rectangle "plain toast / deterministic parser /\nUpcoming page\n<b>works with no model at all</b>" as FALLBACK
+
+WHEN --> TRUE
+TRUE --> SAY
+SAY --> OUT
+O2 --> GATE
+G1 --> G2
+G2 --> G3
+WHEN --> FALLBACK : model slow,\nunreachable, on battery
+
+note bottom of SAY
+  the model NEVER decides when to speak,
+  and NEVER recomputes a verdict —
+  it is handed the answer and writes the sentence
+end note
+
+note right of FALLBACK
+  the model is an ENHANCEMENT LAYER,
+  never a dependency
+end note
+
+note bottom of GATE
+  every verb has an inverse, so
+  "ask for something else" IS the undo
+end note
+@enduml

@@ -5,13 +5,25 @@ REM  deploy-windows.bat  --  make a portable TickTimer folder you can zip and
 REM  send to anyone, no Qt install required on their machine.
 REM
 REM  WHAT IT DOES, and why each step exists:
+REM   0. THE APPLY CHECK (v28.3): reads the version out of include\Version.h
+REM      and out of installer\ticktimer.iss and refuses to continue if they
+REM      disagree. Why this exists: TWICE now a drop has half-applied and
+REM      looked finished (the lost v27; the half-applied v28.3 found sitting
+REM      in the tree). A half-applied drop's most likely symptom is exactly
+REM      these two files disagreeing — they ship together in every drop and
+REM      the .iss says "bump BOTH" for the same reason. The check also prints
+REM      the version LOUDLY so you can eyeball it against the drop's filename
+REM      (ticktimer-vX.Y.Z-*.zip) before a stale tree becomes an installer.
 REM   1. Configures + builds a RELEASE build (smaller, faster than Debug).
-REM   2. Copies both exes into dist\TickTimer\.
-REM   3. Runs windeployqt on each — THE key step: it scans the exe for the Qt
+REM   2. RUNS THE TEST SUITES (v28.3) and hard-stops on red. The build step
+REM      proves the code compiles; only the tests prove the rules still hold —
+REM      and a red suite must never ride into an installer someone installs.
+REM   3. Copies both exes into dist\TickTimer\.
+REM   4. Runs windeployqt on each — THE key step: it scans the exe for the Qt
 REM      DLLs it needs and copies them (plus plugins) right next to it. This is
 REM      the exact thing that, done by hand, docs/RUNNING.md used to walk you
 REM      through. Now it's automatic.
-REM   4. Drops a plain-English README and two launcher shortcuts in the folder.
+REM   5. Drops a plain-English README and two launcher shortcuts in the folder.
 REM
 REM  Just double-click this file. If it can't find things, it tells you what to
 REM  fix rather than failing silently.
@@ -20,6 +32,41 @@ REM ===========================================================================
 echo.
 echo   TickTimer  -  building a portable package
 echo   =========================================
+echo.
+
+REM --- The apply check (step 0 above) --------------------------------------
+REM findstr /b anchors at line START, so the commented-out "#define AppVersion"
+REM examples in the .iss (they begin with ';') can't match — only the live
+REM define can. tokens=3 grabs the third whitespace-separated word, which is
+REM the quoted version; %%~A strips the quotes (that's what the ~ does).
+set "TREEVER="
+set "ISSVER="
+for /f "tokens=3" %%A in ('findstr /b /c:"#define TICKTIMER_VERSION_STRING" "%~dp0..\include\Version.h"') do set "TREEVER=%%~A"
+for /f "tokens=3" %%A in ('findstr /b /c:"#define AppVersion" "%~dp0..\installer\ticktimer.iss"') do set "ISSVER=%%~A"
+
+if not defined TREEVER (
+    echo   [X] Couldn't read a version out of include\Version.h.
+    echo       Am I still inside the project's tools\ folder? If the file
+    echo       moved or the tree is damaged, fix that before deploying.
+    pause
+    exit /b 1
+)
+if not "%TREEVER%"=="%ISSVER%" (
+    echo   [X] APPLY CHECK FAILED - the tree disagrees with itself:
+    echo         include\Version.h        says  %TREEVER%
+    echo         installer\ticktimer.iss  says  %ISSVER%
+    echo.
+    echo       These two ship together in every drop and must match. A
+    echo       mismatch means either a drop only HALF-applied - unzip it
+    echo       over the project root again, letting it overwrite - or a
+    echo       hand edit bumped one file and forgot the other.
+    echo       Nothing was built. Fix the tree first.
+    pause
+    exit /b 1
+)
+echo   Version check: tree and installer both say  %TREEVER%
+echo   ^(Eyeball that against the drop you just applied - the zip's own
+echo    filename carries its version.^)
 echo.
 
 REM --- Find Qt -------------------------------------------------------------
@@ -108,6 +155,25 @@ if errorlevel 1 ( echo   [X] Configure failed. & popd & pause & exit /b 1 )
 echo   Building  (this takes a minute the first time)...
 cmake --build build-release --config Release -j >nul
 if errorlevel 1 ( echo   [X] Build failed. & popd & pause & exit /b 1 )
+
+REM --- Run the suites (step 2 above) ---------------------------------------
+REM ctest ships in the same bin as cmake, so the PATH work above already
+REM found it. --output-on-failure prints the failing QTest's own detail, so
+REM a red run tells you WHICH rule broke, not just that one did. The live
+REM suite starts its own server from build-release - nothing to set up.
+echo   Running the test suites  ^(six of them; takes a minute^)...
+ctest --test-dir build-release --output-on-failure
+if errorlevel 1 (
+    echo.
+    echo   [X] TESTS FAILED - stopping before anything reaches dist\.
+    echo       The build compiled, but at least one rule the tests pin is
+    echo       broken, and a red suite must not become an installer.
+    echo       The first failing block above names the test - send it.
+    popd
+    pause
+    exit /b 1
+)
+echo   All suites green.
 
 REM --- Assemble dist\TickTimer --------------------------------------------
 set "DIST=%ROOT%\dist\TickTimer"

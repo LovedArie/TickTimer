@@ -1,0 +1,59 @@
+@startuml needsblock_height_bound
+' ---------------------------------------------------------------------------
+' needsblock_height_bound — the needs-a-block card's height, in three acts.
+' Converted from Mermaid in the v26.8 audit (never rendered until now).
+'
+' Read it left to right as a debugging story, because that is what it is: a
+' bug, a fix that created a second bug, and the fix that finally located the
+' decision in the right object. The transferable lesson is in the two dashed
+' arrows at the bottom — a sizeHint is a SUGGESTION and a stretch factor is a
+' CLAIM, and confusing the two is why act two looked right and rendered wrong.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title The needs-a-block card's height — bug, over-correction, and the real fix
+
+package "v21 — unbounded" {
+  component "20 due tasks" as b1
+  component "rows in a QVBoxLayout" as b2
+  component "layout minimum =\nSUM of children" as b3
+  component "QMainWindow minimum grows" as b4
+  component "<b>window cannot shrink</b>" as b5
+  b1 --> b2
+  b2 --> b3
+  b3 --> b4
+  b4 --> b5
+}
+
+package "v22 — self-capped (wrong)" {
+  component "QScrollArea, max 280px" as c1
+  component "window free again ✓" as c2
+  component "but sizeHint is a\nCACHED GUESS" as c3
+  component "<b>card squashed to 2 lines</b>\nover an empty panel ✗" as c4
+  c1 --> c2
+  c1 --> c3
+  c3 --> c4
+}
+
+package "v22.1 — the panel decides" {
+  component "GlancePanel::refresh()" as d1
+  component "gate closed?" as d2
+  component "stretch → card\n(card IS the panel, §E)" as d3
+  component "stretch → day content\ncard sizes to its strip" as d4
+  component "rows fill the height;\nscroll only when it runs out" as d5
+  d1 --> d2
+  d2 --> d3 : yes
+  d2 --> d4 : no
+  d3 --> d5
+}
+
+b5 ..> c2 : the scroll area's small constant\nMINIMUM survives into v22.1
+c4 ..> d1 : <b>stretch factors CLAIM space;</b>\n<b>hints only suggest it</b>
+
+note bottom of d5
+  The fix that stuck moved the decision UP —
+  a child widget cannot know whether it deserves
+  the room, because that depends on its siblings.
+  Only the layout's owner has that view.
+end note
+@enduml

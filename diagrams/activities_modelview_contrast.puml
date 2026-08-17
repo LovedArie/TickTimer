@@ -1,0 +1,53 @@
+@startuml activities_modelview_contrast
+' ---------------------------------------------------------------------------
+' activities_modelview_contrast — Upcoming (v20/v20.1) vs Activities (v20.2).
+' Converted from Mermaid in the v26.8 audit (indexed, never rendered).
+'
+' Why two pipelines instead of one reusable one: they answer different
+' questions. Upcoming asks a FIXED question ("what is coming up?") and can
+' afford an expensive granular diff because the answer changes underneath a
+' user who is staring at it. Activities asks a PARAMETERISED question ("what
+' is in this category?") and changes the whole question on every rail click
+' — diffing across two different questions is meaningless, so it resets.
+'
+' Same base class (TaskSnapshotModel, v20.3), opposite refresh strategies.
+' That contrast IS the lesson; collapsing them into one model would have
+' hidden it.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title Two model/view pipelines, deliberately unalike
+
+package "Upcoming page (v20 / v20.1)" {
+  component "TaskListModel\nFIXED query: upcomingTasks()\ngranular diff on change" as um
+  component "TaskFilterProxy\npriority lens + due-date sort" as up
+  component "QListView\n+ TaskCardDelegate (cards)" as uv
+  um --> up
+  up --> uv
+}
+
+package "Activities detail pane (v20.2)" {
+  component "CategoryTaskModel\nPARAMETERISED: tasksIn(categoryId)\nre-pointable · plain reset" as am
+  component "QListView\n+ CategoryTaskDelegate (flat rows)" as av
+  am --> av
+}
+
+component "rail click" as rail
+rail --> am : setCategoryId(id)
+
+note bottom of am
+  <b>No proxy here, on purpose.</b>
+  No lens to apply, and insertion order
+  is the order the user typed things in —
+  sorting it would destroy information
+  the user created.
+end note
+
+note bottom of um
+  A proxy exists here because the SAME set
+  of tasks must be viewable through several
+  lenses without the model knowing about any
+  of them. Sorting/filtering is the proxy's
+  job; supplying rows is the model's.
+end note
+@enduml

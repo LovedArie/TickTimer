@@ -1,0 +1,24 @@
+%% Shared base for the two list models (v20.3). See docs/design-addendum-model-view.md §K
+classDiagram
+    class TaskSnapshotModel {
+        «abstract»
+        +rowCount() int
+        #rows() QVector~Task~
+        #applySnapshot(next) void
+        #resetSnapshot(next) void
+        #rolesEqual(a, b)* bool
+    }
+    class TaskListModel {
+        +data(index, role) QVariant
+        +refresh() void
+        #rolesEqual(a, b) bool
+    }
+    class CategoryTaskModel {
+        +data(index, role) QVariant
+        +setCategoryId(id) void
+        +refresh() void
+        #rolesEqual(a, b) bool
+    }
+    TaskSnapshotModel <|-- TaskListModel
+    TaskSnapshotModel <|-- CategoryTaskModel
+    note for TaskSnapshotModel "owns the ONE diff:<br/>applySnapshot = granular signals<br/>resetSnapshot = context swap"

@@ -4,12 +4,20 @@
 > into a colour-coded record and reveals real productivity versus
 > anxiety-driven procrastination.
 
-*Status: **v19.1 — working desktop app, Android-ready, distributable, with accounts, device sync, share & compare (now with side-by-side schedules), update notices, task priorities, and an archive.** Daily **and weekly**
+*Status: **v29.1 — working desktop app, with a **task-intake interview** (v29.1: the NEEDS DETAILS queue gains a voice — one C++ question per unsized task with a guess computed from your own tracked history, your one-sentence answer parsed crisp-first in C++ and by the model only for prose, and every extraction still crossing the proposal card; works with every AI seat down), atop the **write boundary** (v29.0, Slice 1: the assistant's first hands, and they only move when you tap — a closed per-role verb set where intake alone may write, and only additively; per-turn [T1] handles so no UUID ever reaches a model; proposal cards with Apply/Discard rendered from the structured request itself; data.json copied aside before any change; a NEEDS DETAILS queue of captured-but-unsized tasks; entirely model-less this slice — the debug panel plays the model, so the whole confirm loop is forceable by hand), with a **morning check-in** (on computably heavy days only, once, 06:00–11:00: a toast invites you, one tap opens the assistant, one more tap records your mood — rough/okay/good, kept 14 days, and your note never enters any AI prompt; the coarse history reaches the assistant ONLY when every configured seat is local to your machine), now with a **proactive heads-up** (an affordability verdict per deadlined task — computed from your own plan, honest when it can't know, volunteered as an alert toast under strict manners: change-of-verdict only, quiet hours, a daily cap, and a TIGHT pill on Upcoming — since 28.1 the assistant phrases the heads-up in your chosen persona — with the plain C++ sentence as the always-works voice when the model is unreachable, slow, or over-wordy — and the chat can answer "can I go out tonight?" from the same computed verdict), Android-ready, distributable, with a read-only **AI assistant page** (chats about your day — it sees the plan, the tracked time and the tasks, rebuilt fresh every turn, and can change none of them; pick its voice — Calm, Brief, Coach, or your own — with the safety rules locked above every style; give it a fallback seat that answers when the primary is unreachable — and only then, never masking a wrong key; "What can it see?" shows the exact context sent), natural-language quick-add ("lab 4 friday urgent weekly #school" becomes a fully-dressed task, with a live parse preview) available in Activities and via a global Ctrl+N capture overlay (click-away to dismiss, Ctrl+Enter asks an AI to parse the messy lines — any provider: Anthropic, OpenAI, Groq, a local Ollama — reasoning models handled: private <think> deliberation is scrubbed, answers routed to a reasoning field are recovered — or your own endpoint), model/view task lists (QAbstractListModel + custom delegates) on the Upcoming and Activities pages, accounts, device sync, share & compare (side-by-side schedules with pinned name headers), update notices, task priorities, an archive, a Settings dialog grown into a nav rail of pages (Agenda, Needs a block, Catch-up, Assistant), a grown-up Pomodoro (notifications, tracker link with a live status line, pin-on-top mini timer), block-start alarms, a live badge on the tracked block, real recurrence for tasks and blocks.** **Subtasks & sizing** (v28.3): any task can hold a one-level checklist of **pieces** — real tasks with optional deadlines of their own, living in the parent's detail panel with a "☑ 2/5" chip on the Upcoming card — plus an **estimate** ("90 min") and a "fits short gaps" flag, all persisted, synced, and carried through recurrence (design record: `docs/design-addendum-subtasks.md`). **Sizing intelligence** (v28.4): affordability now measures deadlines against your **estimates scaled by your personal rate** — the median of estimate-vs-actual over your own finished work, derived fresh from history and never stored — with the planned-blocks proxy as fallback, and an unsized task borrowing the sum of its pieces' estimates. **The detail overlay & pieces in the list** (v28.5–v28.8): task details live in a sliding right-side overlay — content dims behind it, click-away closes, saving is explicit (lit Save button, “Saved ✓” flash, a Save/Discard/Stay guard on every exit over unsaved work); a piece's title opens its own panel with a breadcrumb back to the parent; pieces also show as indented rows in the category list with right-click → “Add a piece” (title pre-selected for naming); and estimates come from a ladder dropdown that speaks hours (“1h 30m”, “12h”, capped at 16h — past that, break it into pieces); and since v28.9 a piece with its own date is **promoted** — it counts as its own line of work and its minutes leave the parent, so the app believes exactly what you entered, once. Design records: `docs/design-addendum-subtasks.md` §L–§N and `docs/design-addendum-detail-panel.md`. Daily **and weekly**
 planner with live focus tracking (focus / break / **distracted**),
 **drag-to-resize** blocks, **blocks that say what they are** (labels, task
 blocks, spontaneous blocks — with task notes and column-flowed text), tasks &
-deadlines, folders, special days, and week/month reviews. **33** automated
-domain tests + a headless **UI regression suite**. Login is handled by a small self-hosted server (`ticktimer-server`) you run
+deadlines, folders, special days, and week/month reviews. **367 tests across
+six QTest suites** — domain (156), headless UI regression (93), NLP +
+provider + chat (68), model/view (20), auth (17) and live end-to-end (13);
+re-derived at v29.1.0 with `test_<suite> -functions`, after the previous
+figure (379, over a breakdown that summed to 326) turned out to have been
+carried forward rather than counted.
+`ctest` reports a higher number than that, because QTest counts each class's
+`initTestCase`/`cleanupTestCase` too; run it — or the one-line loop in
+`tests/README.md` — for the figure of the day
+rather than trusting a number typed into a README. Login is handled by a small self-hosted server (`ticktimer-server`) you run
 on your own machine — no Google, no cloud. (Formerly "Time & Focus Tracker".)*
 
 ![TickTimer — the daily planner](docs/screenshot.png)
@@ -25,8 +33,9 @@ people whose focus is easily derailed by anxiety-driven procrastination.
 
 ## Features
 
-- **Plan your day** on a 30-minute-slot calendar (6 AM–midnight) — click a
-  free slot, then pick an activity, pick one of your **open tasks**, or just
+- **Plan your day** on a 30-minute-slot calendar (6 AM–midnight, with the
+  **visible hours yours to choose** in ⚙ Settings) — click a free slot, then
+  pick an activity, pick one of your **open tasks**, or just
   **type what you're doing** (spontaneous blocks need no activity at all).
 - **Blocks say what they are** — task blocks show the task's title and wear
   its life-area colour (✓ once done); spontaneous blocks need only a title (first line = the name, extra lines become its notes);
@@ -50,6 +59,23 @@ people whose focus is easily derailed by anxiety-driven procrastination.
   under your life areas next to the reusable activities.
 - **Upcoming** — every dated, unfinished task across all areas: Overdue /
   This week / Later.
+- **"Needs a block"** — the app *notices* when urgent or due-soon work has
+  no time set aside (a block only counts on or before the deadline, and
+  never in the past). A **gated review** holds the day's numbers until
+  you've looked; **"Find time"** shows each day's free space and places a
+  block in one click; "Not today" defers until *your* chosen hour, and a
+  task dodged too often is asked for a **decision**, not shouted at.
+- **Catch-up** — when a planned block *doesn't happen* (overslept, priorities
+  shifted, forgot to track), the app notices: a quiet **chip** on the glance
+  panel (amber at the morning/evening moments, faded while snoozed — never a
+  nag) opens a drawer of every unresolved block from the last **3 days**
+  (yours to widen in ⚙), each with a **pre-filled proposal** — "Move →
+  tomorrow 09:00", a split across free fragments, a shorter slot, or an
+  honest *"nothing fits before the deadline"* naming what's in the way.
+  Nothing ever moves until you tap. *Done / Skip / Skip all* come with an
+  **Undo receipt**, recently-resolved blocks stay one tap from **Bring
+  back**, and the assistant's briefing reports the unresolved gap so it
+  can't cheerfully invent a week that didn't happen.
 - **Folders** organise your life areas in the rail; **special days** count
   down to birthdays, holidays, and vacations (yearly repeats supported).
 - **Review your time** by life area — bars show **productive (focused) time
@@ -58,19 +84,65 @@ people whose focus is easily derailed by anxiety-driven procrastination.
   day-split **pie chart**; zero rows stay hidden — across day, week, and
   month — every number derived live from raw tracked segments, never
   stored twice.
-- **Pomodoro timer** for focused work cycles (25/5, long break every 4th).
-- **Sync between devices** — a Sync button pushes/pulls your planner
-  through your own server, with revision checks so two devices can never
-  silently overwrite each other; conflicts are always a visible human
-  choice. See [docs/design-addendum-sync.md](docs/design-addendum-sync.md).
+- **Pomodoro timer** for focused work cycles (25/5, long break every 4th) —
+  now with **phase-end notifications** (a beep and a desktop toast from the
+  tray, so a finished focus block finds you in any app), an optional
+  **link to the tracked block** (*you pick the block, the Pomodoro picks
+  the kind*: focus phases track focus, breaks track break, and pausing the
+  Pomodoro records **distracted** time). Press ▶ during a planned block's
+  hours and the Pomodoro **adopts it on the spot** — no need to start the
+  block's timer first; it still never guesses between blocks (there's
+  never more than one live) and never stops one, and a **mini timer**: a small always-on-top card (play/pause,
+  phase, countdown) you can park over any app and drag anywhere.
+- **The tracked block says so** — while you're tracking a block, it wears
+  a live badge (`● Focusing · 7:12`) in the state's colour, ticking every
+  second — and the Pomodoro page narrates its link in one honest sentence
+  ("Driving 'Study PHY335' — recording focus", or exactly which step it's
+  waiting for).
+- **Repeat, for real** — tasks and planned blocks both recur. Complete a
+  repeating task and its next occurrence appears (due date advanced, rule
+  carried forward); give a block a repeat rule (its dialog → "Repeats")
+  and the plan re-creates itself when its day passes — never backfilling
+  days you missed, never colliding with existing blocks (occupied dates
+  are skipped). Each past occurrence keeps its own tracked history.
+- **Blocks end on time** — when a tracked block's planned window closes,
+  tracking stops itself (the last interval committed honestly), a chime +
+  toast says so, and if the Pomodoro was driving it, the Pomodoro pauses —
+  ready to adopt your next block at ▶. Notifications play real chimes on every
+  Windows build (embedded sounds via Qt Multimedia when present, or
+  Windows' own audio API when not) and pop as TickTimer's own on-top
+  cards — no OS notification pipeline to silence them.
+- **Your plan speaks up** — the moment a planned block's start time
+  arrives, TickTimer beeps and shows a desktop toast naming the block and
+  its hours ("Study GTI350 · 9:00 AM – 10:30 AM"). Quiet by design: no
+  toast for blocks you create mid-flight, none for a block you're already
+  tracking, and a slept-through morning wakes to silence instead of ten
+  stale pop-ups. Toggle in ⚙ Settings.
+- **⚙ Settings** — choose the agenda's hours (a *display* window: blocks
+  outside it always stretch the view back into sight, never hide) and
+  whether your week starts **Monday or Sunday** — the week agenda, its
+  totals, the "Week of …" label, and the month grid all follow together.
+  Preferences live in `QSettings` on this machine; they never touch or
+  sync your planner data.
+- **The header knows who you are** — *Welcome, \<username\>* whenever a
+  session is signed in, so two accounts on one machine never blur.
+- **Sync between devices — automatic** — your edits push themselves a few
+  seconds after you stop making them (and a Sync button remains for
+  pulling / resolving). Conflicts are never resolved silently: the button
+  turns ⚠ and a human picks the winner, with revision checks so two
+  devices can never silently overwrite each other.
+  See [docs/design-addendum-sync.md](docs/design-addendum-sync.md).
 - **Your own accounts, your own server** — a login gate backed by
   `ticktimer-server`, a small program you run on your laptop (a Raspberry Pi
   later). Passwords are salted and stretched, never stored in plaintext; no
   identity provider, no cloud dependency. See [docs/SERVER.md](docs/SERVER.md).
 - **Share & compare** — grant someone read access to your planner (one
-  direction, revocable any time) and see your day next to theirs: focus,
-  break, distracted, total, with a gentle who's-ahead headline. Permissions
-  are enforced by the server; the comparison runs entirely on your device.
+  direction, revocable any time) and see your day next to theirs: two full
+  agendas side by side — **each column named with its real account, pinned
+  above the scroll** so the names can never scroll out of sight — plus
+  focus, break, distracted, total, and a gentle who's-ahead headline.
+  Permissions are enforced by the server; the comparison runs entirely on
+  your device.
   See [docs/design-addendum-share.md](docs/design-addendum-share.md).
 - **Task priorities & the Archive** — rank tasks urgent/medium/low and view
   Upcoming through four lenses; archive finished tasks and retired
@@ -92,13 +164,121 @@ people whose focus is easily derailed by anxiety-driven procrastination.
   (`AppData/Roaming/TickTimer/data.json` on Windows). Saves are atomic:
   a crash mid-save can never corrupt your history.
 
+### Pick your AI (v24)
+
+The quick-add AI fallback works with **any provider**: Anthropic, OpenAI,
+Groq, a **local Ollama** (free, private, no key), or any custom endpoint
+speaking either the Anthropic or the OpenAI-compatible dialect. One dropdown
+in Settings; keys and models are remembered per provider, and a **Test**
+button (v25.1) fires one tiny request at whatever is on screen — unsaved
+edits included — and reports ✓ or the provider-aware error inline. The same
+setup powers the **Assistant** page. **Local reasoning models** (Qwen3,
+DeepSeek-R1, …) work since v25.2: their private `<think>` deliberation never
+reaches the chat, and replies that arrive with everything in a `reasoning`
+field are recovered instead of discarded. **Setup guide: [docs/AI.md](docs/AI.md)**
+(providers, keys, Ollama, custom endpoints, what gets sent, every error
+decoded); design reasoning:
+[docs/design-addendum-provider.md](docs/design-addendum-provider.md).
+
+### The Assistant (v25–v26)
+
+A chat page that sees today's plan, tracked time, and tasks — rebuilt
+fresh every turn — and can change none of them (read-only by contract and
+by test; the "What can it see?" button shows the exact context sent). Pick
+its voice in Settings — Calm, Brief, Coach, or your own line of
+instructions — with the safety rules locked above every style, and give it
+a fallback seat that answers only when the primary is *unreachable*, never
+to paper over a wrong key. Local reasoning models (Qwen3, DeepSeek-R1)
+work: their private `<think>` deliberation never reaches the chat. The
+whole guide, including what leaves your machine and what it costs:
+[docs/AI.md](docs/AI.md).
+
+### Break it into pieces (v28.3, grown v28.5)
+
+Open any task and add **pieces** — "read the spec", "write section 1" —
+tick them off, and the Upcoming card shows "☑ 2/5". Pieces stay off the
+main lists (the task represents the work), but a piece given its own due
+date appears on that calendar day. Finishing 5/5 never auto-completes the
+task: the tick is yours. Same panel, give the task a **size** — an
+estimate from a dropdown that speaks hours ("1h 30m", "12h" — 15 minutes
+to 16 hours, and past that the app's answer is: break it into pieces) and
+a "Fits short gaps" switch for things you can chip at in 15-minute holes.
+
+Since v28.7, pieces live **in the list itself**, TickTick-style:
+right-click any task → "Add a piece" creates one and opens it with the
+title ready to type over, and pieces show as indented rows under their
+parent — tick, date-chip, archive, and click-to-open all work right
+there. The parent's own panel keeps its checklist for quick ticks.
+
+Since v28.5, **a piece's title is a door**: click it to open the piece's
+own panel — set its date, time, and size there, with a "‹ back to parent"
+breadcrumb up top. The checkbox still just ticks. A piece with a date and
+an estimate is real scheduled work: it shows a quiet "Aug 8 · 45 min"
+chip in the checklist, appears on its day, and can earn its own planned
+block — "Chapter 3" under "Study for finals", planned as its own session.
+
+And since v28.6 all of this lives in a **sliding overlay panel**, not a
+popup: click a task and the panel slides in over the right side while
+the rest of the app dims behind it — click anywhere outside (or Esc) to
+close, with a Save/Discard/Stay guard if you have unsaved work; clicking
+a piece just swaps what the panel shows. Saving is **explicit, with feedback** — the Save button lights up
+when you have unsaved changes, flashes "Saved ✓" when they land, and any
+attempt to leave unsaved work behind asks first (Save / Discard / Stay —
+Enter always saves, never discards). Design reasoning:
+[docs/design-addendum-subtasks.md](docs/design-addendum-subtasks.md) and
+[docs/design-addendum-detail-panel.md](docs/design-addendum-detail-panel.md).
+
+### Deadlines with a time (v22)
+
+A task's deadline can now carry a clock: **"Lab 4, Aug 8, 23:59"**. The time is
+optional everywhere — an all-day deadline is still just a date, and every task
+you already have keeps working untouched.
+
+- Set it in the task detail panel, the due-date picker, or straight from
+  quick-add: `lab 4 friday 17:00`, `pay rent 28th 9am`, `call clinic at 5pm`.
+- All-day tasks are due at the **end** of their day, so nothing goes red at
+  one minute past midnight.
+- A timed task that lapses turns overdue **that minute**, not the next day —
+  the "needs a block" card notices at 09:01, not at midnight.
+- Same-day tasks sort by clock, earliest first, all-day last.
+
+See `docs/design-addendum-deadline-time.md` for the full design, including why
+this is two fields rather than one `QDateTime`.
+
+### The focused glance panel (v22)
+
+The "needs a block" review now asks for **one decision at a time**: the gate
+shows the single top-ranked task as a card — accent rail, due line, two
+actions — with the rest counted and one click away. After review, two compact
+chips ("N need a block", "N put off") open a **slide-over panel** with the
+full lists, so the glance column never jumps. Deadlines can carry a time, and
+a task due today at 09:00 turns overdue at 09:01 — not at midnight.
+
+### The window remembers (v23)
+
+Close TickTimer where you like it and it opens there again — size, position,
+and maximized state, plus whether you had the sidebar folded (`Ctrl+B`). All
+per-machine: a laptop and a desktop are allowed to disagree about window size,
+and they do.
+
+Restoring is guarded. If the window was last closed on a monitor you've since
+unplugged, TickTimer notices the remembered rectangle is no longer on any
+attached screen and opens centred at its default size instead — rather than
+faithfully restoring to coordinates that no longer exist, which is what most
+apps do and is why they sometimes appear not to start at all.
+
+See `docs/design-addendum-window-memory.md`, including why the geometry is
+stored as Qt's opaque blob rather than four numbers.
+
 ## Built with
 
 - **C++17** and **Qt 6 Widgets** — no dependencies beyond Qt itself; all
   charts are custom-painted.
-- **CMake** builds; **QTest** suites: 33 domain tests plus a headless UI regression
-  suite (real widgets on the offscreen platform).
-- Storage: versioned **JSON** (v6), migrating to **SQLite** as data grows.
+- **CMake** builds; **QTest** suites: six of them, 367 tests (measured at
+  v29.1.0 — `tests/README.md` has the counting loop), all
+  headless (real widgets on Qt's offscreen platform — no display needed, so
+  they run the same on your laptop and in CI).
+- Storage: versioned **JSON** (**format v13**), migrating to **SQLite** as data grows.
   User preferences (Pomodoro durations) live in **`QSettings`**, kept separate
   from domain data.
 
@@ -114,18 +294,21 @@ then an interactive prototype, then iterative implementation:
   tracking), each designed via a reviewed addendum before any code.
 - **Living docs** — see [`/docs`](docs/): Vision · Use-Case Model ·
   Supplementary Specification · Glossary · Risk List · Iteration & Phase
-  Plans · [design doc](docs/design-doc.md) with six design addenda
-  ([tasks](docs/design-addendum-tasks.md) ·
-  [organizing](docs/design-addendum-organizing.md) ·
-  [task details](docs/design-addendum-task-details.md) ·
-  [agenda & tracking](docs/design-addendum-agenda-and-tracking.md) ·
-  [block labels](docs/design-addendum-block-labels.md) ·
-  [android](docs/design-addendum-android.md)) ·
+  Plans · [design doc](docs/design-doc.md) with a design addendum per
+  feature arc (thirty-five and counting — the doc's §3 keeps the full
+  index) ·
   a [reading guide](docs/READING_GUIDE.md) to the codebase ·
   a symptom-indexed [troubleshooting log](docs/TROUBLESHOOTING.md) ·
+  the [force recipes](docs/TESTING.md) — **Ctrl+Shift+D** opens a debug
+  panel that reaches every v28 seam by hand (v28.10) ·
   a [question bank](docs/QUESTION_BANK.md) for self-testing.
 
 ## Getting started
+
+> **New here, or setting up a fresh machine?** Read
+> **[docs/SETUP.md](docs/SETUP.md)** — one page from unzip to running app,
+> including the AI configuration and the mood-privacy rule. The sections
+> below are the reference detail behind it.
 
 ### Prerequisites
 
@@ -154,7 +337,7 @@ cmake --build build
 This builds **two programs**: `ticktimer` (the app) and `ticktimer-server`
 (the login/sync backend).
 
-Run the test suite (63 tests: domain, UI, auth, and live end-to-end):
+Run the test suite (six suites: domain, model/view, UI, NLP/provider/chat, auth, and live end-to-end):
 
 ```bash
 ctest --test-dir build --output-on-failure
@@ -241,16 +424,22 @@ kept separate. See **[docs/SERVER.md](docs/SERVER.md)** for hosting details.
 - [x] Iteration 5 — Pomodoro & polish
 - [x] Tasks & due dates · Upcoming view
 - [x] Folders · Special days
-- [ ] Drag-and-drop into folders
-- [ ] Plan a task onto the agenda (tasks meet plan-vs-actual)
+- [x] Drag-and-drop into folders (categories onto folders, in the Activities rail)
+- [x] Plan a task onto the agenda (task blocks + the block-label link)
+- [x] "Needs a block" — surface unscheduled urgent work: gated review,
+      dismissal clocks, escalation, one-click placement
+- [x] Catch-up — blocks that didn't happen: derived verdicts, a ranked
+      reschedule ladder (propose, never move), chip + drawer, undo &
+      bring-back, bulk skip, briefing honesty
 - [x] Per-account local data + one-time migration of existing planner
-- [ ] Remember window & sidebar state (QSettings)
+- [x] Remember window & sidebar state (QSettings)
 - [ ] SQLite storage
-- [ ] Android build
+- [x] Android build (`docs/ANDROID.md`; the CMake packaging block is live)
 - [x] Cross-device sync
 - [x] Share & compare planners
 - [x] Update notices (networked arc complete)
 - [x] Task priority + archive + honest-tracking editor (daily-driver pass)
+- [x] AI provider layer — vendor as a dropdown (cloud or local Ollama)
 
 ## License
 

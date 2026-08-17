@@ -21,6 +21,14 @@
 
 #include "Segment.h"
 
+#include "Task.h" // Task::Repeat — the recurrence vocabulary, borrowed
+                   // wholesale. Deliberately NOT moved to its own header:
+                   // the enum + its to/from-string helpers were born in
+                   // Task.h and every call site names them there; renaming
+                   // for purity would churn a dozen files to change zero
+                   // behaviour. Naming honesty is kept the cheap way — a
+                   // comment at each borrow site (here, and the field).
+
 #include <QDate>
 #include <QDateTime>
 #include <QString>
@@ -38,6 +46,58 @@ inline constexpr int kSlotsPerDay      = (kDayEndMinutes - kDayStartMinutes)
                                          / kSlotMinutes;     // 36
 inline constexpr int kMaxSlotsPerEvent = 4;                  // up to 2 h
 } // namespace plan
+
+// v26.2 — the verdict on a block whose planned window has passed.
+//
+// THE DIVIDING LINE this enum defends: "this block was missed" is DERIVED
+// (missed::judge — a pure function of the planned window, the tracked
+// segments, and `now`; change the threshold in Settings and every block
+// re-judges instantly with nothing to migrate). "What I decided to do about
+// it" is NOT derivable from anything — no amount of staring at segments
+// tells you the user deliberately skipped the gym rather than forgot. So
+// the judgement stays computed and the DECISION gets stored, syncs, and
+// lives here. Same split as coverage::rung (derived) vs Task::dismissCount
+// (stored).
+//
+//   Unset   — no verdict yet. The only state missed:: will surface.
+//   Done    — "it happened; stop asking." May or may not have segments:
+//             the user can log the real time (a separate fact, appended as
+//             a Segment) or simply refuse to invent timestamps.
+//   Moved   — replaced by another block; `movedToId` names it.
+//   Dropped — deliberately skipped. Not a failure, a decision.
+enum class BlockOutcome
+{
+    Unset,
+    Done,
+    Moved,
+    Dropped,
+};
+
+// Unset serialises to the EMPTY string on purpose: a pre-v11 event has no
+// "outcome" key at all, o["outcome"].toString() gives "", and that reads
+// back as Unset. Tolerant read, additive growth, no migration branch — the
+// fourth time this file uses the trick (taskId at v6, repeat at v9).
+inline QString blockOutcomeToString(BlockOutcome o)
+{
+    switch (o) {
+    case BlockOutcome::Unset:   return QStringLiteral("");
+    case BlockOutcome::Done:    return QStringLiteral("done");
+    case BlockOutcome::Moved:   return QStringLiteral("moved");
+    case BlockOutcome::Dropped: return QStringLiteral("dropped");
+    }
+    return {}; // unreachable — no default label, so the compiler warns if a
+               // new enumerator is added and this switch isn't updated
+}
+
+inline BlockOutcome blockOutcomeFromString(const QString& s)
+{
+    if (s == QLatin1String("done"))    return BlockOutcome::Done;
+    if (s == QLatin1String("moved"))   return BlockOutcome::Moved;
+    if (s == QLatin1String("dropped")) return BlockOutcome::Dropped;
+    return BlockOutcome::Unset; // "" and any unknown value — garbage on disk
+                                // degrades to "undecided", never to a
+                                // decision the user didn't make
+}
 
 struct Event
 {
@@ -72,9 +132,52 @@ struct Event
     // `new`/`delete`. This is RAII doing the memory management for us.
     QVector<Segment> segments;
 
+    // v9: recurrence for planned blocks. The rule always lives on the
+    // NEWEST link of a chain — when an occurrence rolls forward, the old
+    // block's repeat is cleared and the new block carries it. That single
+    // invariant is also the duplicate-spawn guard: a link can only ever
+    // spawn once, because spawning strips it of the rule.
+    Task::Repeat repeat = Task::Repeat::None;
+
+    // v26.2 — the catch-up verdict. See BlockOutcome above for why the
+    // judgement is derived and the decision is stored.
+    BlockOutcome outcome = BlockOutcome::Unset;
+
+    // Set only when outcome == Moved: the block this one turned into.
+    //
+    // ONE DIRECTION, deliberately. The obvious symmetric design stores a
+    // movedFromId on the new block too, and the obvious problem with it is
+    // that two pointers can disagree — a half-applied edit leaves a chain
+    // that says different things depending on which end you read. The
+    // reverse question ("was this block rescheduled from somewhere?") is a
+    // linear scan over events, which is trivially cheap and cannot drift.
+    // Derive the reverse, store the forward. (The repeat chain makes the
+    // same call: the rule lives on exactly one link.)
+    QString movedToId;
+
     qint64 plannedSeconds() const
     {
         return qint64(plannedEndMinutes - plannedStartMinutes) * 60;
+    }
+
+    // REAL focus time committed to this block. Derived from the segments it
+    // owns, so it can never disagree with them — the same reasoning as
+    // Segment::seconds() and plannedSeconds() above.
+    //
+    // Focus ONLY, and that is a domain judgement worth stating: the question
+    // "did this block happen?" is a question about work. Break time inside a
+    // block is legitimate but isn't the work, and Distracted time is
+    // explicitly lost time. Counting either would let a block full of
+    // procrastination pass as done. (stats::eventTotals keeps the full
+    // three-way split for the reporting screens, which ask a different
+    // question.)
+    qint64 focusSeconds() const
+    {
+        qint64 total = 0;
+        for (const Segment& s : segments)
+            if (s.kind == SegmentKind::Focus)
+                total += s.seconds();
+        return total;
     }
 
     bool overlaps(int startMin, int endMin) const

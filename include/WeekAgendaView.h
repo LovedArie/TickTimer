@@ -53,6 +53,22 @@ public:
     // the include out of the header is deliberate (fewer rebuild ripples);
     // the price is that method bodies touching AgendaWidget live in the .cpp.
     void setShowTaskDescriptions(bool show);
+
+    // Display preferences (settings addendum), told by the page like the one
+    // above. The window is NOT simply forwarded to the columns: seven days
+    // could each stretch differently over their own blocks, so the view
+    // computes the seven-day UNION and hands every column (and the shared
+    // axis) the same range — alignment is this screen's whole reason to
+    // exist, so it is enforced here, in the one place that can see all
+    // seven days at once.
+    void setVisibleWindow(int startMinutes, int endMinutes);
+    void setFirstDayOfWeek(Qt::DayOfWeek day);
 private:
+    void applyWindow(); // recompute the union; move axis + columns together
+
     QVector<QLabel*>       m_headers;  // 7 day headers above the columns
+    QWidget*               m_axis = nullptr; // the shared hour axis (set once)
+    Qt::DayOfWeek          m_firstDay  = Qt::Monday;
+    int                    m_prefStart = 6 * 60;  // preference window; the
+    int                    m_prefEnd   = 24 * 60; // union never shows less
 };

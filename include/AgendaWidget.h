@@ -56,6 +56,31 @@ public:
     // tool, each of which may want a different answer someday).
     void setShowTaskDescriptions(bool show);
 
+    // Display preference (settings addendum): which part of the domain grid
+    // this widget PAINTS, in minutes after midnight. A window over the day,
+    // never a new day: the legal planning range stays plan::* — slot indices
+    // in signals, minutes in events, and every consumer of both are
+    // untouched. Told by the page (from prefs::agendaWindow), like the
+    // preference above.
+    void setVisibleWindow(int startMinutes, int endMinutes);
+
+    // The one honesty rule of the window, as a PURE, shared function:
+    // the range that must be shown for `date` = the preference window,
+    // stretched (never shrunk) to cover every event on that date. A
+    // narrowed view may hide empty hours; it may never hide a block.
+    // Static and public because multi-column containers (week view,
+    // compare) need the SAME math to compute a union window that keeps
+    // sibling columns pixel-aligned — one formula, every consumer.
+    static QPair<int, int> windowCovering(const AppData* data, QDate date,
+                                          int prefStartMin, int prefEndMin);
+
+    // Placement highlighting (needs-a-block part 3): the page hands this
+    // widget a set of free minute-ranges to invite clicks into; empty
+    // clears. Pure presentation — the runs are COMPUTED by the page and
+    // clicks still travel the ordinary emptySlotClicked path, so this
+    // widget stays what it has always been: a reporter, not a decider.
+    void setHighlightRuns(QVector<QPair<int, int>> runs);
+
 signals:
     void emptySlotClicked(int slotIndex);      // "plan something at 9:00"
     void eventClicked(const QString& eventId); // "open this block"
@@ -84,6 +109,16 @@ private:
     QRect eventRect(const Event& e) const;          // = spanRect of its span
     int   slotAt(const QPoint& pos) const;          // paint AND hit-testing
     int   minutesAtY(int y) const;                  // snap a y to a slot time
+
+    // The window this widget actually shows TODAY: windowCovering() of the
+    // preference and the current date. Derived on demand, never cached —
+    // an event added outside the window changes the answer, and stale
+    // geometry is exactly the bug caching would invite (§3.5 again).
+    QPair<int, int> shownWindow() const;
+    int  firstShownSlot() const; // domain slot index of the top row
+    int  shownSlotCount() const;
+    int  slotTop(int slotIndex) const; // domain slot -> y (window-aware)
+    void syncHeight();                 // minimum height follows the window
     // Is `pos` near a resizable edge? Returns the edge and, via eventId, which
     // event — the hit-test twin of how edges are DRAWN, so they never drift.
     Edge  edgeAt(const QPoint& pos, QString* eventId) const;
@@ -92,8 +127,18 @@ private:
     const TrackerService* m_tracker; // for the live-growing mini bar
     QDate m_date;
     int   m_gutter    = kDefaultGutter; // 64 by default; 0 in week-column mode
+    // The PREFERENCE window (initialized to the full day in the ctor, so
+    // every existing caller and test sees the historical widget). What is
+    // actually painted is shownWindow() — the preference stretched over the
+    // date's events. (Initialized in the .cpp, not here: naming plan::*
+    // would drag Event.h into this header for two integers.)
+    int   m_windowStart;
+    int   m_windowEnd;
     bool  m_showTaskDescriptions = true; // display preference, page-supplied
     int   m_hoverSlot = -1;          // empty slot under the mouse, or -1
+    // Free minute-ranges to paint as click-me invitations while a task is
+    // being placed (needs-a-block part 3). Empty = no placement running.
+    QVector<QPair<int, int>> m_highlightRuns;
 
     // ---- resize-drag state (only meaningful while m_resizing) --------------
     bool    m_resizing     = false;

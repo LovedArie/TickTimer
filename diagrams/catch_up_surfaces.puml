@@ -1,0 +1,72 @@
+@startuml catch_up_surfaces
+' ---------------------------------------------------------------------------
+' catch_up_surfaces — v26.2 part 2 (design-addendum-catch-up §K).
+'
+' The picture's point: the CARD never touches a mutable AppData. Every
+' arrow pointing left is a SIGNAL (a question); the only arrows that
+' mutate are PlannerPage's calls into the two doors. Const-correctness as
+' architecture, drawn.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title Catch-up — who asks, who decides, who mutates
+
+component "CatchUpCard" as card {
+  portin "refresh(now)" as rin
+}
+note bottom of card
+  reads: const AppData, prefs::missedRule,
+  the two moment toggles, the snooze
+  derives: missed::unresolvedIn +
+  reschedule::propose, per row
+  fingerprint-gated (v22.2 scar)
+end note
+
+component "GlancePanel" as glance
+note bottom of glance
+  const view — forwards the card's
+  three signals upward, unchanged
+end note
+
+component "PlannerPage" as page
+note bottom of page
+  holder of the MUTABLE pointer;
+  translates Option.pieces into
+  the matching door
+end note
+
+database "AppData" as data
+note bottom of data
+  rescheduleBlock (one span)
+  rescheduleBlockSplit (all-or-nothing)
+  resolveBlock (refuses Moved)
+end note
+
+component "missed:: / reschedule::" as pure
+note top of pure
+  pure functions — no widgets,
+  no QSettings, no clock
+end note
+
+card ..> pure : derive verdicts\nand the ladder
+card -> glance : acceptProposalRequested\nresolveRequested\nshowDayRequested
+glance -> page : re-emitted verbatim
+page -> data : the doors
+data -> glance : changed() -> refresh(now)\n(the ONE repaint path —\nthe accept slot never\ncalls refresh itself)
+
+component "brief::dayBriefing" as brief
+brief ..> pure : the same judgement,\nrule passed as a FIELD\n(brief:: stays QSettings-free)
+
+component "CatchUpSettingsPage" as settings
+settings ..> data : never — taste only:\nprefs:: (QSettings)
+
+note as scope
+  BUMP (v1 scope): the dead-end row NAMES
+  the conflicting block and opens its day;
+  accepting a bump would displace the victim,
+  who then needs a proposal of their own —
+  a cascade deferred, not forgotten (§K).
+end note
+scope .. card
+
+@enduml

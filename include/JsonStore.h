@@ -17,6 +17,7 @@
 // ---------------------------------------------------------------------------
 
 #include <QJsonObject>
+#include <QDir>
 #include <QString>
 
 class AppData;
@@ -46,6 +47,10 @@ public:
     // legacy file was found and copied into the new home. General law:
     // renaming anything that touches persisted state needs a data bridge.
     static bool migrateLegacyData();
+    // The copy rule alone, aimable at any two folders (exists for tests and
+    // for reuse by every era's migration): copy data*.json from → to, never
+    // overwrite, never move. Returns true if anything was carried over.
+    static bool migrateDataFiles(const QDir& from, const QDir& to);
 
     // One-time ADOPTION: when a user's per-account file doesn't exist yet but
     // the old GLOBAL data.json does, copy the global file into the account's

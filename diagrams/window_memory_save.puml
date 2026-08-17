@@ -1,0 +1,53 @@
+@startuml window_memory_save
+' ---------------------------------------------------------------------------
+' window_memory_save — the SAVE half of v23/v23.1.
+'
+' Split out of window_memory_restore during the v26.8 audit. The Mermaid
+' original drew restore and save in one flowchart with two disconnected
+' entry points, which PlantUML activity syntax cannot express and which was
+' confusing anyway: they are two independent stories that happen to share a
+' preference key.
+'
+' v23.1's real change: closeEvent was demoted from "the" save to "the last"
+' save. The debounce is load-bearing now because it works no matter how the
+' process dies — Stop button, crash, kill — which closeEvent never did.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title The window's memory — the save side (v23.1: the debounce is the real path)
+
+start
+:moveEvent, resizeEvent, or a
+WindowStateChange changeEvent;
+
+if (m_windowStateRestored\n&& isVisible()\n&& !isMinimized()?) then (no — construction or\nrestore in progress)
+  :<b>drop</b>
+  saving now would erase the
+  memory with the default;
+  stop
+else (yes)
+endif
+
+:restart a 1s single-shot QTimer;
+note right
+  start() on an ALREADY-RUNNING QTimer
+  restarts it. That one fact <i>is</i> the
+  debounce — no counter, no flag.
+end note
+
+:1s of silence elapses;
+
+:prefs::setSidebarVisible(...)
+(belt-and-braces: already written on
+every Ctrl+B / toggle click);
+
+if (isCompactScreen()?) then (yes)
+  :skip — never store a
+  phone-shaped rectangle;
+  stop
+else (no)
+  :prefs::setWindowGeometry(saveGeometry());
+  stop
+endif
+
+@enduml

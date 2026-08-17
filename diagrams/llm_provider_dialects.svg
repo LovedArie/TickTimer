@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="1027px" preserveAspectRatio="none" style="width:2026px;height:1027px;" version="1.1" viewBox="0 0 2026 1027" width="2026px" zoomAndPan="magnify"><defs/><g><text fill="#2A2E33" font-family="Segoe UI" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="500" x="766" y="12.9951">AI provider layer — one value, two dialects, zero vendors in the wire (v24)</text><!--MD5=[e140ffe9d520e7041a6e410e66d94b56]
+cluster AI--><rect fill="#EDF4F1" height="524" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="784" x="597" y="167.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="81" x="866.5" y="180.4355">ai:: (pure —</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="155" x="951.5" y="180.4355">no network in this file</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="5" x="1106.5" y="180.4355">)</text><!--MD5=[895ddcf88ce717ce9e6ad993587e2c71]
+entity CAT--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="268" x="982" y="207.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="57" x="992" y="228.4355">catalog()</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="166" x="992" y="242.4043">Anthropic · OpenAI · Groq ·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="248" x="992" y="256.373">Ollama(local, needsKey=false) · Custom</text><!--MD5=[749c2e65bcb6767c5b79eb3fd236df60]
+entity PROV--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="185" x="952.5" y="482.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="51" x="962.5" y="503.4355">Provider</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="61" x="1017.5" y="503.4355">(a value)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="133" x="962.5" y="517.4043">id · baseUrl · dialect ·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="165" x="962.5" y="531.373">model · envVar · needsKey</text><!--MD5=[c3a4f3e8f4178bd6ff687dda427d2534]
+entity CFG--><rect fill="#FFFFFF" height="47.9375" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="222" x="1005" y="359.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="77" x="1015" y="380.4355">configured()</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="46" x="1015" y="394.4043">read at</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="59" x="1065" y="394.4043">fire time</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="93" x="1124" y="394.4043">, never cached</text><!--MD5=[ae4d41e10e25b252562e566b0f17681b]
+entity EP--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="229" x="860.5" y="605.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="74" x="870.5" y="626.4355">endpoint(p)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="197" x="870.5" y="640.4043">concatenate, not resolved()</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="4" x="1067.5" y="640.4043">:</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="209" x="870.5" y="654.373">resolved() deletes Groq's /openai</text><!--MD5=[0516898f9ef9ef667b6f1f0cd59d05d0]
+entity BODY--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="233" x="1124.5" y="605.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="181" x="1134.5" y="626.4355">requestBody(p, system, text)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="213" x="1134.5" y="640.4043">Anthropic: system = top-level field</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="199" x="1134.5" y="654.373">OpenAI: system = first message</text><!--MD5=[31857ce16388294455703fafcd1b1625]
+entity HDR--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="196" x="629" y="605.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="149" x="639" y="626.4355">requestHeaders(p, key)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="117" x="639" y="640.4043">x-api-key vs Bearer</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="59" x="639" y="654.373">no key -&gt;</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="113" x="702" y="654.373">no header at all</text><!--MD5=[c6d6d4da8b4a45e2cf2408caa42c2835]
+entity EXT--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="200" x="640" y="207.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="164" x="650" y="228.4355">extractText(dialect, bytes)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="104" x="650" y="242.4043">content[].text vs</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="180" x="650" y="256.373">choices[0].message.content</text><!--MD5=[b65e7c144e2ce3bdc7ab281d7a0403b1]
+entity SET--><rect fill="#EDF4F1" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="278" x="1408" y="24.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="146" x="1418" y="45.4355">Settings → AI quick-add</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="258" x="1418" y="59.4043">provider combo · per-provider key+model</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="165" x="1418" y="73.373">custom: address + dialect</text><!--MD5=[dff02481446d8dbf53b03247afb83b59]
+entity QS--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="283" x="1405.5" y="207.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="61" x="1415.5" y="228.4355">QSettings</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="263" x="1415.5" y="242.4043">ai/provider · ai/keys/&lt;id&gt; · ai/models/&lt;id&gt;</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="225" x="1415.5" y="256.373">ai/customBaseUrl · ai/customDialect</text><!--MD5=[b9d5e6bc417f252981b49888ec9e21e8]
+entity WIRE--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="219" x="701.5" y="759.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="113" x="711.5" y="780.4355">LlmQuickAddClient</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="41" x="828.5" y="780.4355">(wire)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="194" x="711.5" y="794.4043">POST · timeout · status codes ·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="138" x="711.5" y="808.373">stale-reply generation</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="199" x="711.5" y="822.3418">knows no vendor facts anymore</text><!--MD5=[68d8d81d3ebb2fa7c2f84a111be3e747]
+entity NLP--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="206" x="317" y="345.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="44" x="327" y="366.4355">nlp::llm</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="43" x="375" y="366.4355">(pure)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="134" x="327" y="380.4043">systemPrompt(today)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="173" x="327" y="394.373">fence-strip -&gt; field mapping</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="186" x="327" y="408.3418">dialect-blind after the unwrap</text><!--MD5=[28b617f45f8b852b803088f4fea1b95e]
+entity PT--><rect fill="#FFFFFF" height="33.9688" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="93" x="373.5" y="496.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="73" x="383.5" y="517.4355">ParsedTask</text><!--MD5=[300b38453803880e365a862a5f298e0d]
+entity NET--><path d="M726.0772,918.9008 C729.1502,913.4946 735.5452,912.2583 738.9546,918.5299 C741.962,911.8565 747.3761,912.9784 751.2104,917.6356 C753.8505,911.218 760.2591,910.5469 764.3491,916.0357 C767.3946,910.775 771.4148,911.2708 774.5898,915.9017 C778.2886,908.9708 783.0574,908.1682 787.803,914.8885 C791.5591,908.2937 795.4614,907.7354 800.2969,913.8253 C803.0912,907.8161 808.5779,907.7832 812.387,912.7027 C815.9352,907.2878 822.2513,907.4036 825.2203,913.3566 C829.8076,908.3332 834.5725,907.7566 837.6816,914.8739 C840.8048,909.1885 845.4951,909.4475 848.6129,914.8792 C852.5697,909.6703 856.8473,910.1465 860.3106,915.4294 C864.2802,909.4118 870.6421,909.9241 873.4182,916.6564 C877.9768,910.475 882.3627,910.6068 886.34,917.2424 C890.1367,911.3224 894.0395,911.8756 897.5917,917.4812 C904.9464,921.1383 905.9533,927.9749 899.6983,933.4297 C905.7652,936.5167 906.7891,940.3276 901.9578,945.4612 C907.9782,950.2186 909.4037,955.0978 901.8471,959.7501 C908.1379,964.4327 908.2018,971.2543 900.2598,974.3942 C907.0683,979.3108 907.1408,983.6583 900.1792,988.4962 C905.4421,992.8822 905.2117,998.898 898.2655,1001.4852 C895.4162,1007.6744 890.3002,1008.2457 885.7952,1003.3476 C882.1545,1009.0971 878.3764,1008.562 874.3843,1003.7265 C870.9759,1011.692 866.2832,1011.2477 860.7209,1005.9444 C856.674,1010.6533 852.4237,1010.2583 849.4533,1004.7565 C846.9373,1011.6962 840.8766,1013.0898 836.0681,1007.1365 C832.7295,1012.6167 828.3224,1013.4651 824.2807,1007.8858 C820.5514,1015.0831 816.3564,1015.1829 811.0076,1009.5629 C807.9227,1013.9781 802.8139,1014.399 800.6919,1008.5912 C795.2973,1013.998 790.7079,1014.2882 787.2668,1006.5899 C782.9463,1012.2416 777.8186,1011.1053 775.1184,1004.9262 C772.0285,1009.9031 766.8693,1009.3279 764.2828,1004.3767 C760.1078,1010.7901 754.9234,1010.1087 751.8355,1003.3494 C746.5242,1010.1982 742.1838,1008.446 737.785,1002.3584 C735.2761,1007.5315 730.0719,1007.2677 727.1526,1002.8116 C720.6394,999.3486 718.2474,991.9419 726.2861,987.6475 C719.4507,984.2416 717.8353,979.214 724.246,973.8496 C717.2135,970.8115 717.0462,964.5527 722.5687,959.9947 C715.8572,955.1487 718.5039,948.6979 724.9926,946.1655 C719.7396,941.2112 718.8806,935.4297 726.5768,931.9149 C719.5264,928.2721 719.7091,923.0587 726.0772,918.9008 " fill="#FEFECE" style="stroke: #000000; stroke-width: 1.5;"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="113" x="732.5" y="935.4355">api.anthropic.com</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="96" x="732.5" y="949.4043">api.openai.com</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="82" x="732.5" y="963.373">api.groq.com</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="53" x="814.5" y="963.373">/openai</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="157" x="732.5" y="977.3418">localhost:11434 (Ollama)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="116" x="732.5" y="991.3105">your own endpoint</text><path d="M6,361.2969 L6,405.2031 A4,4 0 0 0 10,409.2031 L278,409.2031 A4,4 0 0 0 282,405.2031 L282,367.2969 L272,357.2969 L10,357.2969 A4,4 0 0 0 6,361.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M272,357.2969 L272,365.2969 A2,2 0 0 0 274,367.2969 L282,367.2969 L272,357.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="255" x="12" y="373.4355">pure = every request the app could ever</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="232" x="12" y="387.4043">send is asserted in test_nlp offline —</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="220" x="12" y="401.373">the wire is too thin to hide a bug in</text><path d="M1724,209.2969 L1724,234.2969 L1688.5,238.2969 L1724,242.2969 L1724,267.1719 A4,4 0 0 0 1728,271.1719 L2010,271.1719 A4,4 0 0 0 2014,267.1719 L2014,215.2969 L2004,205.2969 L1728,205.2969 A4,4 0 0 0 1724,209.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M2004,205.2969 L2004,213.2969 A2,2 0 0 0 2006,215.2969 L2014,215.2969 L2004,205.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="15" x="1730" y="221.4355">ai/</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="33" x="1745" y="221.4355">keys</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="216" x="1778" y="221.4355">/&lt;id&gt;, PLURAL: QSettings forbids a</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="269" x="1730" y="235.4043">name being both a value and a group, and</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="268" x="1730" y="249.373">v21 already stored "ai/model" as a value —</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="137" x="1730" y="263.3418">the singular write was</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="69" x="1871" y="263.3418">silently lost</text><!--MD5=[1f6ff8eda4ad61f9e7658ce03511cb50]
+link SET to QS--><path d="M1547,86.5969 C1547,118.4069 1547,168.3769 1547,201.9569 " fill="none" id="SET-&gt;QS" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="1547,207.2069,1551,198.2069,1547,202.2069,1543,198.2069,1547,207.2069" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="86" x="1572.5" y="127.5073">OK writes once</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="135" x="1548" y="140.312">(stash-then-load buffer)</text><!--MD5=[0c956ea14cb04a551379ec9c78682060]
+link QS to CFG--><path d="M1456.39,269.3569 C1377.38,295.5769 1264.18,333.1369 1190.39,357.6169 " fill="none" id="QS-&gt;CFG" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="1185.58,359.2069,1195.3813,360.1733,1190.3263,357.6343,1192.8652,352.5793,1185.58,359.2069" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[af7db212baa0364c558eb87f1d36b2cf]
+link CAT to CFG--><path d="M1116,269.6269 C1116,294.5769 1116,329.6769 1116,354.0469 " fill="none" id="CAT-&gt;CFG" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="1116,359.0769,1120,350.0769,1116,354.0769,1112,350.0769,1116,359.0769" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="46" x="1117" y="312.5073">defaults</text><!--MD5=[41032946d5c75019890205cf84150c28]
+link CFG to PROV--><path d="M1103.14,407.4769 C1092.32,426.9769 1076.69,455.1669 1064.36,477.3969 " fill="none" id="CFG-&gt;PROV" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="1061.78,482.0469,1069.6474,476.122,1064.2082,477.6761,1062.6542,472.2369,1061.78,482.0469" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[04c85bf22fc06e7d54f94503716e7b24]
+link PROV to EP--><path d="M1027.52,544.5169 C1017.66,561.5569 1005.31,582.9069 995.06,600.6169 " fill="none" id="PROV-&gt;EP" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="992.5,605.0369,1000.465,599.2439,995.0007,600.7071,993.5374,595.2428,992.5,605.0369" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[2dfdfd1c6a0a6c5fb1d074ba94198a69]
+link PROV to BODY--><path d="M1093.7,544.3669 C1122.34,562.0369 1158.57,584.4069 1187.93,602.5369 " fill="none" id="PROV-&gt;BODY" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="1192.21,605.1769,1186.6339,597.0586,1187.9493,602.5604,1182.4475,603.8758,1192.21,605.1769" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[39488efd10004aaca221c03ef3c76228]
+link PROV to HDR--><path d="M965.98,544.3669 C918.77,562.3269 858.83,585.1369 810.79,603.4169 " fill="none" id="PROV-&gt;HDR" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="805.88,605.2769,815.715,605.7996,810.5504,603.4916,812.8585,598.327,805.88,605.2769" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[93b9a5bfe52e84dffda50f722e50fc6b]
+link EP to WIRE--><path d="M943.77,667.5769 C918.06,692.4969 881.39,728.0569 853.09,755.4869 " fill="none" id="EP-&gt;WIRE" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="849.33,759.1369,858.5784,755.7506,852.9223,755.6591,853.0139,750.0029,849.33,759.1369" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="15" x="894" y="726.5073">url</text><!--MD5=[f44fd9fbdce0883198b70da9c9fb5d9f]
+link BODY to WIRE--><path d="M1188.95,667.4269 C1164.57,680.7669 1134.83,695.9669 1107,707.2969 C1048.51,731.1169 981.23,751.8469 925.61,767.2969 " fill="none" id="BODY-&gt;WIRE" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="920.61,768.6769,930.3538,770.1117,925.4262,767.3335,928.2044,762.4059,920.61,768.6769" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="24" x="1084" y="726.5073">json</text><!--MD5=[4cfa10a3e3a2d70e0484c2c230e11ee0]
+link HDR to WIRE--><path d="M743,667.5769 C756,692.1969 774.49,727.1869 788.91,754.4769 " fill="none" id="HDR-&gt;WIRE" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="791.37,759.1369,790.7219,749.3094,789.043,754.7114,783.641,753.0325,791.37,759.1369" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="47" x="775" y="726.5073">headers</text><!--MD5=[0bdd2d0031a30bee2611d87c1a328f9c]
+link WIRE to NET--><path d="M784.82,835.3669 C779.54,844.7169 774.77,855.0269 772,865.2969 C768.54,878.1269 770.56,891.5269 775.12,904.0369 " fill="none" id="WIRE-&gt;NET" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="777.06,908.9669,777.4575,899.126,775.2154,904.3196,770.0218,902.0774,777.06,908.9669" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="31" x="773" y="876.5073">POST</text><!--MD5=[292823a9f141865eedd6085d884f6937]
+link NET to WIRE--><path d="M811,909.2569 C811,887.3369 811,861.7369 811,840.6669 " fill="none" id="NET-&gt;WIRE" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="811,835.4069,807,844.4069,811,840.4069,815,844.4069,811,835.4069" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="63" x="812" y="876.5073">reply bytes</text><!--MD5=[828fb8da6f2883ad97ee14abea5b1a62]
+link WIRE to EXT--><path d="M701.41,767.2269 C640.15,743.6269 576,703.1769 576,637.2969 C576,382.2969 576,382.2969 576,382.2969 C576,332.1769 620.04,295.6069 662.48,271.9969 " fill="none" id="WIRE-&gt;EXT" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="667.11,269.4669,657.2926,270.2538,662.7178,271.8561,661.1154,277.2813,667.11,269.4669" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="165" x="577" y="517.5073">bytes + the request's dialect</text><!--MD5=[80ae184d50f31e1b5bb0f91840a07251]
+link EXT to NLP--><path d="M644.38,269.3269 C641.56,270.0169 638.76,270.6769 636,271.2969 C590.65,281.4969 461.32,267.8869 429,301.2969 C419.19,311.4369 415.66,325.9769 415,339.9469 " fill="none" id="EXT-&gt;NLP" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="414.88,345.0569,419.0846,336.1506,414.9943,340.0582,411.0867,335.9678,414.88,345.0569" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="119" x="430" y="312.5073">the model's own text</text><!--MD5=[481ac44ec2d8e98dc638b15015498d5c]
+link NLP to PT--><path d="M420,421.3169 C420,443.9969 420,472.2069 420,491.1469 " fill="none" id="NLP-&gt;PT" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="420,496.2269,424,487.2269,420,491.2269,416,487.2269,420,496.2269" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[5b4e7336044f8fb8095e6b033f0c03f6]
+link AI to GMN31--><path d="M596.8896,241.8153 C596.7001,241.874 596.5075,241.9337 596.3118,241.9944 C595.9203,242.1158 595.5165,242.241 595.1004,242.37 C594.2683,242.628 593.3872,242.9012 592.4585,243.1891 C585.029,245.4928 574.5534,248.7415 561.7198,252.7217 C536.0528,260.6822 500.9544,271.5688 461.9313,283.6731 C383.885,307.8819 290.14,336.9619 224.75,357.2469 " fill="none" id="AI-GMN31" style="stroke: #616974; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[bc06fd5cc318dfd7dcf7039151a20951]
+@startuml llm_provider_dialects
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+title AI provider layer — one value, two dialects, zero vendors in the wire (v24)
+
+rectangle "Settings → AI quick-add\nprovider combo · per-provider key+model\ncustom: address + dialect" as SET #EDF4F1
+rectangle "QSettings\nai/provider · ai/keys/<id> · ai/models/<id>\nai/customBaseUrl · ai/customDialect" as QS
+
+rectangle "ai:: (pure — <b>no network in this file</b>)" as AI #EDF4F1 {
+  rectangle "catalog()\nAnthropic · OpenAI · Groq ·\nOllama(local, needsKey=false) · Custom" as CAT
+  rectangle "Provider <b>(a value)</b>\nid · baseUrl · dialect ·\nmodel · envVar · needsKey" as PROV
+  rectangle "configured()\nread at <b>fire time</b>, never cached" as CFG
+  rectangle "endpoint(p)\n<b>concatenate, not resolved()</b>:\nresolved() deletes Groq's /openai" as EP
+  rectangle "requestBody(p, system, text)\nAnthropic: system = top-level field\nOpenAI: system = first message" as BODY
+  rectangle "requestHeaders(p, key)\nx-api-key vs Bearer\nno key -> <b>no header at all</b>" as HDR
+  rectangle "extractText(dialect, bytes)\ncontent[].text vs\nchoices[0].message.content" as EXT
+}
+
+rectangle "LlmQuickAddClient <b>(wire)</b>\nPOST · timeout · status codes ·\nstale-reply generation\n<i>knows no vendor facts anymore</i>" as WIRE
+rectangle "nlp::llm <b>(pure)</b>\nsystemPrompt(today)\nfence-strip -> field mapping\n<i>dialect-blind after the unwrap</i>" as NLP
+rectangle "ParsedTask" as PT
+
+cloud "api.anthropic.com\napi.openai.com\napi.groq.com<b>/openai</b>\nlocalhost:11434 (Ollama)\nyour own endpoint" as NET
+
+SET - -> QS : OK writes once\n(stash-then-load buffer)
+QS - -> CFG
+CAT - -> CFG : defaults
+CFG - -> PROV
+PROV - -> EP
+PROV - -> BODY
+PROV - -> HDR
+EP - -> WIRE : url
+BODY - -> WIRE : json
+HDR - -> WIRE : headers
+WIRE - -> NET : POST
+NET - -> WIRE : reply bytes
+WIRE - -> EXT : bytes + the request's dialect
+EXT - -> NLP : the model's own text
+NLP - -> PT
+
+note bottom of AI
+  pure = every request the app could ever
+  send is asserted in test_nlp offline —
+  the wire is too thin to hide a bug in
+end note
+note right of QS
+  ai/<b>keys</b>/<id>, PLURAL: QSettings forbids a
+  name being both a value and a group, and
+  v21 already stored "ai/model" as a value —
+  the singular write was <i>silently lost</i>
+end note
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

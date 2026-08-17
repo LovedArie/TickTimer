@@ -1,0 +1,52 @@
+@startuml llm_provider_dialects
+' The v24 provider layer. See docs/design-addendum-provider.md
+!include _style.puml
+title AI provider layer — one value, two dialects, zero vendors in the wire (v24)
+
+rectangle "Settings → AI quick-add\nprovider combo · per-provider key+model\ncustom: address + dialect" as SET #EDF4F1
+rectangle "QSettings\nai/provider · ai/keys/<id> · ai/models/<id>\nai/customBaseUrl · ai/customDialect" as QS
+
+rectangle "ai:: (pure — <b>no network in this file</b>)" as AI #EDF4F1 {
+  rectangle "catalog()\nAnthropic · OpenAI · Groq ·\nOllama(local, needsKey=false) · Custom" as CAT
+  rectangle "Provider <b>(a value)</b>\nid · baseUrl · dialect ·\nmodel · envVar · needsKey" as PROV
+  rectangle "configured()\nread at <b>fire time</b>, never cached" as CFG
+  rectangle "endpoint(p)\n<b>concatenate, not resolved()</b>:\nresolved() deletes Groq's /openai" as EP
+  rectangle "requestBody(p, system, text)\nAnthropic: system = top-level field\nOpenAI: system = first message" as BODY
+  rectangle "requestHeaders(p, key)\nx-api-key vs Bearer\nno key -> <b>no header at all</b>" as HDR
+  rectangle "extractText(dialect, bytes)\ncontent[].text vs\nchoices[0].message.content" as EXT
+}
+
+rectangle "LlmQuickAddClient <b>(wire)</b>\nPOST · timeout · status codes ·\nstale-reply generation\n<i>knows no vendor facts anymore</i>" as WIRE
+rectangle "nlp::llm <b>(pure)</b>\nsystemPrompt(today)\nfence-strip -> field mapping\n<i>dialect-blind after the unwrap</i>" as NLP
+rectangle "ParsedTask" as PT
+
+cloud "api.anthropic.com\napi.openai.com\napi.groq.com<b>/openai</b>\nlocalhost:11434 (Ollama)\nyour own endpoint" as NET
+
+SET --> QS : OK writes once\n(stash-then-load buffer)
+QS --> CFG
+CAT --> CFG : defaults
+CFG --> PROV
+PROV --> EP
+PROV --> BODY
+PROV --> HDR
+EP --> WIRE : url
+BODY --> WIRE : json
+HDR --> WIRE : headers
+WIRE --> NET : POST
+NET --> WIRE : reply bytes
+WIRE --> EXT : bytes + the request's dialect
+EXT --> NLP : the model's own text
+NLP --> PT
+
+note bottom of AI
+  pure = every request the app could ever
+  send is asserted in test_nlp offline —
+  the wire is too thin to hide a bug in
+end note
+note right of QS
+  ai/<b>keys</b>/<id>, PLURAL: QSettings forbids a
+  name being both a value and a group, and
+  v21 already stored "ai/model" as a value —
+  the singular write was <i>silently lost</i>
+end note
+@enduml

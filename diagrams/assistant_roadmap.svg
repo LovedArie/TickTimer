@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="764px" preserveAspectRatio="none" style="width:822px;height:764px;" version="1.1" viewBox="0 0 822 764" width="822px" zoomAndPan="magnify"><defs/><g><text fill="#2A2E33" font-family="Segoe UI" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="348" x="240.5" y="12.9951">Assistant roadmap — what blocks what (PLANNED)</text><!--MD5=[5760662425ff4980e142c421c8d4fc6b]
+entity V25--><rect fill="#EDF4F1" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="200" x="577.5" y="24.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="100" x="587.5" y="45.4355">v25 — shipped</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="161" x="587.5" y="59.4043">Assistant page · briefing ·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="180" x="587.5" y="73.373">transcript window · read-only</text><!--MD5=[5a8fbcb89e80912036a48a12a92cbecb]
+entity V26--><rect fill="#FFFFFF" height="103.8125" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="244" x="555.5" y="147.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="138" x="565.5" y="168.4355">v26 — AI foundation</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="13" x="565.5" y="182.4043">1.</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="163" x="582.5" y="182.4043">reasoning-model handling</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="169" x="565.5" y="196.373">(&lt;think&gt; strip; ships first —</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="224" x="565.5" y="210.3418">nothing works locally without it)&lt;/i&gt;</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="13" x="565.5" y="224.3105">2.</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="200" x="582.5" y="224.3105">persona (rules → floors → voice)</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="13" x="565.5" y="238.2793">3.</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="153" x="582.5" y="238.2793">per-role provider routing</text><!--MD5=[9f3e4c5bee5e9df62e1a1d13327a3a42]
+entity V27--><rect fill="#FFFFFF" height="89.8438" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="249" x="6" y="154.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="169" x="16" y="175.4355">v27 — Subtasks &amp; sizing</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="140" x="16" y="189.4043">no AI in this iteration</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="181" x="16" y="203.373">subtasks · estimateMinutes ·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="229" x="16" y="217.3418">chunkable · multiplier · affordability()</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="180" x="16" y="231.3105">all visible in the UI on its own</text><!--MD5=[d2e86381ebc5291e661155b8fd44aaec]
+entity V28--><rect fill="#FFFFFF" height="89.8438" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="200" x="303.5" y="351.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="180" x="313.5" y="372.4355">v28 — Proactive assistant</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="93" x="313.5" y="386.4043">still read-only</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="174" x="313.5" y="400.373">nudges · morning check-in ·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="156" x="313.5" y="414.3418">mood (14d, format v10) ·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="133" x="313.5" y="428.3105">affordability, phrased</text><!--MD5=[84893e6402bd9e2abc6bda0c12c3b234]
+entity V29--><rect fill="#FFFFFF" height="75.875" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="195" x="41" y="528.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="103" x="51" y="549.4355">v29 — Tool use</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="85" x="51" y="563.4043">confirm loop ·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="78" x="140" y="563.4043">intake first</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="4" x="222" y="563.4043">·</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="114" x="51" y="577.373">then rescheduling</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-style="italic" lengthAdjust="spacingAndGlyphs" textLength="172" x="51" y="591.3418">dialect strategy promotion?</text><!--MD5=[014f69cf7f7b7c4c513221ddee437b22]
+entity V30--><rect fill="#FFFFFF" height="61.9063" rx="4" ry="4" style="stroke: #616974; stroke-width: 1.5;" width="183" x="47" y="691.2969"/><text fill="#2A2E33" font-family="Segoe UI" font-size="12" font-weight="bold" lengthAdjust="spacingAndGlyphs" textLength="99" x="57" y="712.4355">v30 — Memory</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="163" x="57" y="726.4043">the residue file · updated,</text><text fill="#2A2E33" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="89" x="57" y="740.373">not appended</text><path d="M290.5,156.2969 L290.5,195.2969 L255.11,199.2969 L290.5,203.2969 L290.5,242.1094 A4,4 0 0 0 294.5,246.1094 L516.5,246.1094 A4,4 0 0 0 520.5,242.1094 L520.5,162.2969 L510.5,152.2969 L294.5,152.2969 A4,4 0 0 0 290.5,156.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M510.5,152.2969 L510.5,160.2969 A2,2 0 0 0 512.5,162.2969 L520.5,162.2969 L510.5,152.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="168" x="296.5" y="168.4355">justified on its OWN merits:</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="167" x="296.5" y="182.4043">"break the scary thing into</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="160" x="296.5" y="196.373">startable pieces" is worth</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="180" x="296.5" y="210.3418">building if the AI never ships.</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="209" x="296.5" y="224.3105">BEFORE estimation, or estimation</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="115" x="296.5" y="238.2793">gets written twice.</text><path d="M271.5,544.2969 L271.5,562.2969 L236.27,566.2969 L271.5,570.2969 L271.5,588.2031 A4,4 0 0 0 275.5,592.2031 L487.5,592.2031 A4,4 0 0 0 491.5,588.2031 L491.5,550.2969 L481.5,540.2969 L275.5,540.2969 A4,4 0 0 0 271.5,544.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M481.5,540.2969 L481.5,548.2969 A2,2 0 0 0 483.5,550.2969 L491.5,550.2969 L481.5,540.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="187" x="277.5" y="556.4355">intake is the safest first write:</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="199" x="277.5" y="570.4043">purely additive · self-confirmed ·</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="100" x="277.5" y="584.373">tiny blast radius</text><path d="M526.5,544.2969 L526.5,588.2031 A4,4 0 0 0 530.5,592.2031 L806.5,592.2031 A4,4 0 0 0 810.5,588.2031 L810.5,550.2969 L800.5,540.2969 L632.92,540.2969 L473.13,441.4369 L624.92,540.2969 L530.5,540.2969 A4,4 0 0 0 526.5,544.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><path d="M800.5,540.2969 L800.5,548.2969 A2,2 0 0 0 802.5,550.2969 L810.5,550.2969 L800.5,540.2969 " fill="#FDF6EC" style="stroke: #C9A45C; stroke-width: 1.0;"/><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="249" x="532.5" y="556.4355">the read-only iteration is the cheap way</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="263" x="532.5" y="570.4043">to find out whether its judgment deserves</text><text fill="#5A4A2A" font-family="Segoe UI" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="77" x="532.5" y="584.373">a write at all</text><!--MD5=[28998336e7d55131c8a3cd0f094d5f55]
+link V25 to V26--><path d="M677.5,86.4069 C677.5,102.5569 677.5,122.9869 677.5,141.9569 " fill="none" id="V25-&gt;V26" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="677.5,147.2669,681.5,138.2669,677.5,142.2669,673.5,138.2669,677.5,147.2669" style="stroke: #616974; stroke-width: 1.0;"/><!--MD5=[258d5f7704496bee9e30303ad2f5850c]
+link V26 to V28--><path d="M605.51,251.5269 C563.59,281.3669 511.1,318.7169 470.14,347.8769 " fill="none" id="V26-&gt;V28" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="465.71,351.0269,475.3644,349.0795,469.7873,348.1328,470.7339,342.5557,465.71,351.0269" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="104" x="566" y="299.0073">persona + routing</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="121" x="557.5" y="311.812">needed to speak well</text><!--MD5=[3ad29575ce97303cb20f455f55e2cda0]
+link V27 to V28--><path d="M192.11,244.2969 C235.37,275.2069 293.18,316.4969 337.41,348.0869 " fill="none" id="V27-&gt;V28" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="341.65,351.1169,336.6401,342.6374,337.5775,348.2161,331.9988,349.1535,341.65,351.1169" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="71" x="320.5" y="292.5073">affordability;</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="103" x="304.5" y="305.312">otherwise use the</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="113" x="299.5" y="318.1167">planned-block proxy</text><!--MD5=[f6e81aacfd961e5dec5dceeed72438d7]
+link V28 to V29--><path d="M333.87,441.4369 C292.74,467.5169 241.09,500.2569 201.22,525.5369 " fill="none" id="V28-&gt;V29" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="196.91,528.2669,206.6552,526.8417,201.1371,525.5964,202.3824,520.0783,196.91,528.2669" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="121" x="289" y="482.5073">live with its judgment</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="138" x="280.5" y="495.312">BEFORE granting a write</text><!--MD5=[8884b71467bd22c6bdc9a4be71441abd]
+link V29 to V30--><path d="M138.5,604.5769 C138.5,629.3369 138.5,661.6569 138.5,686.0069 " fill="none" id="V29-&gt;V30" style="stroke: #616974; stroke-width: 1.0;"/><polygon fill="#616974" points="138.5,691.0769,142.5,682.0769,138.5,686.0769,134.5,682.0769,138.5,691.0769" style="stroke: #616974; stroke-width: 1.0;"/><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="111" x="166" y="645.5073">memory writes ARE</text><text fill="#616974" font-family="Segoe UI" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="164" x="139.5" y="658.312">tool use — one loop, not two</text><!--MD5=[335b484155344c7685fb830f8c6b187d]
+@startuml assistant_roadmap
+
+skinparam backgroundColor            #FFFFFF
+skinparam defaultFontName            "Segoe UI"
+skinparam defaultFontSize            12
+skinparam defaultFontColor           #2A2E33
+skinparam shadowing                  false
+skinparam roundCorner                8
+
+skinparam ArrowColor                 #616974
+skinparam ArrowFontColor             #616974
+skinparam ArrowFontSize              11
+
+skinparam rectangle {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  FontColor                          #2A2E33
+}
+skinparam database {
+  BackgroundColor                    #EDF4F1
+  BorderColor                        #2F7E6E
+}
+skinparam component {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam note {
+  BackgroundColor                    #FDF6EC
+  BorderColor                        #C9A45C
+  FontColor                          #5A4A2A
+}
+skinparam class {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  HeaderBackgroundColor              #EDF4F1
+}
+skinparam sequence {
+  ParticipantBackgroundColor         #FFFFFF
+  ParticipantBorderColor             #616974
+  LifeLineBorderColor                #A9B0B8
+  GroupBackgroundColor               #EDF4F1
+}
+skinparam state {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+}
+skinparam activity {
+  BackgroundColor                    #FFFFFF
+  BorderColor                        #616974
+  DiamondBackgroundColor             #EDF4F1
+  DiamondBorderColor                 #2F7E6E
+}
+skinparam title {
+  FontSize                           14
+  FontColor                          #2A2E33
+}
+
+title Assistant roadmap — what blocks what (PLANNED)
+
+rectangle "**v25 — shipped**\nAssistant page · briefing ·\ntranscript window · read-only" as V25 #EDF4F1
+
+rectangle "**v26 — AI foundation**\n<b>1.</b> reasoning-model handling\n   <i>(<think> strip; ships first —\n   nothing works locally without it)</i>\n<b>2.</b> persona (rules → floors → voice)\n<b>3.</b> per-role provider routing" as V26
+
+rectangle "**v27 — Subtasks & sizing**\n<b><i>no AI in this iteration</i></b>\nsubtasks · estimateMinutes ·\nchunkable · multiplier · affordability()\n<i>all visible in the UI on its own</i>" as V27
+
+rectangle "**v28 — Proactive assistant**\n<b><i>still read-only</i></b>\nnudges · morning check-in ·\nmood (14d, format v10) ·\naffordability, phrased" as V28
+
+rectangle "**v29 — Tool use**\nconfirm loop · <b>intake first</b> ·\nthen rescheduling\n<i>dialect strategy promotion?</i>" as V29
+
+rectangle "**v30 — Memory**\nthe residue file · updated,\nnot appended" as V30
+
+V25 - -> V26
+V26 - -> V28 : persona + routing\nneeded to speak well
+V27 - -> V28 : affordability;\notherwise use the\nplanned-block proxy
+V28 - -> V29 : live with its judgment\nBEFORE granting a write
+V29 - -> V30 : memory writes ARE\ntool use — one loop, not two
+
+note right of V27
+  justified on its OWN merits:
+  "break the scary thing into
+  startable pieces" is worth
+  building if the AI never ships.
+  BEFORE estimation, or estimation
+  gets written twice.
+end note
+
+note right of V29
+  intake is the safest first write:
+  purely additive · self-confirmed ·
+  tiny blast radius
+end note
+
+note bottom of V28
+  the read-only iteration is the cheap way
+  to find out whether its judgment deserves
+  a write at all
+end note
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 21.0.11+10-1-24.04.2-Ubuntu
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

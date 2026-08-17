@@ -1,0 +1,32 @@
+%% The Pomodoro grown up — one clock, many faces (v19.4)
+%%
+%% Solid arrows = commands in / signals out. The engine owns the only
+%% truth; everything else paints it or adapts it. Note the signal GRAINS:
+%% the link hears transitions, never ticks — steering once per second
+%% would fragment tracker segments.
+flowchart TB
+    ENG["PomodoroEngine  (service, owned by MainWindow)<br/><i>phase · round · remaining · running · engaged<br/>tickOneSecond() — QTimer in prod, tests call it raw</i>"]
+
+    subgraph faces["faces (views — no state of their own)"]
+        PAGE["PomodoroPage<br/><i>ring, dots, durations,<br/>the two new checkboxes</i>"]
+        MINI["PomodoroMiniWindow<br/><i>frameless · drag · stays on top<br/>▶/⏸ · 'Focus ›' = skip · mm:ss</i>"]
+    end
+
+    NOTI["MainWindow notifier<br/><i>painted tray icon · beep ·<br/>toast; pref read AT FIRE TIME</i>"]
+
+    LINK["PomodoroLink (adapter)<br/><i>you pick the block, the Pomodoro<br/>picks the kind — and ADOPTS the<br/>block under the clock on the play edge</i>"]
+
+    TRK["TrackerService<br/><i>Focusing / OnBreak / Distracted<br/>on the block YOU chose</i>"]
+
+    QS[("QSettings<br/><i>durations · notify · drive · mini pos<br/>page is the only writer</i>")]
+
+    PAGE -->|"toggle / reset / skip / setDurations"| ENG
+    MINI -->|"toggle / skip"| ENG
+    ENG -.->|"changed() — every tick"| PAGE
+    ENG -.->|"changed() — every tick"| MINI
+    ENG -.->|"phaseEnded() — countdown hit 0<br/>(skip stays silent)"| NOTI
+    ENG -.->|"modeChanged() — transitions only"| LINK
+    LINK -->|"startFocus / startBreak / startDistracted<br/>(adopts only liveEventNow, only on ▶; never stops)"| TRK
+    TRK -.->|"Idle→tracking edge: a join snaps in ·<br/>trackedBlockEnded → link PAUSES the engine<br/>(the one tracker→engine message)"| LINK
+    PAGE -->|"reads+writes"| QS
+    PAGE -->|"setEnabled(pref)"| LINK

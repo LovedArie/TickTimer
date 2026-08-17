@@ -58,6 +58,27 @@ public:
     // top of the committed totals so numbers grow live on screen.
     qint64 liveSeconds() const;
 
+    // The id of the block whose planned window covers THIS INSTANT, or
+    // empty. Unambiguous by domain law: blocks on a day cannot overlap,
+    // so "the block under the clock" is at most one. Lives here (not in
+    // the Pomodoro link that wanted it) because it's a pure question
+    // about the schedule and the clock — the link is merely its first
+    // customer (v19.7 adoption).
+    QString liveEventNow() const;
+
+    // (A plain public method, not a `slots:` section — PMF connects need
+    // no moc registration, and a slots label here would swallow the
+    // declarations after it into moc's jurisdiction.)
+    // The EXIT door (v19.8, owner report: "the focus session should stop
+    // when the planned block is finished" — their badge read Focusing at
+    // 12:00 on a 10–12 block). canTrackNow() guards every START; this
+    // guards the other boundary: called by the same 1-second tick that
+    // repaints the UI (no new timer — the watcher was already running),
+    // it commits and stops the moment the tracked block's window passes.
+    // Public as a slot for the house test-seam reason: the timer calls it
+    // in production; tests move the fake clock and call it directly.
+    void enforceWindow();
+
     // Tracking honesty (§3.38): may tracking START (or switch kind) on
     // this event right now? True only while the block is LIVE — actuals
     // may only be written while the plan is actually happening. The three
@@ -89,6 +110,11 @@ public slots:
 
 signals:
     void stateChanged(); // Idle/Focusing/OnBreak flipped, or target moved
+    // The tracked block's planned window just passed and tracking was
+    // auto-stopped (the last interval is already committed). Carries the
+    // id so listeners can NAME the block: the notifier toasts it, the
+    // Pomodoro link pauses the engine it was driving.
+    void trackedBlockEnded(const QString& eventId);
     void tick();         // once per second while tracking — repaint cue
 
 private:

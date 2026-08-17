@@ -66,10 +66,26 @@ PeriodSummary summarize(const AppData& data, QDate from, QDate to,
 // moment instead of at whatever o'clock the suite happens to run.
 PeriodSummary summarizeDay(const AppData& data, QDate day,
                            const QDateTime& now = QDateTime::currentDateTime());
+// `firstDay` decides WHICH seven days "the week of anyDayInWeek" means —
+// Monday-first by default (the app's historical behaviour, and what every
+// existing caller and test still gets for free from the default argument).
+// A preference parameterised into the pure layer, never read from inside
+// it: summarizeWeek stays a function of its arguments.
 PeriodSummary summarizeWeek(const AppData& data, QDate anyDayInWeek,
-                            const QDateTime& now = QDateTime::currentDateTime());  // Mon..Sun
+                            Qt::DayOfWeek firstDay = Qt::Monday,
+                            const QDateTime& now = QDateTime::currentDateTime());
 PeriodSummary summarizeMonth(const AppData& data, QDate anyDayInMonth,
                              const QDateTime& now = QDateTime::currentDateTime());
+
+// The one week-snap formula: the first `firstDay` at or before `anyDay`.
+// Shared by the week agenda, the week review, the "Week of …" label, and
+// the month grid's columns — four call sites hand-rolling
+// `(dayOfWeek - first + 7) % 7` is four chances for one to drift.
+inline QDate weekStart(QDate anyDay, Qt::DayOfWeek firstDay)
+{
+    const int offset = (anyDay.dayOfWeek() - int(firstDay) + 7) % 7;
+    return anyDay.addDays(-offset);
+}
 
 // "2h 05m" / "12m" / "45s" — one formatter used everywhere, so durations
 // look identical on every screen.

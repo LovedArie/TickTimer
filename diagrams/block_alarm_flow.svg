@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 340" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4A505A"/>
+    </marker>
+    <marker id="arrsoft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8A9098"/>
+    </marker>
+  </defs>
+  <style>
+    .box   { fill:#FFFFFF; stroke:#4A505A; stroke-width:1.4; }
+    .svc   { fill:#EAF5F1; stroke:#2F7E6E; stroke-width:1.8; }
+    .store { fill:#FFF7E6; stroke:#B8860B; stroke-width:1.4; }
+    .b     { font-size:13px; font-weight:700; fill:#2A2F36; }
+    .t     { font-size:12px; fill:#2A2F36; }
+    .s     { font-size:11px; fill:#616974; font-style:italic; }
+    .lbl   { font-size:10.5px; fill:#4A505A; }
+    .soft  { stroke:#8A9098; stroke-width:1.3; stroke-dasharray:5 4; fill:none; }
+    .hard  { stroke:#4A505A; stroke-width:1.5; fill:none; }
+  </style>
+
+  <text x="20" y="28" class="b" font-size="16">Block-start alarms — derive-don't-store, applied to time (v19.5)</text>
+  <text x="20" y="46" class="s">no stored alarm list: the timer is a view of the data · solid = calls/signals · dashed = derive/lookup</text>
+
+  <!-- AppData -->
+  <rect x="20" y="110" width="200" height="90" rx="16" class="store"/>
+  <text x="120" y="140" class="b" text-anchor="middle">AppData</text>
+  <text x="120" y="160" class="t" text-anchor="middle">events:</text>
+  <text x="120" y="176" class="t" text-anchor="middle">date + start minutes</text>
+
+  <!-- Service -->
+  <rect x="290" y="86" width="270" height="140" rx="12" class="svc"/>
+  <text x="425" y="112" class="b" text-anchor="middle">BlockAlarmService  (domain)</text>
+  <text x="425" y="132" class="s" text-anchor="middle">high-water mark, born at "now"</text>
+  <text x="425" y="148" class="s" text-anchor="middle">grace window: 120 s</text>
+  <text x="425" y="164" class="s" text-anchor="middle">Qt::PreciseTimer single-shot</text>
+  <text x="425" y="180" class="s" text-anchor="middle">(coarse = ~5% late; alarms earn precision)</text>
+  <text x="425" y="196" class="s" text-anchor="middle">nap capped at 1 h — overflow + suspend heal</text>
+  <text x="425" y="215" class="s" text-anchor="middle">ctor-injected clock (the W7 lesson)</text>
+
+  <!-- MainWindow client -->
+  <rect x="630" y="86" width="240" height="140" rx="12" class="box"/>
+  <text x="750" y="112" class="b" text-anchor="middle">MainWindow toast client</text>
+  <text x="750" y="132" class="s" text-anchor="middle">pref read at fire time</text>
+  <text x="750" y="148" class="s" text-anchor="middle">titles resolved FRESH by id</text>
+  <text x="750" y="164" class="s" text-anchor="middle">(activity / task / ad-hoc ladder)</text>
+  <text x="750" y="180" class="s" text-anchor="middle">mutes blocks already tracking</text>
+  <text x="750" y="196" class="s" text-anchor="middle">same tray icon as the Pomodoro</text>
+
+  <!-- toast -->
+  <rect x="640" y="264" width="220" height="56" rx="12" class="box"/>
+  <text x="750" y="286" class="b" text-anchor="middle">beep + tray toast</text>
+  <text x="750" y="304" class="s" text-anchor="middle">"Starting now — Study · 9:00 – 10:30"</text>
+
+  <!-- edges -->
+  <path class="soft" d="M220,140 C245,132 265,128 290,124" marker-end="url(#arrsoft)"/>
+  <text x="228" y="112" class="lbl">changed() →</text>
+  <text x="228" y="125" class="lbl">re-derive, re-aim</text>
+
+  <path class="hard" d="M560,150 H630" marker-end="url(#arr)"/>
+  <text x="566" y="140" class="lbl">blocksStarting(ids)</text>
+  <text x="566" y="166" class="lbl">fresh-only; stale</text>
+  <text x="566" y="178" class="lbl">swept in silence</text>
+
+  <path class="hard" d="M750,226 V264" marker-end="url(#arr)"/>
+  <text x="758" y="248" class="lbl">unless muted</text>
+
+  <path class="soft" d="M630,206 C440,270 240,240 140,200" marker-end="url(#arrsoft)"/>
+  <text x="330" y="262" class="lbl">eventById / activityById / taskById — at toast time, never earlier</text>
+</svg>

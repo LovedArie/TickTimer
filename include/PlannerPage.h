@@ -16,6 +16,9 @@
 // update model.
 // ---------------------------------------------------------------------------
 
+#include "Event.h"      // BlockOutcome — the catch-up slots' vocabulary
+#include "Reschedule.h" // reschedule::Option — the accepted proposal
+
 #include <QDate>
 #include <QWidget>
 
@@ -26,6 +29,7 @@ class WeekAgendaView;
 class GlancePanel;
 class WeekReviewPage;
 class MonthReviewPage;
+class QHBoxLayout;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
@@ -40,8 +44,21 @@ public:
     PlannerPage(AppData* data, TrackerService* tracker,
                 QWidget* parent = nullptr);
 
+    // Re-read the display preferences (prefs::) and TELL every widget that
+    // cares — the day agenda and week view get the hours window; the week
+    // view, week review, month grid, and the "Week of …" label get the
+    // week start. Called once from the constructor and again by MainWindow
+    // whenever the Settings dialog is accepted. This is the doctrine's
+    // choke point: only pages read QSettings; widgets are told (§ the
+    // task-notes toggle, same file, same rule).
+    void applyDisplayPrefs();
+
 private slots:
     void shiftPeriod(int direction);   // -1 = previous, +1 = next
+    // RIGHT-CLICK on the period label (v22, owner request: "otherwise we lose
+    // ourselves in the timeline"). Snapping home is a distinct intent from
+    // stepping, so it gets a distinct gesture rather than N presses of ‹.
+    void goToToday();
     void setMode(int mode);            // 0 day, 1 week, 2 month
     void onEmptySlotClicked(int slotIndex);
     void onEventClicked(const QString& eventId);
@@ -51,12 +68,45 @@ private slots:
     void onEventResized(const QString& id, int startMin, int endMin);
     // Plan an event on a GIVEN date at a given slot. The single planning
     // step, shared by the day view (m_date) and every week column (its own
-    // date) — one rule, two callers, no divergence.
+    // date) — one rule, two callers, no divergence. Placement mode (part 3)
+    // intercepts HERE, which is why "Find time" works from both views for
+    // the price of one interception.
     void planAt(QDate date, int slotIndex);
     void refresh();
 
+    // ---- needs-a-block: the deciding end of every card signal -------------
+    // Named slots (not lambdas) because TWO cards ask now — the glance
+    // panel's and the week tab's — and one connection target per action is
+    // what keeps them behaviourally identical.
+    void onNbPlan(const QString& taskId);          // enter placing mode
+    void onNbEditDeadline(const QString& taskId);  // DueDateDialog reuse
+    void onNbNotUrgent(const QString& taskId);
+    void onNbDismiss(const QString& taskId);
+    void onNbBringBack(const QString& taskId);
+    void cancelPlacing();
+
+    // ---- catch-up: the deciding end of the card's signals (v26.2 §K) ------
+    // Same shape as the five above: the card asks, this page — the holder of
+    // the mutable pointer — calls the domain door.
+    void onCuAccept(const QString& eventId, const reschedule::Option& option);
+    void onCuResolve(const QString& eventId, BlockOutcome outcome);
+    void onCuShowDay(QDate date);
+    void onCuResolveAll(const QStringList& eventIds, BlockOutcome outcome);
+
 private:
+    // Push m_date into every sub-view and re-derive the label and strips.
+    // Extracted from shiftPeriod() the moment goToToday() became a second
+    // caller: one "the date moved" routine, so a new navigation gesture can
+    // never forget to update the due strip (the exact bug this shape
+    // prevents — the old code had that sequence inline, once).
+    void applyDate();
     void updateViewSwitcher();
+    // Placement mode (needs-a-block part 3). All DERIVED per refresh from
+    // m_placingTaskId + the data — the banner, the day strip, and the
+    // agenda's highlight runs have no state of their own to go stale.
+    void refreshPlacing();
+    QVector<QPair<int, int>> freeRunsFor(QDate date, int minMinutes) const;
+    Qt::DayOfWeek m_firstDay = Qt::Monday; // cached pref for the week label
     // Repopulate the "Due today" strip for the currently-viewed day. This
     // is the read-only bridge from Tasks to the Calendar: it SHOWS what is
     // due, it does not place tasks onto time blocks (that remains deferred —
@@ -67,6 +117,13 @@ private:
     TrackerService* m_tracker;
     QDate m_date;                      // the day (or a day inside the
     int   m_mode = 0;                  //  week/month) being viewed
+
+    QString      m_placingTaskId;      // task being placed; empty = not placing
+    QFrame*      m_placingBanner = nullptr; // above the day agenda
+    QLabel*      m_placingLabel  = nullptr; // "Placing X — deadline …"
+    QHBoxLayout* m_placingStrip  = nullptr; // the rebuildable day buttons
+    class NeedsBlockCard* m_weekCard = nullptr; // the SAME derived list,
+                                       // rendered where the week view has room
 
     QPushButton*    m_viewSwitcher = nullptr; // shows the period; click cycles the view
     QStackedWidget* m_stack       = nullptr;

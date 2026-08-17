@@ -76,6 +76,31 @@ QWidget* ArchivePage::buildContent()
         return row;
     };
 
+    // ---- archived life areas (categories) -----------------------------------
+    caption(tr("LIFE AREAS"));
+    const auto areas = m_data->archivedCategories();
+    if (areas.isEmpty()) {
+        auto* none = new QLabel(tr("No archived life areas."), panel);
+        none->setObjectName("sub");
+        layout->addWidget(none);
+    }
+    for (const Category* c : areas) {
+        auto* row = quietRow(c->name,
+                             tr("%1 activities · %2 tasks")
+                                 .arg(m_data->activityCountIn(c->id))
+                                 .arg(m_data->taskCountIn(c->id)));
+        const QString categoryId = c->id;
+        auto* restore = new QPushButton(tr("Restore"), panel);
+        restore->setCursor(Qt::PointingHandCursor);
+        connect(restore, &QPushButton::clicked, this, [this, categoryId]() {
+            // One flag flip and the whole world returns — nothing was
+            // touched on the children, so nothing needs un-touching.
+            m_data->setCategoryArchived(categoryId, false);
+        });
+        row->addWidget(restore);
+        layout->addLayout(row);
+    }
+
     // ---- archived tasks ----------------------------------------------------
     caption(tr("TASKS"));
     const auto tasks = m_data->archivedTasks();

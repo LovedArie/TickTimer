@@ -1,5 +1,7 @@
 #include "SyncClient.h"
 
+#include "AuthClient.h" // normalizeServerUrl — one rule for every consumer of the base
+
 #include <QJsonDocument>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -8,7 +10,7 @@
 SyncClient::SyncClient(const QString& serverUrl, const QString& token,
                        QObject* parent)
     : QObject(parent)
-    , m_url(serverUrl)
+    , m_url(AuthClient::normalizeServerUrl(serverUrl)) // same landmine, same defusal (v29.0.1)
     , m_token(token)
 {
 }

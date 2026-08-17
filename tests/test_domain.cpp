@@ -15,11 +15,25 @@
 // ---------------------------------------------------------------------------
 
 #include "AppData.h"
+#include "AssistantVerbs.h" // v29.0 — the write boundary
+#include "Intake.h"          // v29.1 — the interview's brain
+#include "DayBriefing.h"
 #include "Compare.h"
+#include "ReturnPolicy.h"
 #include "Version.h"
 #include "Stats.h"
+#include "BlockAlarmService.h"
+#include "PomodoroEngine.h"
+#include "PomodoroLink.h"
 #include "TrackerService.h"
 #include "JsonStore.h"
+#include "TaskCoverage.h"
+#include "MissedBlocks.h"
+#include "Affordability.h"
+#include "NudgePhrasing.h"
+#include "CheckIn.h"
+#include "LlmProvider.h"
+#include "Reschedule.h"
 
 #include <QTemporaryDir>
 #include <QtTest>
@@ -56,6 +70,23 @@ private slots:
         QVERIFY(!data.removeCategory(cat));   // refused: not empty
         QVERIFY(data.removeActivity(act));    // empty the category…
         QVERIFY(data.removeCategory(cat));    // …now deletion is legal
+    }
+
+    // v21.1: '#tag' resolution promoted to a domain query the moment quick-add
+    // grew a second surface. Exact name, case-insensitive, empty on no match —
+    // never a fuzzy guess.
+    void categoryIdByNameIsExactAndCaseInsensitive()
+    {
+        AppData data;
+        const QString school = data.addCategory("School", QColor("#4C6FE0"));
+        data.addCategory("Health", QColor("#2F7E6E"));
+
+        QCOMPARE(data.categoryIdByName("school"), school);
+        QCOMPARE(data.categoryIdByName("SCHOOL"), school);
+        QCOMPARE(data.categoryIdByName("  School "), school); // trims
+        QVERIFY(data.categoryIdByName("sch").isEmpty());      // no prefix magic
+        QVERIFY(data.categoryIdByName("gym").isEmpty());      // unknown
+        QVERIFY(data.categoryIdByName("").isEmpty());
     }
 
     void activityInUseCannotBeDeleted()
@@ -226,6 +257,477 @@ private slots:
                  qint64(0));
     }
 
+    void blockAlarmAnnouncesEachStartExactlyOnce()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev  = data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+
+        // The movable clock, injected THROUGH the ctor (the mark is born
+        // at "now", so a seam patched on afterwards would be too late).
+        QDateTime now = kT0.addSecs(-120); // 08:58
+        BlockAlarmService alarm(&data, [&now] { return now; });
+        QSignalSpy fired(&alarm, &BlockAlarmService::blocksStarting);
+
+        alarm.poll(); // 08:58 — nothing is due yet
+        QCOMPARE(fired.count(), 0);
+
+        now = kT0.addSecs(30); // 09:00:30 — inside the grace window
+        alarm.poll();
+        QCOMPARE(fired.count(), 1);
+        const auto ids =
+            fired.takeFirst().at(0).value<QVector<QString>>();
+        QCOMPARE(ids, QVector<QString>{ev});
+
+        alarm.poll(); // the high-water mark forbids a second announcement
+        QCOMPARE(fired.count(), 0);
+
+        // A later block on the same day is its own alarm.
+        data.addEvent(kT0.date(), 10 * 60, 11 * 60, act);
+        now = kT0.addSecs(3630); // 10:00:30
+        alarm.poll();
+        QCOMPARE(fired.count(), 1);
+    }
+
+    void blockAlarmSkipsStaleStartsInSilence()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+
+        QDateTime now = kT0.addSecs(-60);
+        BlockAlarmService alarm(&data, [&now] { return now; });
+        QSignalSpy fired(&alarm, &BlockAlarmService::blocksStarting);
+
+        // The laptop slept through 09:00 and woke at 09:05 — five minutes
+        // stale is past the grace window: silence, not a late toast...
+        now = kT0.addSecs(300);
+        alarm.poll();
+        QCOMPARE(fired.count(), 0);
+
+        // ...and no resurrection either: the mark moved forward anyway.
+        now = kT0.addSecs(360);
+        alarm.poll();
+        QCOMPARE(fired.count(), 0);
+    }
+
+    void blockAlarmIgnoresBlocksCreatedAlreadyUnderway()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+
+        // Born at 09:05; the block you then create for 09:00 is your own
+        // hands at work — its start is behind the mark, so: nothing.
+        QDateTime now = kT0.addSecs(300);
+        BlockAlarmService alarm(&data, [&now] { return now; });
+        QSignalSpy fired(&alarm, &BlockAlarmService::blocksStarting);
+
+        data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+        alarm.poll();
+        QCOMPARE(fired.count(), 0);
+    }
+
+    void blockAlarmSweepsManyDueStartsButAnnouncesOnlyFreshOnes()
+    {
+        // One poll after a long stall can find SEVERAL due blocks at once.
+        // The contract: stale ones (past grace) go silent, fresh ones get
+        // announced, and the mark sweeps past ALL of them — that's why the
+        // signal carries a vector. (With today's 30-min slot grid and a
+        // 2-min grace, two FRESH blocks in one poll can't happen — the
+        // vector is headroom, and this test pins the sweep that can.)
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        data.addEvent(kT0.date(), 9 * 60, 9 * 60 + 30, act);       // 09:00
+        const QString fresh =
+            data.addEvent(kT0.date(), 9 * 60 + 30, 10 * 60, act);  // 09:30
+
+        QDateTime now = kT0.addSecs(-60); // 08:59
+        BlockAlarmService alarm(&data, [&now] { return now; });
+        QSignalSpy fired(&alarm, &BlockAlarmService::blocksStarting);
+
+        // The app stalls straight through 09:00 and polls at 09:31 —
+        // 09:00 is 31 min stale (silence), 09:30 is 60 s fresh (toast).
+        now = kT0.addSecs(31 * 60);
+        alarm.poll();
+        QCOMPARE(fired.count(), 1);
+        const auto ids = fired.takeFirst().at(0).value<QVector<QString>>();
+        QCOMPARE(ids, QVector<QString>{fresh});
+
+        // And the swept-past 09:00 can never resurrect.
+        now = kT0.addSecs(32 * 60);
+        alarm.poll();
+        QCOMPARE(fired.count(), 0);
+    }
+
+    void pomodoroEngineWalksTheClassicCycle()
+    {
+        PomodoroEngine engine;
+        engine.setDurations(1, 1, 2); // minute-long phases: 60 ticks each
+
+        QSignalSpy ended(&engine, &PomodoroEngine::phaseEnded);
+
+        QVERIFY(!engine.engaged());
+        engine.start();
+        QVERIFY(engine.engaged());
+        QCOMPARE(engine.phase(), PomodoroEngine::Phase::Focus);
+        QCOMPARE(engine.remaining(), 60);
+
+        // 60 seconds of focus -> flows INTO the short break by itself
+        // (still running — the rhythm needs no click between phases), and
+        // phaseEnded fires exactly once.
+        for (int i = 0; i < 60; ++i)
+            engine.tickOneSecond();
+        QCOMPARE(engine.phase(), PomodoroEngine::Phase::ShortBreak);
+        QVERIFY(engine.running());
+        QCOMPARE(ended.count(), 1);
+
+        // Skip is DELIBERATE: it advances (break -> focus, round 2) but
+        // announces nothing — no toast for what you did with your own hands.
+        engine.skip();
+        QCOMPARE(engine.phase(), PomodoroEngine::Phase::Focus);
+        QCOMPARE(engine.round(), 2);
+        QCOMPARE(ended.count(), 1); // unchanged
+
+        // Rounds advance on break -> focus, so skips come in PAIRS
+        // (focus->break, break->focus). Walk to round 4; its focus must
+        // earn the LONG break — and remaining==120 (our 2-min long break)
+        // proves WHICH break, not just "a break".
+        engine.skip();               // r2: focus -> short break
+        engine.skip();               //     break -> focus, round 3
+        QCOMPARE(engine.round(), 3);
+        engine.skip();               // r3: focus -> short break
+        engine.skip();               //     break -> focus, round 4
+        QCOMPARE(engine.round(), 4);
+        engine.skip();               // the 4th focus ends...
+        QCOMPARE(engine.phase(), PomodoroEngine::Phase::LongBreak);
+        QCOMPARE(engine.remaining(), 120);
+
+        // Pause keeps ENGAGED true (pulled away, coming back); reset drops
+        // it (walked away) — the exact bit the tracker link steers by.
+        engine.pause();
+        QVERIFY(engine.engaged());
+        engine.reset();
+        QVERIFY(!engine.engaged());
+        QCOMPARE(engine.round(), 1);
+        QCOMPARE(engine.phase(), PomodoroEngine::Phase::Focus);
+    }
+
+    void completingARepeatingTaskSpawnsItsNextOccurrence()
+    {
+        // Since v7 the UI stored and SHOWED a repeat rule that completion
+        // ignored — decoration. v19.10 makes it real, with one invariant
+        // carrying the whole design: THE RULE LIVES ON THE NEWEST LINK.
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString id  = data.addTask("Lab report", cat, QDate(2026, 7, 10));
+        data.updateTask(id, "Lab report", "sect. 4", QDate(2026, 7, 10), QTime(),
+                        Task::Repeat::Weekly, Task::Priority::Urgent);
+
+        QCOMPARE(data.tasks().size(), 1);
+        data.setTaskDone(id, true);
+
+        // The next occurrence exists: fresh id, +7 days, everything
+        // carried — title, notes, priority, and the RULE.
+        QCOMPARE(data.tasks().size(), 2);
+        const Task* old_ = data.taskById(id);
+        const Task* next = nullptr;
+        for (const Task& t : data.tasks())
+            if (t.id != id)
+                next = &t;
+        QVERIFY(next);
+        QVERIFY(old_->done);
+        QCOMPARE(old_->repeat, Task::Repeat::None); // stripped: chain rule
+        QCOMPARE(next->dueDate, QDate(2026, 7, 17));
+        QCOMPARE(next->repeat, Task::Repeat::Weekly);
+        QCOMPARE(next->priority, Task::Priority::Urgent);
+        QCOMPARE(next->description, QStringLiteral("sect. 4"));
+        QVERIFY(!next->done);
+
+        // The invariant IS the duplicate guard: cycle the old task
+        // undone -> done again, and nothing new spawns — its rule is gone.
+        data.setTaskDone(id, false);
+        data.setTaskDone(id, true);
+        QCOMPARE(data.tasks().size(), 2);
+    }
+
+    void repeatingBlocksRollForwardHonestly()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study PHY335", cat);
+        // A weekly Monday block, last materialized Jun 29 (a Monday):
+        const QString ev = data.addEvent(QDate(2026, 6, 29),
+                                         10 * 60, 12 * 60, act);
+        data.setEventRepeat(ev, Task::Repeat::Weekly);
+
+        // Twelve days pass unopened. The roll must NOT backfill Jul 6 —
+        // an empty plan for a day you weren't there is noise, not
+        // history — it re-arms at the first rule date >= today: Jul 13.
+        QCOMPARE(data.rollRepeats(QDate(2026, 7, 11)), 1);
+        QCOMPARE(data.events().size(), 2);
+        const Event* spawned = nullptr;
+        for (const Event& e : data.events())
+            if (e.id != ev)
+                spawned = &e;
+        QCOMPARE(spawned->date, QDate(2026, 7, 13));
+        QCOMPARE(spawned->plannedStartMinutes, 10 * 60);
+        QCOMPARE(spawned->repeat, Task::Repeat::Weekly);   // newest link
+        QCOMPARE(data.eventById(ev)->repeat, Task::Repeat::None); // stripped
+        QVERIFY(spawned->segments.isEmpty()); // identity copies, not history
+
+        // Idempotent within a day: rolling again spawns nothing.
+        QCOMPARE(data.rollRepeats(QDate(2026, 7, 11)), 0);
+    }
+
+    void rollSkipsOccupiedDatesInsteadOfFighting()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev = data.addEvent(QDate(2026, 7, 6), // Monday
+                                         10 * 60, 12 * 60, act);
+        data.setEventRepeat(ev, Task::Repeat::Weekly);
+        // Jul 13's slots are already taken — the domain forbids overlap,
+        // and the roll must respect the door, not shove through it:
+        data.addEvent(QDate(2026, 7, 13), 10 * 60, 12 * 60, act);
+
+        QCOMPARE(data.rollRepeats(QDate(2026, 7, 12)), 1);
+        // The chain re-armed one rule-step later, on the free Jul 20.
+        const Event* spawned = nullptr;
+        for (const Event& e : data.events())
+            if (e.repeat == Task::Repeat::Weekly)
+                spawned = &e;
+        QVERIFY(spawned);
+        QCOMPARE(spawned->date, QDate(2026, 7, 20));
+    }
+
+    void eventRepeatSurvivesTheJsonRoundTripAndOldFilesReadAsNone()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev  = data.addEvent(QDate(2026, 7, 13),
+                                          9 * 60, 10 * 60, act);
+        data.setEventRepeat(ev, Task::Repeat::Monthly);
+
+        AppData copy;
+        JsonStore::applyJsonObject(copy, JsonStore::toJsonObject(data),
+                                   /*announceChange=*/false);
+        QCOMPARE(copy.eventById(ev)->repeat, Task::Repeat::Monthly);
+
+        // Pre-v9 files carry no field: absent must read as "nothing
+        // repeats" — exactly how those files always behaved.
+        QJsonObject blob = JsonStore::toJsonObject(data);
+        QJsonArray events = blob["events"].toArray();
+        QJsonObject e0 = events[0].toObject();
+        e0.remove("repeat");
+        events[0] = e0;
+        blob["events"] = events;
+        AppData old_;
+        JsonStore::applyJsonObject(old_, blob, /*announceChange=*/false);
+        QCOMPARE(old_.eventById(ev)->repeat, Task::Repeat::None);
+    }
+
+    void trackerStopsItselfWhenTheWindowCloses()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev  = data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+
+        TrackerService tracker(&data);
+        QDateTime now = kT0.addSecs(600); // 09:10, inside the window
+        tracker.nowProvider = [&now] { return now; };
+        QSignalSpy ended(&tracker, &TrackerService::trackedBlockEnded);
+
+        tracker.startFocus(ev);
+        tracker.enforceWindow(); // window open: the exit door does nothing
+        QCOMPARE(tracker.state(), TrackerService::State::Focusing);
+        QCOMPARE(ended.count(), 0);
+
+        // 10:00:03 — the window has closed; the next tick's enforcement
+        // commits and stops. The final segment's end is the REAL moment
+        // (a breath past the boundary), because segments record what
+        // happened, not what was planned.
+        now = QDateTime(kT0.date(), QTime(10, 0, 3));
+        tracker.enforceWindow();
+        QCOMPARE(tracker.state(), TrackerService::State::Idle);
+        QCOMPARE(ended.count(), 1);
+        QCOMPARE(ended.takeFirst().at(0).toString(), ev);
+        const Event* e = data.eventById(ev);
+        QVERIFY(!e->segments.isEmpty());
+        QCOMPARE(e->segments.last().end,
+                 QDateTime(kT0.date(), QTime(10, 0, 3)));
+
+        tracker.enforceWindow(); // idempotent: Idle has nothing to enforce
+        QCOMPARE(ended.count(), 0);
+    }
+
+    void pomodoroPausesWhenItsBlockRunsOut()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+
+        TrackerService tracker(&data);
+        QDateTime now = kT0.addSecs(600);
+        tracker.nowProvider = [&now] { return now; };
+
+        PomodoroEngine engine;
+        engine.setDurations(25, 5, 15);
+        PomodoroLink link(&engine, &tracker);
+        link.setEnabled(true);
+
+        engine.start(); // play edge adopts the 9–10 block (v19.7)
+        QCOMPARE(tracker.state(), TrackerService::State::Focusing);
+
+        // The block runs out mid-focus: tracking stops (exit door) AND the
+        // engine PAUSES — not resets: engaged stays true, the cycle
+        // survives lunch, and ▶ later adopts whatever is under the clock.
+        now = QDateTime(kT0.date(), QTime(10, 0, 2));
+        tracker.enforceWindow();
+        QCOMPARE(tracker.state(), TrackerService::State::Idle);
+        QVERIFY(!engine.running());
+        QVERIFY(engine.engaged());
+
+        // Rule-8 interlock, now load-bearing: the pause above must NOT
+        // re-adopt-and-stamp-distracted. Tracker stays Idle.
+        QCOMPARE(tracker.state(), TrackerService::State::Idle);
+
+        // And with the link DISABLED, the block's end is none of the
+        // Pomodoro's business: it keeps running.
+        now = kT0.addSecs(600);
+        engine.reset();
+        link.setEnabled(false);
+        tracker.startFocus(data.events().first().id);
+        engine.start();
+        now = QDateTime(kT0.date(), QTime(10, 0, 2));
+        tracker.enforceWindow();
+        QCOMPARE(tracker.state(), TrackerService::State::Idle);
+        QVERIFY(engine.running()); // unlinked machines stay strangers
+    }
+
+    void pomodoroLinkDrivesTheBlockUnderTheClock()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        // A block that is LIVE at the fixed test moment (09:10 inside
+        // 09:00–11:00) — canTrackNow and liveEventNow both see it.
+        const QString ev = data.addEvent(kT0.date(), 9 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        QDateTime now = kT0.addSecs(600); // 09:10
+        tracker.nowProvider = [&now] { return now; };
+
+        PomodoroEngine engine;
+        engine.setDurations(1, 1, 2);
+        PomodoroLink link(&engine, &tracker);
+        link.setEnabled(true);
+
+        // Rule 1 (v19.7): the PLAY edge adopts the block under the clock —
+        // you picked it when you planned it; pressing play starts the plan
+        // recording itself. Focus phase => focus kind.
+        engine.start();
+        QCOMPARE(tracker.state(), TrackerService::State::Focusing);
+        QCOMPARE(tracker.trackedEventId(), ev);
+
+        // Rule 2: paused = distracted; resumed = focus (unchanged).
+        engine.pause();
+        QCOMPARE(tracker.state(), TrackerService::State::Distracted);
+        engine.start();
+        QCOMPARE(tracker.state(), TrackerService::State::Focusing);
+
+        // Rule 3: the countdown crossing into a break switches the kind by
+        // itself (unchanged — this is the whole feature).
+        for (int i = 0; i < 60; ++i)
+            engine.tickOneSecond();
+        QCOMPARE(engine.phase(), PomodoroEngine::Phase::ShortBreak);
+        QCOMPARE(tracker.state(), TrackerService::State::OnBreak);
+
+        // Rule 4: a human Stop OUTRANKS the machine — phase flips are not
+        // play edges, so the stopped tracker stays stopped through them...
+        tracker.stop();
+        engine.skip(); // break -> focus, round 2 — a transition, not a play
+        QCOMPARE(tracker.state(), TrackerService::State::Idle);
+
+        // ...but pressing play AGAIN is a fresh human command, and the
+        // fresh command re-adopts the block still under the clock.
+        engine.pause();
+        engine.start();
+        QCOMPARE(tracker.state(), TrackerService::State::Focusing);
+        QCOMPARE(tracker.trackedEventId(), ev);
+
+        // Rule 5: reset = abandoned = hands off (unchanged).
+        engine.reset();
+        QCOMPARE(tracker.state(), TrackerService::State::Focusing);
+
+        // Rule 6: adoption never invents a block. Outside every planned
+        // window (13:00), a play edge finds no live block and waits.
+        tracker.stop();
+        now = QDateTime(kT0.date(), QTime(13, 0));
+        engine.start();
+        QCOMPARE(tracker.state(), TrackerService::State::Idle);
+
+        // Rule 7: enabling the link mid-run counts as a play edge (the
+        // tick was the user's action just now) — back inside the window.
+        link.setEnabled(false);
+        now = kT0.addSecs(900); // 09:15, block live again
+        engine.reset();
+        engine.start();         // link disabled: nothing happens
+        QCOMPARE(tracker.state(), TrackerService::State::Idle);
+        link.setEnabled(true);  // ...until the box is ticked mid-run
+        QCOMPARE(tracker.state(), TrackerService::State::Focusing);
+
+        // Rule 8: adopting-while-PAUSED is forbidden — an untouched block
+        // must never be stamped DISTRACTED by a Pomodoro lying idle.
+        tracker.stop();
+        engine.pause();         // engaged, not running
+        link.setEnabled(false);
+        link.setEnabled(true);  // enable edge, but engine paused
+        QCOMPARE(tracker.state(), TrackerService::State::Idle);
+    }
+
+    void weekStartPreferenceMovesTheWeekBoundary()
+    {
+        // The formula itself, at its edges: for any first day, weekStart of
+        // that day is itself, and the day BEFORE it belongs to the previous
+        // week. 2026-07-05 is a Sunday, 2026-07-06 a Monday.
+        const QDate sun(2026, 7, 5), mon(2026, 7, 6);
+        QCOMPARE(stats::weekStart(mon, Qt::Monday), mon);
+        QCOMPARE(stats::weekStart(sun, Qt::Monday), mon.addDays(-7));
+        QCOMPARE(stats::weekStart(sun, Qt::Sunday), sun);
+        QCOMPARE(stats::weekStart(mon, Qt::Sunday), sun);
+        QCOMPARE(stats::weekStart(sun.addDays(-1), Qt::Sunday),
+                 sun.addDays(-7)); // Saturday closes the PREVIOUS week
+
+        // And the boundary MOVES real numbers: focus tracked on Sunday is
+        // inside "the week of Wednesday" only when Sunday starts the week.
+        // Same data, different firstDay, different totals — the parameter
+        // is behaviour, not decoration.
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev  = data.addEvent(sun, 540, 600, act);
+        data.appendSegment(
+            ev, makeSegment(SegmentKind::Focus,
+                            QDateTime(sun, QTime(9, 0)), 30));
+
+        const QDate wed = sun.addDays(3);
+        QCOMPARE(stats::summarizeWeek(data, wed, Qt::Sunday)
+                     .totals.focusSeconds,
+                 qint64(30 * 60));
+        QCOMPARE(stats::summarizeWeek(data, wed, Qt::Monday)
+                     .totals.focusSeconds,
+                 qint64(0)); // Mon-first week of Wednesday starts Jul 6 —
+                             // Sunday's work belongs to LAST week there
+    }
+
     void zeroLengthSegmentsAreDropped()
     {
         AppData data;
@@ -310,10 +812,10 @@ private slots:
             // The coarse edit the detail panel performs.
             QVERIFY(original.updateTask(id, "Lab 4 (revised)",
                                         "Bring the signed form.\nRoom B-204",
-                                        QDate(2026, 8, 9), Task::Repeat::Weekly));
+                                        QDate(2026, 8, 9), QTime(), Task::Repeat::Weekly));
             // A task must keep a real title: an all-space title is refused,
             // and refusal leaves the task untouched.
-            QVERIFY(!original.updateTask(id, "   ", "x", QDate(),
+            QVERIFY(!original.updateTask(id, "   ", "x", QDate(), QTime(),
                                          Task::Repeat::None));
             QCOMPARE(original.taskById(id)->title, QString("Lab 4 (revised)"));
 
@@ -956,6 +1458,37 @@ private slots:
         QCOMPARE(reloaded.upcomingTasks().size(), 1);
     }
 
+    void archivingALifeAreaHidesItsWholeWorldReversibly()
+    {
+        // The owner's semester story: one category holds a term's classes;
+        // term ends, the AREA retires. The cascade rule: hidden = own flag
+        // OR the owning category's — children keep their flags untouched,
+        // so restore is exact.
+        AppData data;
+        const QString c = data.addCategory("Fall 2026", QColor("#4C6FE0"));
+        const QString t = data.addTask("PHY335 lab", c, QDate(2026, 9, 1));
+
+        QVERIFY(data.setCategoryArchived(c, true));
+        // The task never got its own archived flag…
+        QVERIFY(data.archivedTasks().isEmpty());
+        // …yet it's hidden from every living view (the cascade).
+        QVERIFY(data.upcomingTasks().isEmpty());
+        QVERIFY(data.tasksDueOn(QDate(2026, 9, 1)).isEmpty());
+        QCOMPARE(data.archivedCategories().size(), 1);
+
+        // Survives the disk (v8 field round-trips)…
+        AppData reloaded;
+        JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
+                                   false);
+        QVERIFY(reloaded.upcomingTasks().isEmpty());
+
+        // …and one flip brings the whole world back, exactly as it was.
+        QVERIFY(reloaded.setCategoryArchived(c, false));
+        QCOMPARE(reloaded.upcomingTasks().size(), 1);
+        QCOMPARE(reloaded.upcomingTasks().first()->title,
+                 QStringLiteral("PHY335 lab"));
+    }
+
     void taskPriorityDefaultsToMediumAndRoundTrips()
     {
         AppData data;
@@ -1034,6 +1567,2507 @@ private slots:
         JsonStore::applyJsonObject(again, JsonStore::toJsonObject(data),
                                    false);
         QVERIFY(!again.specialDays().first().color.isValid());
+    }
+
+    // ---- needs-a-block, part 1 (design-addendum-needs-a-block) ------------
+    // The whole feature's brain is pure (coverage::, ReturnPolicy), so the
+    // whole feature is provable here — headless, fixed dates, milliseconds.
+    // House convention: every date below is pinned; `kToday` is a Tuesday.
+
+    void coverageDeadlineClampKeepsOverdueTasksSatisfiable()
+    {
+        // §A consequence 3: deadline = max(due, today). A task due LAST
+        // WEEK is covered by a block TODAY — without the clamp it could
+        // never be covered by anything placeable and would nag forever.
+        const QDate today(2026, 7, 21);
+        Task t;
+        t.dueDate  = today.addDays(-7);
+        t.priority = Task::Priority::Medium;
+
+        QCOMPARE(coverage::deadlineOf(t, today), today);
+        QVERIFY(coverage::isCovered(t, {today}, today));
+        QVERIFY(!coverage::isCovered(t, {today.addDays(1)}, today));
+        // No due date = no upper bound: any today-or-later block covers.
+        t.dueDate = QDate();
+        QVERIFY(!coverage::deadlineOf(t, today).isValid());
+        QVERIFY(coverage::isCovered(t, {today.addDays(30)}, today));
+    }
+
+    void lateAndPastBlocksDoNotCover()
+    {
+        // §A consequences 1 and 2: a block AFTER the deadline looks like
+        // coverage and isn't; a block already SPENT did not do the job.
+        const QDate today(2026, 7, 21);
+        Task t;
+        t.dueDate = today.addDays(1); // due tomorrow
+
+        QVERIFY(!coverage::isCovered(t, {today.addDays(2)}, today)); // late
+        QVERIFY(!coverage::isCovered(t, {today.addDays(-1)}, today)); // past
+        QVERIFY(coverage::isCovered(t, {today.addDays(1)}, today));  // on it
+        QVERIFY(coverage::isCovered(
+            t, {today.addDays(-1), today.addDays(1)}, today)); // one is enough
+    }
+
+    void needsBlockPriorityRuleCatchesDatelessUrgent()
+    {
+        // §B condition 1: the priority set flags whatever the date says —
+        // including a task with NO date, which the window can never reach.
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 30));
+        coverage::Rule rule; // defaults: urgent only, 3-day window
+        Task t;
+        t.priority = Task::Priority::Urgent; // and dueDate stays invalid
+
+        QVERIFY(coverage::needsBlock(t, /*covered=*/false, rule, now));
+        t.priority = Task::Priority::Low;    // dateless AND unflagged rank
+        QVERIFY(!coverage::needsBlock(t, false, rule, now));
+        t.priority = Task::Priority::Urgent; // flagged again…
+        QVERIFY(!coverage::needsBlock(t, /*covered=*/true, rule, now));
+        t.done = true;                       // …but never when finished
+        QVERIFY(!coverage::needsBlock(t, false, rule, now));
+        t.done = false;
+        t.archived = true;                   // …or shelved
+        QVERIFY(!coverage::needsBlock(t, false, rule, now));
+    }
+
+    void needsBlockDueWindowRuleAndOverdue()
+    {
+        // §B condition 2: an ordinary task inside the window is flagged;
+        // outside it, not; window off, never; OVERDUE always, window or no.
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 30));
+        coverage::Rule rule; // 3-day window
+        Task t;
+        t.priority = Task::Priority::Medium; // priority rule can't fire
+
+        t.dueDate = now.date().addDays(2);
+        QVERIFY(coverage::needsBlock(t, false, rule, now));
+        t.dueDate = now.date().addDays(3);           // boundary: inclusive
+        QVERIFY(coverage::needsBlock(t, false, rule, now));
+        t.dueDate = now.date().addDays(4);
+        QVERIFY(!coverage::needsBlock(t, false, rule, now));
+
+        rule.dueWithinDays = 0;                      // window OFF
+        t.dueDate = now.date().addDays(1);
+        QVERIFY(!coverage::needsBlock(t, false, rule, now));
+        t.dueDate = now.date().addDays(-2);          // …but overdue is not
+        QVERIFY(coverage::needsBlock(t, false, rule, now)); // a window fact
+    }
+
+    void staleDismissalCannotHideATask()
+    {
+        // §C: the flag compares dismissedUntil against `now` directly —
+        // expiry housekeeping is a nicety, never load-bearing.
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 30));
+        coverage::Rule rule;
+        Task t;
+        t.priority = Task::Priority::Urgent;
+
+        t.dismissedUntil = now.addSecs(3600);        // live -> hidden
+        QVERIFY(!coverage::needsBlock(t, false, rule, now));
+        t.dismissedUntil = now.addSecs(-3600);       // lapsed -> visible,
+        QVERIFY(coverage::needsBlock(t, false, rule, now)); // no cleanup ran
+    }
+
+    void returnPolicyComputesAllThreeModes()
+    {
+        // ReturnPolicy.h — one nextReturn, three modes, every boundary.
+        const QDateTime at(QDate(2026, 7, 21), QTime(8, 30));
+        ReturnPolicy p;
+
+        p.mode = ReturnPolicy::Mode::EndOfDay;       // midnight tonight
+        QCOMPARE(p.nextReturn(at),
+                 QDateTime(QDate(2026, 7, 22), QTime(0, 0)));
+
+        p.mode = ReturnPolicy::Mode::AtTime;
+        p.time = QTime(21, 0);                       // still ahead -> today
+        QCOMPARE(p.nextReturn(at),
+                 QDateTime(QDate(2026, 7, 21), QTime(21, 0)));
+        p.time = QTime(6, 0);                        // passed -> tomorrow
+        QCOMPARE(p.nextReturn(at),
+                 QDateTime(QDate(2026, 7, 22), QTime(6, 0)));
+        // The knife edge: dismissing AT 21:00 sharp returns tomorrow, not
+        // instantly — otherwise the button is a no-op once a day.
+        p.time = QTime(8, 30);
+        QCOMPARE(p.nextReturn(at),
+                 QDateTime(QDate(2026, 7, 22), QTime(8, 30)));
+
+        p.mode  = ReturnPolicy::Mode::AfterHours;
+        p.hours = 4;
+        QCOMPARE(p.nextReturn(at),
+                 QDateTime(QDate(2026, 7, 21), QTime(12, 30)));
+        p.hours = 0;                                 // repair: min 1 hour
+        QCOMPARE(p.nextReturn(at),
+                 QDateTime(QDate(2026, 7, 21), QTime(9, 30)));
+    }
+
+    void dismissDoorCountsAndRefusesForever()
+    {
+        // §C/§D doors: each dismissal is one count; an invalid `until`
+        // ("dismissed forever") is refused; bring-back clears the hide but
+        // never the history.
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4A7CC4"));
+        const QString id  = data.addTask("Lab 4", cat);
+        const QDateTime nine(QDate(2026, 7, 21), QTime(21, 0));
+
+        QVERIFY(!data.dismissTask(id, QDateTime()));       // refused
+        QCOMPARE(data.taskById(id)->dismissCount, 0);
+
+        QVERIFY(data.dismissTask(id, nine));
+        QVERIFY(data.dismissTask(id, nine.addDays(1)));
+        QCOMPARE(data.taskById(id)->dismissCount, 2);
+        QCOMPARE(data.taskById(id)->dismissedUntil, nine.addDays(1));
+
+        QVERIFY(data.clearDismissal(id));                  // bring back
+        QVERIFY(!data.taskById(id)->dismissedUntil.isValid());
+        QCOMPARE(data.taskById(id)->dismissCount, 2);      // history stays
+    }
+
+    void completionResetsTheEvidence()
+    {
+        // §D, the owner's call: finishing the task zeroes the count and
+        // clears any live dismissal; un-finishing restores neither.
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4A7CC4"));
+        const QString id  = data.addTask("Lab 4", cat);
+        data.dismissTask(id, QDateTime(QDate(2026, 7, 21), QTime(21, 0)));
+        data.dismissTask(id, QDateTime(QDate(2026, 7, 22), QTime(21, 0)));
+
+        QVERIFY(data.setTaskDone(id, true));
+        QCOMPARE(data.taskById(id)->dismissCount, 0);
+        QVERIFY(!data.taskById(id)->dismissedUntil.isValid());
+        QVERIFY(data.setTaskDone(id, false));              // correction,
+        QCOMPARE(data.taskById(id)->dismissCount, 0);      // not resurrection
+    }
+
+    void repeatSuccessorStartsWithCleanEvidence()
+    {
+        // §D: the spawned next occurrence is a FRESH task — it inherits
+        // the rule, never the put-off history.
+        AppData data;
+        const QString cat = data.addCategory("Home", QColor("#B0679A"));
+        const QString id  = data.addTask("Rent", cat, QDate(2026, 7, 28));
+        data.updateTask(id, "Rent", "", QDate(2026, 7, 28), QTime(),
+                        Task::Repeat::Monthly);
+        data.dismissTask(id, QDateTime(QDate(2026, 7, 21), QTime(21, 0)));
+
+        QVERIFY(data.setTaskDone(id, true));               // spawns August
+        const Task* next = nullptr;
+        for (const Task& t : data.tasks())
+            if (t.id != id)
+                next = &t;
+        QVERIFY(next);
+        QCOMPARE(next->dismissCount, 0);
+        QVERIFY(!next->dismissedUntil.isValid());
+    }
+
+    void expireDismissalsClearsOnlyTheLapsed()
+    {
+        // §C housekeeping, rollRepeats-style: one pass, returns the count,
+        // leaves live dismissals alone.
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4A7CC4"));
+        const QString a = data.addTask("A", cat);
+        const QString b = data.addTask("B", cat);
+        const QDateTime now(QDate(2026, 7, 21), QTime(21, 0));
+        data.dismissTask(a, now.addSecs(-60));             // lapsed
+        data.dismissTask(b, now.addSecs(+60));             // still live
+
+        QCOMPARE(data.expireDismissals(now), 1);
+        QVERIFY(!data.taskById(a)->dismissedUntil.isValid());
+        QVERIFY(data.taskById(b)->dismissedUntil.isValid());
+        QCOMPARE(data.expireDismissals(now), 0);           // idempotent
+    }
+
+    void tasksNeedingBlockFiltersCoversAndSorts()
+    {
+        // The one derived list (§B/§F): covered tasks drop out, the rest
+        // arrive pinned-overdue-urgent-rest, ties by soonest due date.
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4A7CC4"));
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 30));
+        const QDate today = now.date();
+
+        const QString overdue = data.addTask("Overdue", cat, today.addDays(-2));
+        const QString urgent  = data.addTask("Urgent", cat, today.addDays(3));
+        data.setTaskPriority(urgent, Task::Priority::Urgent);
+        const QString soon    = data.addTask("Soon", cat, today.addDays(2));
+        const QString covered = data.addTask("Covered", cat, today.addDays(2));
+        data.addTaskEvent(today.addDays(1), 9 * 60, 10 * 60, covered);
+        const QString pinnedT = data.addTask("Pinned", cat, today.addDays(5));
+        data.setTaskPriority(pinnedT, Task::Priority::Urgent);
+        for (int i = 0; i < 6; ++i)                        // rung 2 evidence
+            data.dismissTask(pinnedT, now.addSecs(60));
+        data.clearDismissal(pinnedT);                      // visible again
+        data.addTask("Quiet", cat, today.addDays(30));     // outside window
+
+        const auto list = data.tasksNeedingBlock(
+            coverage::Rule{}, coverage::Escalation{}, now);
+        QCOMPARE(list.size(), 4);
+        QCOMPARE(list[0]->title, QStringLiteral("Pinned"));  // rung 2 first
+        QCOMPARE(list[1]->title, QStringLiteral("Overdue")); // facts next
+        QCOMPARE(list[2]->title, QStringLiteral("Urgent"));  // opinions
+        QCOMPARE(list[3]->title, QStringLiteral("Soon"));    // window catch
+    }
+
+    void uncoveredReasonNamesTheFailure()
+    {
+        // §A explainability: when the app flags a task the user believes
+        // is handled, it must say WHICH clause fired.
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4A7CC4"));
+        const QDate today(2026, 7, 21);
+
+        const QString bare = data.addTask("Bare", cat, today.addDays(1));
+        QCOMPARE(data.taskUncoveredReason(bare, today),
+                 coverage::Reason::NoBlock);
+
+        const QString late = data.addTask("Late", cat, today.addDays(1));
+        data.addTaskEvent(today.addDays(2), 13 * 60, 14 * 60, late);
+        QCOMPARE(data.taskUncoveredReason(late, today),
+                 coverage::Reason::BlockAfterDeadline);
+
+        const QString past = data.addTask("Past", cat, today.addDays(1));
+        data.addTaskEvent(today.addDays(-1), 10 * 60, 11 * 60, past);
+        QCOMPARE(data.taskUncoveredReason(past, today),
+                 coverage::Reason::BlockInPast);
+
+        const QString ok = data.addTask("Ok", cat, today.addDays(1));
+        data.addTaskEvent(today.addDays(1), 9 * 60, 10 * 60, ok);
+        QCOMPARE(data.taskUncoveredReason(ok, today),
+                 coverage::Reason::None);
+    }
+
+    void rungIsDerivedAndRespondsToSettings()
+    {
+        // §D: the rung is a pure function of (count, settings) — change
+        // the threshold and every task re-rungs with nothing to migrate.
+        coverage::Escalation esc;                          // 3 / +3 / urgent
+        Task t;
+        t.priority     = Task::Priority::Urgent;
+        t.dismissCount = 2;
+        QCOMPARE(coverage::rung(t, esc), 0);
+        t.dismissCount = 3;
+        QCOMPARE(coverage::rung(t, esc), 1);
+        t.dismissCount = 6;
+        QCOMPARE(coverage::rung(t, esc), 2);
+
+        t.priority = Task::Priority::Medium;               // urgent-only:
+        QCOMPARE(coverage::rung(t, esc), 0);               // ladder ignores
+        esc.urgentOnly = false;
+        QCOMPARE(coverage::rung(t, esc), 2);               // …until told not to
+
+        esc.urgentOnly    = true;
+        t.priority        = Task::Priority::Urgent;
+        esc.decisionAfter = 10;                            // "migration"
+        QCOMPARE(coverage::rung(t, esc), 0);               // is instant
+    }
+
+    void dismissalFieldsRoundTripAndOldFilesReadClean()
+    {
+        // §G: two additive keys, version 10; a file WITHOUT them (any v9
+        // task) reads as never-dismissed with zero special-casing.
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4A7CC4"));
+        const QString id  = data.addTask("Lab 4", cat, QDate(2026, 7, 24));
+        data.dismissTask(id, QDateTime(QDate(2026, 7, 21), QTime(21, 0)));
+        data.dismissTask(id, QDateTime(QDate(2026, 7, 22), QTime(21, 0)));
+
+        AppData loaded;
+        JsonStore::applyJsonObject(loaded, JsonStore::toJsonObject(data),
+                                   false);
+        QCOMPARE(loaded.taskById(id)->dismissCount, 2);
+        QCOMPARE(loaded.taskById(id)->dismissedUntil,
+                 QDateTime(QDate(2026, 7, 22), QTime(21, 0)));
+
+        // Forge a pre-v10 task object: no dismissal keys at all.
+        QJsonObject root = JsonStore::toJsonObject(AppData());
+        root["tasks"] = QJsonArray{QJsonObject{
+            {"id", "old1"}, {"title", "From v9"}, {"categoryId", ""},
+            {"done", false}, {"dueDate", ""}}};
+        AppData old;
+        JsonStore::applyJsonObject(old, root, false);
+        QCOMPARE(old.taskById("old1")->dismissCount, 0);
+        QVERIFY(!old.taskById("old1")->dismissedUntil.isValid());
+    }
+
+    // ---- v22: the deadline's clock half ----------------------------------
+
+    // The pairing invariant, proved at all three doors: a time only exists
+    // alongside a date, and clearing the date takes the time with it.
+    void dueTimeNeverOrphansItsDate()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#2F7E6E"));
+
+        // Birth door: a time with no date is refused, silently and totally.
+        const QString orphan = data.addTask("No date", cat, QDate(),
+                                            QTime(17, 0));
+        QVERIFY(!data.taskById(orphan)->dueTime.isValid());
+
+        // Birth door with a date: the time survives.
+        const QString id = data.addTask("Lab 4", cat, QDate(2026, 8, 8),
+                                        QTime(23, 59));
+        QCOMPARE(data.taskById(id)->dueTime, QTime(23, 59));
+
+        // Date setter: clearing the date clears the clock.
+        QVERIFY(data.setTaskDueDate(id, QDate(), QTime(9, 0)));
+        QVERIFY(!data.taskById(id)->dueTime.isValid());
+
+        // Coarse edit: same rule, third enforcer.
+        QVERIFY(data.updateTask(id, "Lab 4", "", QDate(), QTime(9, 0),
+                                Task::Repeat::None));
+        QVERIFY(!data.taskById(id)->dueTime.isValid());
+    }
+
+    // An all-day task is due at the END of its day, not the start — the
+    // single most likely off-by-a-day bug in the whole feature.
+    void allDayDeadlineIsEndOfDay()
+    {
+        Task t;
+        t.dueDate = QDate(2026, 8, 8);
+        QCOMPARE(t.dueMoment(), QDateTime(QDate(2026, 8, 8), QTime(23, 59, 59)));
+        QVERIFY(!t.isOverdue(QDateTime(QDate(2026, 8, 8), QTime(0, 1))));
+        QVERIFY(!t.isOverdue(QDateTime(QDate(2026, 8, 8), QTime(23, 0))));
+        QVERIFY(t.isOverdue(QDateTime(QDate(2026, 8, 9), QTime(0, 1))));
+
+        t.dueTime = QTime(9, 0);
+        QVERIFY(!t.isOverdue(QDateTime(QDate(2026, 8, 8), QTime(8, 59))));
+        QVERIFY(t.isOverdue(QDateTime(QDate(2026, 8, 8), QTime(9, 1))));
+        // The DATE-only overload must stay date-only: it is still correct for
+        // every caller that reasons in whole days, and quietly making it
+        // time-aware would change answers all over the calendar.
+        QVERIFY(!t.isOverdue(QDate(2026, 8, 8)));
+    }
+
+    // A same-day deadline that has already lapsed must flag NOW, not at
+    // midnight — the needs-a-block rule's one time-aware branch.
+    void needsBlockSeesTheClockOnTheDueDay()
+    {
+        Task t;
+        t.priority = Task::Priority::Low;   // priority alone won't flag it
+        t.dueDate  = QDate(2026, 7, 15);
+        t.dueTime  = QTime(9, 0);
+        coverage::Rule rule;                // urgent-only, 3-day window
+        rule.dueWithinDays = 0;             // window off: only the clock can flag
+
+        const QDateTime before(QDate(2026, 7, 15), QTime(8, 30));
+        const QDateTime after(QDate(2026, 7, 15), QTime(9, 30));
+        QVERIFY(!coverage::needsBlock(t, false, rule, before));
+        QVERIFY(coverage::needsBlock(t, false, rule, after));
+
+        // Untimed tasks are untouched by that branch — the guarantee that
+        // every pre-v22 expectation still holds.
+        t.dueTime = QTime();
+        QVERIFY(!coverage::needsBlock(t, false, rule, after));
+    }
+
+    // The time is part of the habit: completing a repeating task carries it.
+    void repeatCarriesTheDeadlineTime()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Life", QColor("#2F7E6E"));
+        const QString id = data.addTask("Rent", cat, QDate(2026, 7, 1),
+                                        QTime(9, 0));
+        data.updateTask(id, "Rent", "", QDate(2026, 7, 1), QTime(9, 0),
+                        Task::Repeat::Monthly);
+        QVERIFY(data.setTaskDone(id, true));
+
+        const Task* spawned = nullptr;
+        for (const Task& t : data.tasks())
+            if (!t.done && t.title == "Rent")
+                spawned = &t;
+        QVERIFY(spawned);
+        QCOMPARE(spawned->dueDate, QDate(2026, 8, 1));
+        QCOMPARE(spawned->dueTime, QTime(9, 0));
+    }
+
+    // Storage: the time round-trips, and a file that predates it still loads.
+    void dueTimeSurvivesTheRoundTrip()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#2F7E6E"));
+        data.addTask("Timed", cat, QDate(2026, 8, 8), QTime(23, 59));
+        data.addTask("All day", cat, QDate(2026, 8, 9));
+
+        AppData loaded;
+        JsonStore::applyJsonObject(loaded, JsonStore::toJsonObject(data),
+                                   false);
+        const Task* timed = nullptr;
+        const Task* allDay = nullptr;
+        for (const Task& t : loaded.tasks())
+            (t.title == "Timed" ? timed : allDay) = &t;
+        QVERIFY(timed && allDay);
+        QCOMPARE(timed->dueTime, QTime(23, 59));
+        QVERIFY(!allDay->dueTime.isValid()); // "" round-trips as all-day
+
+        // A pre-v22 task object: the key simply is not there.
+        QJsonObject root = JsonStore::toJsonObject(AppData());
+        root["tasks"] = QJsonArray{QJsonObject{
+            {"id", "old1"}, {"title", "From v21"}, {"categoryId", ""},
+            {"done", false}, {"dueDate", "2026-08-08"}}};
+        AppData old;
+        JsonStore::applyJsonObject(old, root, false);
+        QVERIFY(!old.taskById("old1")->dueTime.isValid());
+    }
+
+    // v22.8: the org-name move recovery. v22.7 named the organization and
+    // thereby moved AppDataLocation one level deeper — the owner opened an
+    // empty folder and believed their data erased. The migration rule that
+    // brings it home is tested here on temp dirs: every data*.json is
+    // COPIED (old folder intact as backup), and a lived-in destination is
+    // never overwritten.
+    void migrationCarriesEveryPlannerFileAndOverwritesNothing()
+    {
+        QTemporaryDir oldHome, newHome;
+        QVERIFY(oldHome.isValid() && newHome.isValid());
+        const QDir from(oldHome.path()), to(newHome.path());
+
+        auto write = [](const QString& path, const QByteArray& body) {
+            QFile f(path);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(body);
+        };
+        write(from.filePath("data.json"),       "{\"v\":\"global\"}");
+        write(from.filePath("data-alice.json"), "{\"v\":\"alice\"}");
+        write(from.filePath("notes.txt"),       "not a planner file");
+        // The destination already owns a bob file — migration must not touch it.
+        write(to.filePath("data-bob.json"),     "{\"v\":\"bob-new\"}");
+        write(from.filePath("data-bob.json"),   "{\"v\":\"bob-OLD\"}");
+
+        QVERIFY(JsonStore::migrateDataFiles(from, to));
+
+        auto read = [](const QString& path) {
+            QFile f(path);
+            // Checked, not because the migration could have failed silently
+            // (QCOMPARE below would scream about empty bytes) but because
+            // QFile::open is [[nodiscard]] on newer Qt — the owner's 6.11
+            // flagged the unchecked call my 6.4 let slide. A stricter
+            // compiler is a free reviewer; don't argue with it.
+            if (!f.open(QIODevice::ReadOnly))
+                return QByteArray();
+            return f.readAll();
+        };
+        QCOMPARE(read(to.filePath("data.json")),       QByteArray("{\"v\":\"global\"}"));
+        QCOMPARE(read(to.filePath("data-alice.json")), QByteArray("{\"v\":\"alice\"}"));
+        QCOMPARE(read(to.filePath("data-bob.json")),   QByteArray("{\"v\":\"bob-new\"}"));
+        QVERIFY(!QFile::exists(to.filePath("notes.txt"))); // planner files only
+        // COPY, not move: the originals are all still there.
+        QVERIFY(QFile::exists(from.filePath("data.json")));
+        QVERIFY(QFile::exists(from.filePath("data-alice.json")));
+    }
+    // ---- v25: the day briefing --------------------------------------------
+    // brief:: is what the assistant KNOWS. Tested here (not test_nlp) because
+    // it reads AppData and stats:: — the domain side of the two-pure-layers
+    // split. Time is a parameter throughout, per the nowProvider doctrine.
+
+    // The core promises in one scene: a past block, a current block, a future
+    // block, each labelled relative to `now`; tracked time carried per block;
+    // the day totals present.
+    void briefingLabelsBlocksRelativeToNow()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 19);
+        const QString past = data.addEvent(day, 540, 600, act);   // 9–10
+        data.addEvent(day, 660, 720, act);                        // 11–12
+        data.addEvent(day, 900, 960, act);                        // 15–16
+        data.appendSegment(past, makeSegment(SegmentKind::Focus,
+                                             QDateTime(day, QTime(9, 0)), 25));
+
+        const QDateTime now(day, QTime(11, 30)); // inside the middle block
+        const QString b = brief::dayBriefing(data, day, now);
+
+        QVERIFY(b.contains(QStringLiteral("2026-07-19")));
+        QVERIFY(b.contains(QStringLiteral("PLAN FOR TODAY (3 blocks)")));
+        QVERIFY(b.contains(QStringLiteral("09:00-10:00 Study [past]")));
+        QVERIFY(b.contains(QStringLiteral("11:00-12:00 Study [NOW]")));
+        QVERIFY(b.contains(QStringLiteral("15:00-16:00 Study [upcoming]")));
+        QVERIFY(b.contains(QStringLiteral("tracked 25m")));
+        QVERIFY(b.contains(QStringLiteral("25m focused")));
+        QVERIFY(b.contains(QStringLiteral("area: School")));
+        QVERIFY(b.contains(QStringLiteral("LIFE AREAS: School")));
+    }
+
+    // Rule 1 of the anti-hallucination list: an empty section SAYS SO.
+    // Silence invites the model to fill it.
+    void briefingStatesEmptinessOutLoud()
+    {
+        AppData data;
+        const QString b = brief::dayBriefing(data, QDate(2026, 7, 19),
+                                             QDateTime(QDate(2026, 7, 19),
+                                                       QTime(10, 0)));
+        QVERIFY(b.contains(QStringLiteral("nothing planned")));
+        QVERIFY(b.contains(QStringLiteral("nothing due in the next 7 days")));
+        // v28.10: tomorrow is a section now, and its emptiness is stated
+        // too — with "yet", because an unplanned tomorrow is normal, not
+        // a failure.
+        QVERIFY(b.contains(
+            QStringLiteral("PLAN FOR TOMORROW (2026-07-20): nothing "
+                           "planned yet")));
+    }
+
+    // ---- v28.10: the field-report fixes -----------------------------------
+    // Three facts the first real day of use proved the model cannot infer
+    // and must be TOLD: where the day stands, what tomorrow holds, and how
+    // the two tracked numbers relate. Each was a briefing-content gap, not
+    // a prompt problem — the context is the product.
+
+    // Field #3: mid-day, the phase is stated — remaining count and the
+    // day's last end — so "did my day end?" is a lookup, not arithmetic.
+    void briefingStatesDayPhaseWhileRunning()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 19);
+        data.addEvent(day, 540, 600, act);  // 9–10
+        data.addEvent(day, 660, 720, act);  // 11–12
+        data.addEvent(day, 900, 960, act);  // 15–16
+
+        const QString b = brief::dayBriefing(
+            data, day, QDateTime(day, QTime(11, 30)));
+
+        QVERIFY(b.contains(QStringLiteral(
+            "DAY STATUS: 2 of 3 planned blocks still ahead or running; "
+            "the last block ends at 16:00")));
+    }
+
+    // Field #3, the case that actually bit: evening, everything done —
+    // "the day is over" is a computed FACT, not something the model
+    // deduces from timestamps (§A: models have no clock).
+    void briefingStatesDayPhaseWhenOver()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 19);
+        data.addEvent(day, 540, 600, act);  // 9–10
+        data.addEvent(day, 900, 960, act);  // 15–16
+
+        const QString b = brief::dayBriefing(
+            data, day, QDateTime(day, QTime(22, 0)));
+
+        QVERIFY(b.contains(QStringLiteral(
+            "DAY STATUS: the planned day is OVER — the last block ended "
+            "at 16:00")));
+        // Field #4's companion: the totals line names its relationship to
+        // the per-block figures instead of leaving the model to reconcile
+        // two numbers by arithmetic.
+        QVERIFY(b.contains(QStringLiteral("TRACKED TODAY (day totals")));
+    }
+
+    // ---- v29.0: the write boundary (Slice 1, model-less) -------------------
+    // The §B machine, pinned before any model exists to drive it: closed
+    // per-role verbs, fail-safe handles, the additive gate, and the
+    // re-validate-at-tap rule. Every test here exercises the exact code
+    // path a model proposal will take in Slice 2 — the model becomes a new
+    // caller of an old, guarded pipeline.
+
+    // §B.4 made checkable: the whole allow-list in four asserts. If a verb
+    // is ever added to a phrasing role, this test is the tripwire.
+    void verbsAreScopedPerRole()
+    {
+        QCOMPARE(verbs::verbsFor(verbs::Role::Intake),
+                 QVector<verbs::Verb>{ verbs::Verb::SetTaskDetails });
+        QVERIFY(verbs::verbsFor(verbs::Role::Chat).isEmpty());
+        QVERIFY(verbs::verbsFor(verbs::Role::Nudge).isEmpty());
+        QVERIFY(verbs::verbsFor(verbs::Role::CheckIn).isEmpty());
+    }
+
+    // §B.2's promise, mechanically: real handles round-trip, a task seen
+    // twice keeps one handle, and every invention fails to "" — never to
+    // the wrong task.
+    void handleMapRoundTripsAndFailsSafe()
+    {
+        verbs::HandleMap map;
+        QCOMPARE(map.add(QStringLiteral("id-a")), QStringLiteral("T1"));
+        QCOMPARE(map.add(QStringLiteral("id-b")), QStringLiteral("T2"));
+        QCOMPARE(map.add(QStringLiteral("id-a")),
+                 QStringLiteral("T1")); // dedup: one task, one name
+
+        QCOMPARE(map.idFor(QStringLiteral("T2")), QStringLiteral("id-b"));
+        QVERIFY(map.idFor(QStringLiteral("T7")).isEmpty());  // invented
+        QVERIFY(map.idFor(QStringLiteral("T0")).isEmpty());  // off by one
+        QVERIFY(map.idFor(QStringLiteral("B1")).isEmpty());  // wrong kind
+        QVERIFY(map.idFor(QStringLiteral("T")).isEmpty());   // malformed
+        QVERIFY(map.idFor(QString()).isEmpty());             // empty
+    }
+
+    // The briefing prints what it registers: [T1] appears in the text, the
+    // out-map resolves it to the real id, the NEEDS DETAILS section lists
+    // exactly the unsized open tasks — and stays silent when there are
+    // none (the MOOD manners: an empty header invites speculation).
+    void briefingRegistersHandlesAndQueuesUnsized()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QDate today(2026, 7, 19);
+        const QString unsized = data.addTask("Lab 4", cat, today);
+        const QString sized   = data.addTask("Quiz prep", cat, today);
+        data.setTaskSize(sized, 90, true);
+
+        verbs::HandleMap handles;
+        const QString b =
+            brief::dayBriefing(data, today, QDateTime(today, QTime(10, 0)),
+                               brief::Options{}, &handles);
+
+        QVERIFY(b.contains(QStringLiteral("[T1]")));
+        QVERIFY(b.contains(
+            QStringLiteral("NEEDS DETAILS — captured but never sized (1)")));
+        // The queue names the unsized task and not the sized one; resolve
+        // the queue line's handle and it lands on the right task.
+        // Scope to THIS section only: the briefing continues after it
+        // (needs-a-block, mood…) and those sections legitimately name
+        // other tasks — "Quiz prep" appears later as needing a block,
+        // which is true and none of this test's business.
+        const int at  = b.indexOf(QStringLiteral("NEEDS DETAILS"));
+        const int end = b.indexOf(QStringLiteral("\n\n"), at);
+        const QString queue = b.mid(at, end > at ? end - at : -1);
+        QVERIFY(queue.contains(QStringLiteral("Lab 4")));
+        QVERIFY(!queue.contains(QStringLiteral("Quiz prep")));
+        QVERIFY(!handles.isEmpty());
+        bool resolved = false;
+        for (int i = 1; i <= handles.ids.size(); ++i)
+            if (handles.idFor(QStringLiteral("T%1").arg(i)) == unsized)
+                resolved = true;
+        QVERIFY(resolved);
+
+        // Size everything → the section vanishes entirely.
+        data.setTaskSize(unsized, 60, true);
+        const QString b2 =
+            brief::dayBriefing(data, today, QDateTime(today, QTime(10, 0)));
+        QVERIFY(!b2.contains(QStringLiteral("NEEDS DETAILS")));
+    }
+
+    // The gate, refusal by refusal — each with a reason a card can print.
+    void validateEnforcesTheBoundary()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QDate today(2026, 7, 19);
+        const QString open  = data.addTask("Lab 4", cat, today);
+        const QString shut  = data.addTask("Old one", cat, today);
+        data.setTaskDone(shut, true);
+
+        verbs::HandleMap handles;
+        const QString hOpen = handles.add(open);
+        const QString hShut = handles.add(shut);
+
+        verbs::Proposal p;
+        p.targetHandle    = hOpen;
+        p.estimateMinutes = 120;
+
+        // A phrasing role holding a perfectly valid proposal: still no.
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Nudge, p).ok);
+
+        // Intake may — this is the one allowed (role, verb) pair.
+        QVERIFY(verbs::validate(data, handles, verbs::Role::Intake, p).ok);
+
+        verbs::Proposal bad = p;
+        bad.targetHandle = QStringLiteral("T9"); // invented handle
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, bad).ok);
+
+        bad = p;
+        bad.targetHandle = hShut; // closed target: history, not a blank
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, bad).ok);
+
+        bad = p;
+        bad.estimateMinutes = 0; // nothing proposed at all
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, bad).ok);
+
+        // The additive rule: a filled field is not a blank.
+        data.setTaskSize(open, 60, true);
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, p).ok);
+    }
+
+    // apply() re-validates AT THE TAP and funnels through existing doors:
+    // the happy path fills both blanks (preserving chunkable), and a world
+    // that changed while the card sat there is refused, not overwritten.
+    void applyRevalidatesAndFillsBlanksOnly()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QDate today(2026, 7, 19);
+        const QString id = data.addTask("Lab 4", cat); // undated, unsized
+
+        verbs::HandleMap handles;
+        verbs::Proposal p;
+        p.targetHandle    = handles.add(id);
+        p.estimateMinutes = 150;
+        p.dueDate         = today.addDays(3);
+
+        // Preservation is the claim — whatever chunkable was, it stays.
+        // (Pinning the default's VALUE here would make this test break on
+        // an unrelated default change, which is a lie about what it
+        // defends.)
+        const bool wasChunkable = data.taskById(id)->chunkable;
+
+        QVERIFY(verbs::apply(data, handles, verbs::Role::Intake, p).ok);
+        const Task* t = data.taskById(id);
+        QCOMPARE(t->estimateMinutes, 150);
+        QCOMPARE(t->dueDate, today.addDays(3));
+        QCOMPARE(t->chunkable, wasChunkable); // preserved, not decided
+        QVERIFY(!t->dueTime.isValid()); // the proposal's honest grain
+
+        // The stale-card scene: owner fills a field by hand after the card
+        // rendered; the tap must refuse. (Fresh task, card composed, then
+        // the by-hand edit lands first.)
+        const QString id2 = data.addTask("Essay", cat);
+        verbs::Proposal p2;
+        p2.targetHandle    = handles.add(id2);
+        p2.estimateMinutes = 60;
+        QVERIFY(verbs::validate(data, handles, verbs::Role::Intake, p2).ok);
+        data.setTaskSize(id2, 45, true); // the world changes
+        const verbs::Verdict late =
+            verbs::apply(data, handles, verbs::Role::Intake, p2);
+        QVERIFY(!late.ok);
+        QCOMPARE(data.taskById(id2)->estimateMinutes, 45); // untouched
+    }
+
+    // ---- v29.1: the interview's brain (all C++) ----------------------------
+
+    // §K.3's guess: two finished samples minimum, the MEDIAN of tracked
+    // actuals, and a basis string that shows its work. One loud outlier
+    // must not become the guess — that is the median's whole job here.
+    void historyGuessTakesTheMedianAndShowsItsWork()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QDate day(2026, 7, 6);
+
+        // One finished task with tracked time: a story, not a pattern.
+        const QString t1 = data.addTask("Old lab", cat);
+        const QString e1 = data.addTaskEvent(day, 540, 700, t1);
+        data.appendSegment(e1, makeSegment(SegmentKind::Focus, kT0, 120));
+        data.setTaskDone(t1, true);
+
+        const QString probe = data.addTask("Lab 4", cat);
+        QVERIFY(!intake::historyGuess(data, *data.taskById(probe)).exists());
+
+        // A second sample and an outlier third: 120m, 90m, 600m → median
+        // 120m, and the basis names the area and the count.
+        const QString t2 = data.addTask("Old essay", cat);
+        const QString e2 = data.addTaskEvent(day.addDays(1), 540, 640, t2);
+        data.appendSegment(e2, makeSegment(SegmentKind::Focus, kT0, 90));
+        data.setTaskDone(t2, true);
+        const QString t3 = data.addTask("The disaster", cat);
+        const QString e3 = data.addTaskEvent(day.addDays(2), 480, 1120, t3);
+        data.appendSegment(e3, makeSegment(SegmentKind::Focus, kT0, 600));
+        data.setTaskDone(t3, true);
+
+        const intake::Guess g =
+            intake::historyGuess(data, *data.taskById(probe));
+        QCOMPARE(g.minutes, 120); // the median, not the disaster's mean
+        QVERIFY(g.basis.contains(QStringLiteral("3 finished School")));
+        QVERIFY(g.basis.contains(QStringLiteral("2h")));
+    }
+
+    // §K.6's gate, signal by signal — and the ask-once door in force.
+    void worthInterviewingTriagesOnSubstance()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Chores", QColor("#888888"));
+        const QDateTime now(QDate(2026, 7, 19), QTime(10, 0));
+
+        const QString milk = data.addTask("Buy milk", cat); // undated,
+                                                            // medium, no
+                                                            // history
+        QVERIFY(!intake::worthInterviewing(data, *data.taskById(milk), now));
+
+        const QString dated = data.addTask("Lab 4", cat, now.date().addDays(9));
+        QVERIFY(intake::worthInterviewing(data, *data.taskById(dated), now));
+
+        const QString urgent = data.addTask("Fix the leak", cat);
+        data.setTaskPriority(urgent, Task::Priority::Urgent);
+        QVERIFY(intake::worthInterviewing(data, *data.taskById(urgent), now));
+
+        // Sized → nothing left to ask.
+        data.setTaskSize(dated, 120, true);
+        QVERIFY(!intake::worthInterviewing(data, *data.taskById(dated), now));
+
+        // Skip = ask once: a live dismissal silences the interview, and a
+        // lapsed one does not (compared against now itself, no
+        // housekeeping required).
+        data.dismissTask(urgent, now.addDays(365));
+        QVERIFY(!intake::worthInterviewing(data, *data.taskById(urgent), now));
+        QVERIFY(intake::worthInterviewing(data, *data.taskById(urgent),
+                                          now.addDays(366)));
+    }
+
+    // §K.2 + §K.3: the question is C++, and it folds the guess in when
+    // one exists — a nod or a correction, never a blank page.
+    void questionFoldsTheGuessWhenHistoryExists()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString cold = data.addTask("Lab 4", cat);
+        const QString q1 = intake::questionFor(data, *data.taskById(cold));
+        QVERIFY(q1.contains(QStringLiteral("Lab 4")));
+        QVERIFY(q1.contains(QStringLiteral("how long")));
+        QVERIFY(!q1.contains(QStringLiteral("sound right")));
+
+        const QDate day(2026, 7, 6);
+        for (int i = 0; i < 2; ++i) {
+            const QString t = data.addTask(QString("Old %1").arg(i), cat);
+            const QString e = data.addTaskEvent(day.addDays(i), 540, 700, t);
+            data.appendSegment(e, makeSegment(SegmentKind::Focus, kT0, 120));
+            data.setTaskDone(t, true);
+        }
+        const QString q2 = intake::questionFor(data, *data.taskById(cold));
+        QVERIFY(q2.contains(QStringLiteral("sound right")));
+        QVERIFY(q2.contains(QStringLiteral("2h")));
+    }
+
+    // The crisp parser: everything it should read, and — more important —
+    // everything it must REFUSE, because a cheap parse that plucks
+    // numbers out of prose would pre-empt the model that understands it.
+    void durationParserReadsCrispAndRefusesProse()
+    {
+        QCOMPARE(intake::parseDurationAnswer("2h"), 120);
+        QCOMPARE(intake::parseDurationAnswer("90m"), 90);
+        QCOMPARE(intake::parseDurationAnswer("1h 30m"), 90);
+        QCOMPARE(intake::parseDurationAnswer("1h30"), 90);
+        QCOMPARE(intake::parseDurationAnswer("90 min"), 90);
+        QCOMPARE(intake::parseDurationAnswer("  2 Hours "), 120);
+        QCOMPARE(intake::parseDurationAnswer("90"), 90);
+
+        QCOMPARE(intake::parseDurationAnswer("probably 2h if Marc shows"), 0);
+        QCOMPARE(intake::parseDurationAnswer("two evenings"), 0);
+        QCOMPARE(intake::parseDurationAnswer("2024"), 0); // a year, not a span
+        QCOMPARE(intake::parseDurationAnswer("1.5h"), 0); // model's problem
+        QCOMPARE(intake::parseDurationAnswer(""), 0);
+        QCOMPARE(intake::parseDurationAnswer("0"), 0);
+    }
+
+    // Field #2: tomorrow's blocks enter the context — times, label, area,
+    // and the date stated in ISO in the header so "tomorrow" can be echoed
+    // back unambiguously. No [past]/[NOW] tags: a future block has no
+    // phase, and empty columns invite invention.
+    void briefingCarriesTomorrowsBlocks()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 19);
+        data.addEvent(day.addDays(1), 540, 630, act); // tomorrow 9–10:30
+
+        const QString b = brief::dayBriefing(
+            data, day, QDateTime(day, QTime(10, 0)));
+
+        QVERIFY(b.contains(
+            QStringLiteral("PLAN FOR TOMORROW (2026-07-20, 1 blocks)")));
+        QVERIFY(b.contains(QStringLiteral("09:00-10:30 Study, area: School")));
+        QVERIFY(!b.contains(QStringLiteral("09:00-10:30 Study [")));
+    }
+
+    // The partition reuses upcomingTasks(), so app and assistant can never
+    // disagree about what "upcoming" means; done tasks vanish, undated tasks
+    // become a count, and the horizon is honoured.
+    void briefingPartitionsTasksByUrgency()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QDate today(2026, 7, 19);
+        data.addTask("Old lab", cat, today.addDays(-2));
+        data.addTask("Quiz prep", cat, today);
+        data.addTask("Essay", cat, today.addDays(3));
+        // Sized on purpose (v29.0): this fixture isolates the URGENCY
+        // partition, and an unsized task now legitimately surfaces in the
+        // NEEDS DETAILS section regardless of horizon — the queue is
+        // about missing facts, not dates. Sizing it keeps "beyond the
+        // horizon means invisible" a true statement about the due
+        // sections, which is what this test defends.
+        const QString far =
+            data.addTask("Far away", cat, today.addDays(30)); // beyond horizon
+        data.setTaskSize(far, 120, true);
+        data.addTask("Someday", cat);                     // undated
+        const QString done = data.addTask("Done one", cat, today);
+        data.setTaskDone(done, true);
+
+        const QString b = brief::dayBriefing(
+            data, today, QDateTime(today, QTime(10, 0)));
+
+        QVERIFY(b.contains(QStringLiteral("OVERDUE (1)")));
+        QVERIFY(b.contains(QStringLiteral("Old lab")));
+        QVERIFY(b.contains(QStringLiteral("DUE TODAY (1)")));
+        QVERIFY(b.contains(QStringLiteral("Quiz prep (due today")));
+        QVERIFY(b.contains(QStringLiteral("DUE IN THE NEXT 7 DAYS (1)")));
+        QVERIFY(b.contains(QStringLiteral("Essay (due 2026-07-22")));
+        QVERIFY(!b.contains(QStringLiteral("Far away"))); // beyond horizon
+        QVERIFY(!b.contains(QStringLiteral("Done one"))); // finished = gone
+        QVERIFY(b.contains(
+            QStringLiteral("Plus 1 open task(s) with no date set")));
+    }
+
+    // Rule 2: a truncated list is VISIBLY truncated. Options is a parameter
+    // precisely so this can be proven with three tasks instead of eleven.
+    void briefingCapsAreStatedNotSilent()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QDate today(2026, 7, 19);
+        data.addTask("A", cat, today);
+        data.addTask("B", cat, today);
+        data.addTask("C", cat, today);
+
+        brief::Options opts;
+        opts.maxTasks = 2;
+        const QString b = brief::dayBriefing(
+            data, today, QDateTime(today, QTime(10, 0)), opts);
+
+        QVERIFY(b.contains(QStringLiteral("DUE TODAY (3)"))); // true count
+        QVERIFY(b.contains(QStringLiteral("(+1 more)")));     // honest cut
+    }
+
+    // Rule 3 and 4: no ids, no notes. The briefing is the FEATURE'S privacy
+    // page in executable form — if someone later leaks a description into
+    // it, this is the test that turns the leak into a red bar.
+    void briefingLeaksNoIdsAndNoDescriptions()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString id = data.addTask("Lab 4", cat, QDate(2026, 7, 20));
+        data.updateTask(id, "Lab 4", "SECRET private notes",
+                        QDate(2026, 7, 20), QTime(), Task::Repeat::None);
+
+        const QString b = brief::dayBriefing(
+            data, QDate(2026, 7, 19),
+            QDateTime(QDate(2026, 7, 19), QTime(10, 0)));
+
+        QVERIFY(b.contains(QStringLiteral("Lab 4")));
+        QVERIFY(!b.contains(id));                       // ids are plumbing
+        QVERIFY(!b.contains(QStringLiteral("SECRET"))); // notes stay home
+    }
+    // ======================================================================
+    // v26.2 — catch-up: missed blocks and the reschedule proposer
+    // ======================================================================
+    //
+    // The whole point of putting missed:: and reschedule:: in namespaces of
+    // pure functions is that these cases need no AppData, no widgets, no
+    // clock and no disk. Events are built inline as plain structs; `now` is
+    // an argument. Every case below runs in microseconds.
+
+    // A block is judged on FOCUS time, not on whether the timer was touched.
+    // Break and Distracted time are real, and deliberately don't count: a
+    // block full of procrastination must not pass as done.
+    void missedJudgesOnFocusTimeOnly()
+    {
+        const QDateTime now(QDate(2026, 7, 20), QTime(18, 0));
+        missed::Rule rule; // 50%, 7 days
+
+        Event e;
+        e.id = "e1";
+        e.date = QDate(2026, 7, 20);
+        e.plannedStartMinutes = 9 * 60;   // 09:00–10:30, 90 minutes
+        e.plannedEndMinutes   = 10 * 60 + 30;
+
+        // Nothing tracked at all.
+        QCOMPARE(missed::judge(e, rule, now).reason,
+                 missed::Reason::NeverStarted);
+
+        // An hour of BREAK is still nothing done.
+        e.segments.append(makeSegment(
+            SegmentKind::Break, QDateTime(QDate(2026, 7, 20), QTime(9, 0)), 60));
+        QCOMPARE(missed::judge(e, rule, now).reason,
+                 missed::Reason::NeverStarted);
+
+        // 30 minutes of focus out of 90 is 33% — under the bar.
+        e.segments.append(makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 20), QTime(9, 0)), 30));
+        const missed::Verdict partial = missed::judge(e, rule, now);
+        QCOMPARE(partial.reason, missed::Reason::Partial);
+        QCOMPARE(partial.percent(), 33);
+        QCOMPARE(partial.shortfallSeconds(), qint64(60 * 60)); // 60 min owed
+
+        // Another 20 gets it to 55% — over the bar, no longer a failure.
+        e.segments.append(makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 20), QTime(10, 0)), 20));
+        QCOMPARE(missed::judge(e, rule, now).reason, missed::Reason::None);
+    }
+
+    // Half-open windows, the same convention as Event::isLiveAt: at 10:30 a
+    // 9:00–10:30 block is over. One minute earlier it is still running and
+    // must never be called missed.
+    void missedNeverJudgesARunningBlock()
+    {
+        missed::Rule rule;
+        Event e;
+        e.date = QDate(2026, 7, 20);
+        e.plannedStartMinutes = 9 * 60;
+        e.plannedEndMinutes   = 10 * 60 + 30;
+
+        const QDateTime during(QDate(2026, 7, 20), QTime(10, 29));
+        const QDateTime after (QDate(2026, 7, 20), QTime(10, 30));
+
+        QVERIFY(!missed::hasEnded(e, during));
+        QCOMPARE(missed::judge(e, rule, during).reason, missed::Reason::None);
+        QVERIFY(missed::hasEnded(e, after));
+        QCOMPARE(missed::judge(e, rule, after).reason,
+                 missed::Reason::NeverStarted);
+    }
+
+    // The horizon is what stops a fortnight away turning into a wall of
+    // guilt nobody triages. The block still FAILED — judge() says so — it is
+    // just no longer surfaced.
+    void missedHorizonRetiresOldFailures()
+    {
+        const QDateTime now(QDate(2026, 7, 20), QTime(9, 0));
+        missed::Rule rule; // lookBackDays = 7
+
+        Event old;
+        old.date = QDate(2026, 7, 1);
+        old.plannedStartMinutes = 9 * 60;
+        old.plannedEndMinutes   = 10 * 60;
+
+        QCOMPARE(missed::judge(old, rule, now).reason,
+                 missed::Reason::NeverStarted);   // it did fail
+        QVERIFY(!missed::isUnresolved(old, rule, now)); // it is not our problem
+    }
+
+    // A stored decision removes the block from the surfaced set — but does
+    // NOT change the verdict. The two questions stay separable so the
+    // evening review can still say what happened.
+    void missedRespectsTheStoredDecision()
+    {
+        const QDateTime now(QDate(2026, 7, 20), QTime(18, 0));
+        missed::Rule rule;
+
+        Event e;
+        e.date = QDate(2026, 7, 20);
+        e.plannedStartMinutes = 9 * 60;
+        e.plannedEndMinutes   = 10 * 60;
+
+        QVERIFY(missed::isUnresolved(e, rule, now));
+
+        e.outcome = BlockOutcome::Dropped;
+        QVERIFY(!missed::isUnresolved(e, rule, now));
+        QCOMPARE(missed::judge(e, rule, now).reason,
+                 missed::Reason::NeverStarted); // unchanged: time is time
+    }
+
+    // The proposer prefers the block's original time of day. A 07:00 gym
+    // block must not be offered at 22:00 just because that gap was scanned.
+    void reschedulePrefersTheOriginalTimeOfDay()
+    {
+        reschedule::Context ctx;
+        ctx.now = QDateTime(QDate(2026, 7, 20), QTime(9, 0));
+        ctx.deadline = QDate(2026, 7, 22);
+        ctx.dayStartMinutes = 6 * 60;
+        ctx.dayEndMinutes   = 24 * 60;
+
+        Event block;
+        block.id = "gym";
+        block.date = QDate(2026, 7, 20);
+        block.plannedStartMinutes = 7 * 60;   // 07:00–08:00
+        block.plannedEndMinutes   = 8 * 60;
+
+        QVector<Event> events{block};
+        const missed::Verdict v = missed::judge(block, missed::Rule(), ctx.now);
+
+        const auto options = reschedule::propose(block, v, events, ctx);
+        QVERIFY(!options.isEmpty());
+        QCOMPARE(options.first().kind, reschedule::Kind::FreeSlot);
+
+        // Tomorrow is wide open, so the offer is tomorrow at the same hour —
+        // NOT today at 09:00, which is also free but a day earlier... and
+        // that is the deliberate ordering: earliest day wins first.
+        const reschedule::Piece p = options.first().pieces.first();
+        QCOMPARE(p.date, QDate(2026, 7, 20));  // today still has room
+        QCOMPARE(p.startMinutes, 9 * 60);      // 07:00 has passed; 09:00 is
+                                               // the closest legal start
+    }
+
+    // Today's remaining time starts at the next SLOT LINE, never "three
+    // minutes from now".
+    void rescheduleNeverProposesTheImmediatePast()
+    {
+        reschedule::Context ctx;
+        ctx.now = QDateTime(QDate(2026, 7, 20), QTime(9, 3));
+
+        const auto free = reschedule::freeOn(QDate(2026, 7, 20), {}, ctx);
+        QVERIFY(!free.isEmpty());
+        QCOMPARE(free.first().startMinutes, 9 * 60 + 30); // snapped up
+    }
+
+    // The quietly most valuable offer: a full week is almost never
+    // CONTIGUOUSLY full. Two 30-minute gaps cover a 60-minute debt.
+    void rescheduleSplitsAcrossFragments()
+    {
+        reschedule::Context ctx;
+        ctx.now = QDateTime(QDate(2026, 7, 20), QTime(6, 0));
+        ctx.deadline = QDate(2026, 7, 20);
+        ctx.dayStartMinutes = 9 * 60;
+        ctx.dayEndMinutes   = 12 * 60;   // a three-hour working day
+
+        Event block;
+        block.id = "study";
+        block.date = QDate(2026, 7, 19);      // yesterday, 60 minutes missed
+        block.plannedStartMinutes = 9 * 60;
+        block.plannedEndMinutes   = 10 * 60;
+
+        // Today: 09:00-09:30 free, 09:30-11:00 busy, 11:00-11:30 free,
+        // 11:30-12:00 busy. Two 30-minute gaps, nothing bigger.
+        Event a; a.id = "a"; a.date = QDate(2026, 7, 20);
+        a.plannedStartMinutes = 9 * 60 + 30; a.plannedEndMinutes = 11 * 60;
+        Event b; b.id = "b"; b.date = QDate(2026, 7, 20);
+        b.plannedStartMinutes = 11 * 60 + 30; b.plannedEndMinutes = 12 * 60;
+
+        QVector<Event> events{block, a, b};
+        const missed::Verdict v = missed::judge(block, missed::Rule(), ctx.now);
+
+        const auto options = reschedule::propose(block, v, events, ctx);
+        QVERIFY(!options.isEmpty());
+        QCOMPARE(options.first().kind, reschedule::Kind::Split);
+        QCOMPARE(options.first().pieces.size(), 2);
+        QCOMPARE(options.first().recoveredSeconds, qint64(60 * 60));
+        QVERIFY(options.first().isComplete(v.shortfallSeconds()));
+    }
+
+    // A partial block owes only its REMAINDER. Re-offering the full duration
+    // would double-book time the user has already spent.
+    void rescheduleOnlyOwesTheShortfall()
+    {
+        reschedule::Context ctx;
+        ctx.now = QDateTime(QDate(2026, 7, 20), QTime(6, 0));
+
+        Event block;
+        block.id = "lab";
+        block.date = QDate(2026, 7, 19);
+        block.plannedStartMinutes = 9 * 60;      // 90 minutes planned
+        block.plannedEndMinutes   = 10 * 60 + 30;
+        block.segments.append(makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 19), QTime(9, 0)), 30));
+
+        const missed::Verdict v = missed::judge(block, missed::Rule(), ctx.now);
+        QCOMPARE(v.reason, missed::Reason::Partial);
+
+        const auto options = reschedule::propose(block, v, {block}, ctx);
+        QVERIFY(!options.isEmpty());
+        const reschedule::Piece p = options.first().pieces.first();
+        QCOMPARE(p.endMinutes - p.startMinutes, 60); // the 60 still owed
+    }
+
+    // When the week is genuinely full, the honest answer is a short list of
+    // things to give up — never a silently crammed block.
+    void rescheduleOffersBumpCandidatesWhenFull()
+    {
+        reschedule::Context ctx;
+        ctx.now = QDateTime(QDate(2026, 7, 20), QTime(6, 0));
+        ctx.deadline = QDate(2026, 7, 20);
+        ctx.dayStartMinutes = 9 * 60;
+        ctx.dayEndMinutes   = 11 * 60;   // a two-hour day, wall to wall
+
+        Event block;
+        block.id = "study";
+        block.date = QDate(2026, 7, 19);
+        block.plannedStartMinutes = 9 * 60;
+        block.plannedEndMinutes   = 10 * 60;
+
+        Event full; full.id = "meeting"; full.date = QDate(2026, 7, 20);
+        full.plannedStartMinutes = 9 * 60; full.plannedEndMinutes = 11 * 60;
+
+        QVector<Event> events{block, full};
+        const missed::Verdict v = missed::judge(block, missed::Rule(), ctx.now);
+
+        const auto options = reschedule::propose(block, v, events, ctx);
+        QVERIFY(!options.isEmpty());
+        QCOMPARE(options.first().kind, reschedule::Kind::Bump);
+        QCOMPARE(options.first().bumpEventId, QStringLiteral("meeting"));
+    }
+
+    // A block someone has already worked is not a bump candidate: taking a
+    // slot you are halfway through is a loss, not a swap.
+    //
+    // With every rung of the ladder exhausted — no gap, no fragments, no
+    // bumpable block, and nothing free past the deadline either — the list
+    // comes back EMPTY. That is a real answer this module is allowed to
+    // give, and the surface is expected to say so plainly rather than invent
+    // a placement.
+    void rescheduleRefusesToBumpWorkedTimeAndAdmitsDefeat()
+    {
+        reschedule::Context ctx;
+        ctx.now = QDateTime(QDate(2026, 7, 20), QTime(6, 0));
+        ctx.deadline = QDate(2026, 7, 20);
+        ctx.dayStartMinutes = 9 * 60;
+        ctx.dayEndMinutes   = 11 * 60;
+        ctx.horizonDays     = 1;   // look exactly one day past the deadline
+
+        Event block;
+        block.id = "study";
+        block.date = QDate(2026, 7, 19);
+        block.plannedStartMinutes = 9 * 60;
+        block.plannedEndMinutes   = 10 * 60;
+
+        // Today: full, and already worked, so not bumpable.
+        Event worked; worked.id = "worked"; worked.date = QDate(2026, 7, 20);
+        worked.plannedStartMinutes = 9 * 60; worked.plannedEndMinutes = 11 * 60;
+        worked.segments.append(makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 20), QTime(9, 0)), 20));
+
+        // Tomorrow: full too, so there is no slip-the-deadline offer either.
+        Event next; next.id = "next"; next.date = QDate(2026, 7, 21);
+        next.plannedStartMinutes = 9 * 60; next.plannedEndMinutes = 11 * 60;
+
+        const missed::Verdict v = missed::judge(block, missed::Rule(), ctx.now);
+        const auto options =
+            reschedule::propose(block, v, {block, worked, next}, ctx);
+        QVERIFY(options.isEmpty());
+    }
+
+    // The deadline is sometimes the wrong constraint — but only say so when
+    // there is genuinely room on the other side of it.
+    void rescheduleOffersToSlipTheDeadlineWhenRoomExistsBeyondIt()
+    {
+        reschedule::Context ctx;
+        ctx.now = QDateTime(QDate(2026, 7, 20), QTime(6, 0));
+        ctx.deadline = QDate(2026, 7, 20);
+        ctx.dayStartMinutes = 9 * 60;
+        ctx.dayEndMinutes   = 11 * 60;
+        ctx.horizonDays = 7;
+
+        Event block;
+        block.id = "study";
+        block.date = QDate(2026, 7, 19);
+        block.plannedStartMinutes = 9 * 60;
+        block.plannedEndMinutes   = 10 * 60;
+
+        // Today is wall-to-wall AND already worked, so no free slot, no
+        // bump. Tomorrow (past the deadline) is empty.
+        Event full; full.id = "meeting"; full.date = QDate(2026, 7, 20);
+        full.plannedStartMinutes = 9 * 60; full.plannedEndMinutes = 11 * 60;
+        full.segments.append(makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 20), QTime(9, 0)), 30));
+
+        const missed::Verdict v = missed::judge(block, missed::Rule(), ctx.now);
+        const auto options = reschedule::propose(block, v, {block, full}, ctx);
+
+        QVERIFY(!options.isEmpty());
+        QCOMPARE(options.last().kind, reschedule::Kind::BeyondDeadline);
+        QCOMPARE(options.last().pieces.first().date, QDate(2026, 7, 21));
+    }
+
+    // ---- the doors ---------------------------------------------------------
+
+    // rescheduleBlock copies IDENTITY, never segments — time you spent
+    // belongs to the day you spent it — and links the two blocks one way.
+    void rescheduleBlockCopiesIdentityNotHistory()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "chapter 4");
+        QVERIFY(!oldId.isEmpty());
+        data.appendSegment(oldId, makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 19), QTime(9, 0)), 10));
+        data.setEventNote(oldId, "was too tired");
+
+        const QString newId =
+            data.rescheduleBlock(oldId, QDate(2026, 7, 21), 9 * 60, 10 * 60);
+        QVERIFY(!newId.isEmpty());
+
+        const Event* fresh = data.eventById(newId);
+        const Event* old   = data.eventById(oldId);
+        QVERIFY(fresh && old);
+
+        QCOMPARE(fresh->activityId, act);
+        QCOMPARE(fresh->title, QStringLiteral("chapter 4"));
+        QCOMPARE(fresh->note, QStringLiteral("was too tired"));
+        QVERIFY(fresh->segments.isEmpty());        // history does not travel
+        QCOMPARE(fresh->outcome, BlockOutcome::Unset);
+
+        QCOMPARE(old->outcome, BlockOutcome::Moved);
+        QCOMPARE(old->movedToId, newId);
+        QCOMPARE(old->segments.size(), 1);         // the old day keeps its 10 min
+    }
+
+    // The slot has to be free. Declining beats forcing — the same contract
+    // as the three addEvent doors.
+    void rescheduleBlockDeclinesAnOccupiedSlot()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+        data.addEvent(QDate(2026, 7, 21), 9 * 60, 10 * 60, act, "taken");
+
+        QVERIFY(data.rescheduleBlock(oldId, QDate(2026, 7, 21),
+                                     9 * 60, 10 * 60).isEmpty());
+        QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Unset);
+    }
+
+    // Moved is earned, not asserted: allowing it here would permit an
+    // outcome of Moved with a movedToId pointing at nothing.
+    void resolveBlockRefusesToFakeAMove()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString id =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+
+        QVERIFY(!data.resolveBlock(id, BlockOutcome::Moved));
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Unset);
+
+        QVERIFY(data.resolveBlock(id, BlockOutcome::Dropped));
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Dropped);
+    }
+
+    // The scariest path, as always: does it survive disk?
+    void catchUpVerdictsSurviveTheRoundTrip()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("data.json");
+
+        QString newId;
+        QString oldId;
+        {
+            AppData data;
+            const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+            const QString act = data.addActivity("Study", cat);
+            oldId = data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+            newId = data.rescheduleBlock(oldId, QDate(2026, 7, 21),
+                                         9 * 60, 10 * 60);
+            QVERIFY(!newId.isEmpty());
+            QVERIFY(JsonStore(path).save(data));
+        }
+
+        AppData loaded;
+        QVERIFY(JsonStore(path).load(loaded));
+        const Event* old = loaded.eventById(oldId);
+        QVERIFY(old);
+        QCOMPARE(old->outcome, BlockOutcome::Moved);
+        QCOMPARE(old->movedToId, newId);
+        QCOMPARE(loaded.eventById(newId)->outcome, BlockOutcome::Unset);
+    }
+
+    // The split door is all-or-nothing: every span validated before anything
+    // is appended, including spans against EACH OTHER — isFree can't see
+    // siblings that don't exist yet.
+    void rescheduleBlockSplitIsAllOrNothing()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60 + 30, act, "");
+
+        // Two colliding spans on the same day: refused whole, nothing
+        // appended, source untouched.
+        {
+            QVector<AppData::BlockSpan> bad{
+                {QDate(2026, 7, 21), 9 * 60, 10 * 60},
+                {QDate(2026, 7, 21), 9 * 60 + 30, 10 * 60 + 30}, // overlaps
+            };
+            QVERIFY(data.rescheduleBlockSplit(oldId, bad).isEmpty());
+            QCOMPARE(data.events().size(), 1);
+            QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Unset);
+        }
+
+        // A legal split: two pieces, source Moved, forward pointer at the
+        // FIRST piece (one link by design — §H).
+        QVector<AppData::BlockSpan> good{
+            {QDate(2026, 7, 21), 9 * 60, 10 * 60},
+            {QDate(2026, 7, 22), 9 * 60, 9 * 60 + 30},
+        };
+        const QString firstId = data.rescheduleBlockSplit(oldId, good);
+        QVERIFY(!firstId.isEmpty());
+        QCOMPARE(data.events().size(), 3);
+        QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Moved);
+        QCOMPARE(data.eventById(oldId)->movedToId, firstId);
+        QCOMPARE(data.eventById(firstId)->date, QDate(2026, 7, 21));
+    }
+
+    // The bulk door: one decision, one changed(), stale ids skipped.
+    void resolveBlocksIsOneEmissionAndSkipsStaleIds()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString a =
+            data.addEvent(QDate(2026, 7, 18), 9 * 60, 10 * 60, act, "");
+        const QString b =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+
+        int emissions = 0;
+        QObject::connect(&data, &AppData::changed,
+                         [&emissions]() { ++emissions; });
+
+        // Two real ids, one stale: the stale one is skipped, the batch
+        // lands, and the whole thing costs ONE changed().
+        QCOMPARE(data.resolveBlocks({a, b, QStringLiteral("ghost")},
+                                    BlockOutcome::Dropped),
+                 2);
+        QCOMPARE(emissions, 1);
+        QCOMPARE(data.eventById(a)->outcome, BlockOutcome::Dropped);
+        QCOMPARE(data.eventById(b)->outcome, BlockOutcome::Dropped);
+
+        // Moved refused wholesale, nothing emitted, nothing changed.
+        QCOMPARE(data.resolveBlocks({a, b}, BlockOutcome::Moved), 0);
+        QCOMPARE(emissions, 1);
+
+        // A no-op batch (already Dropped) emits nothing: changed() means
+        // changed.
+        QCOMPARE(data.resolveBlocks({a, b}, BlockOutcome::Dropped), 0);
+        QCOMPARE(emissions, 1);
+
+        // Unset is a legal destination — it is what Undo replays — and it
+        // brings the blocks back under missed::'s eye: the judgement was
+        // never stored, so un-deciding is one field write, not a repair.
+        QCOMPARE(data.resolveBlocks({a, b}, BlockOutcome::Unset), 2);
+        QCOMPARE(data.eventById(a)->outcome, BlockOutcome::Unset);
+        QVERIFY(missed::isUnresolved(*data.eventById(a), missed::Rule(),
+                                     QDateTime(QDate(2026, 7, 20),
+                                               QTime(8, 0))));
+    }
+
+    // The briefing names the gap between plan and reality — and stops
+    // naming a block the moment a decision lands on it.
+    void briefingReportsUnresolvedBlocksUntilDecided()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString id =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+
+        const QDateTime now(QDate(2026, 7, 20), QTime(8, 0));
+        const QString before = brief::dayBriefing(data, now.date(), now);
+        QVERIFY(before.contains(QStringLiteral("UNRESOLVED BLOCKS (1)")));
+        QVERIFY(before.contains(QStringLiteral("never started")));
+
+        QVERIFY(data.resolveBlock(id, BlockOutcome::Dropped));
+        const QString after = brief::dayBriefing(data, now.date(), now);
+        QVERIFY(!after.contains(QStringLiteral("UNRESOLVED")));
+    }
+
+    // ---- v28.0: affordability (assistant addendum §H) ----------------------
+    // All pure: afford::affordability and afford::decide take the clock as
+    // a parameter, so every rule below is pinned without a timer, a toast,
+    // or QSettings. The fixture convention: "now" is Wed 2026-07-01 10:00,
+    // deadlines land on nearby dates, and every block is placed explicitly
+    // — a test that straddles a default is a test OF the default (the
+    // lookBackDays lesson, V170), so nothing here leans on one.
+
+    void affordabilityIsNotApplicableWithoutADeadline()
+    {
+        AppData data;
+        const QString cat  = data.addCategory("School", "#2F7E6E");
+        const QString id   = data.addTask("Sketchbook", cat); // no due date
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const Task* t = data.taskById(id);
+        QVERIFY(t);
+        QCOMPARE(afford::affordability(data, *t, now).verdict,
+                 afford::Verdict::NotApplicable);
+        // ...and NotApplicable produces no sentence: nothing to say.
+        QVERIFY(afford::sentence(afford::affordability(data, *t, now))
+                    .isEmpty());
+    }
+
+    void affordabilityIsUnknownWhenNoBlocksWereEverPlanned()
+    {
+        // §H.3 — the honest hand: a deadline and tracked-nothing, but the
+        // app was never told the plan, so it must say "can't tell", not
+        // perform a guess.
+        AppData data;
+        const QString cat = data.addCategory("School", "#2F7E6E");
+        const QString id  = data.addTask("Lab 4", cat, QDate(2026, 7, 3));
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(id), now);
+        QCOMPARE(r.verdict, afford::Verdict::Unknown);
+        QVERIFY(afford::sentence(r).contains(
+            QStringLiteral("can't tell")));
+    }
+
+    void affordabilityComfortableWhenThePlanFitsTheRoom()
+    {
+        // 2h planned tomorrow, deadline Saturday, calendar otherwise
+        // empty: outstanding (120) is far under scheduled+free capacity.
+        AppData data;
+        const QString cat = data.addCategory("School", "#2F7E6E");
+        const QString id  = data.addTask("Lab 4", cat, QDate(2026, 7, 4));
+        QVERIFY(!data.addTaskEvent(QDate(2026, 7, 2), 540, 660, id)
+                     .isEmpty());
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(id), now);
+        QCOMPARE(r.verdict, afford::Verdict::Comfortable);
+        QCOMPARE(r.minutesPlannedAll, 120);
+        QCOMPARE(r.minutesPlannedAhead, 120);
+        QCOMPARE(r.minutesOutstanding, 120);
+    }
+
+    void affordabilityTightWhenOutstandingExceedsCapacity()
+    {
+        // The cramped rule in isolation: a huge owed plan, a calendar so
+        // full that free daytime cannot absorb it. Due tomorrow; today
+        // 10:00→22:00 and all of tomorrow are walled off with other work,
+        // and the task's own remaining block is 1h against 9h owed.
+        AppData data;
+        const QString cat = data.addCategory("School", "#2F7E6E");
+        const QString act = data.addActivity("Job", cat);
+        const QString id  = data.addTask("Lab 4", cat, QDate(2026, 7, 2));
+        // The task's plan: 10h total, of which 9h already elapsed
+        // (yesterday) with NOTHING tracked — and 1h still ahead.
+        QVERIFY(!data.addTaskEvent(QDate(2026, 6, 30), 600, 1140, id)
+                     .isEmpty()); // 9h yesterday, skipped
+        QVERIFY(!data.addTaskEvent(QDate(2026, 7, 2), 540, 600, id)
+                     .isEmpty()); // 1h tomorrow morning
+        // Wall off the rest of both days with unrelated blocks.
+        QVERIFY(!data.addEvent(QDate(2026, 7, 1), 600, 1320, act)
+                     .isEmpty()); // today 10:00–22:00
+        QVERIFY(!data.addEvent(QDate(2026, 7, 2), 360, 540, act)
+                     .isEmpty()); // tomorrow 06:00–09:00
+        QVERIFY(!data.addEvent(QDate(2026, 7, 2), 600, 1320, act)
+                     .isEmpty()); // tomorrow 10:00–22:00
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(id), now);
+        QCOMPARE(r.verdict, afford::Verdict::Tight);
+        QCOMPARE(r.minutesOutstanding, 600);      // 10h planned, 0 tracked
+        QCOMPARE(r.minutesPlannedAhead, 60);
+        QCOMPARE(r.minutesFreeAhead, 0);          // both days are walls
+    }
+
+    void affordabilityTightOnTheLastDayWithWorkOutstanding()
+    {
+        // lastDays rule: anything still owed with the deadline ≤1 day out
+        // is Tight even when the free calendar could technically absorb
+        // it — "you have all of today" is exactly when a secretary speaks.
+        AppData data;
+        const QString cat = data.addCategory("School", "#2F7E6E");
+        const QString id  = data.addTask("Lab 4", cat, QDate(2026, 7, 2));
+        QVERIFY(!data.addTaskEvent(QDate(2026, 7, 1), 720, 840, id)
+                     .isEmpty()); // 2h today at noon, not yet started
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(id), now);
+        QCOMPARE(r.daysLeft, 1);
+        QCOMPARE(r.verdict, afford::Verdict::Tight);
+    }
+
+    void affordabilityBehindOwnPlanTripsOnlyNearTheDeadline()
+    {
+        // The slipping rule needs BOTH halves: skipped past blocks alone,
+        // with the deadline far away, stays Comfortable — being behind on
+        // Monday for a due-in-two-weeks task is a Tuesday problem, not a
+        // toast.
+        AppData data;
+        const QString cat = data.addCategory("School", "#2F7E6E");
+        const QString id  = data.addTask("Essay", cat, QDate(2026, 7, 14));
+        QVERIFY(!data.addTaskEvent(QDate(2026, 6, 29), 540, 660, id)
+                     .isEmpty()); // 2h two days ago, skipped entirely
+        QVERIFY(!data.addTaskEvent(QDate(2026, 7, 10), 540, 660, id)
+                     .isEmpty()); // 2h planned ahead
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const afford::Report far =
+            afford::affordability(data, *data.taskById(id), now);
+        QVERIFY(far.behindOwnPlan);
+        QCOMPARE(far.verdict, afford::Verdict::Comfortable);
+
+        // Same shape, deadline in 2 days → the same "behind" now bites.
+        AppData near;
+        const QString cat2 = near.addCategory("School", "#2F7E6E");
+        const QString id2  = near.addTask("Essay", cat2, QDate(2026, 7, 3));
+        QVERIFY(!near.addTaskEvent(QDate(2026, 6, 29), 540, 660, id2)
+                     .isEmpty());
+        QVERIFY(!near.addTaskEvent(QDate(2026, 7, 2), 540, 660, id2)
+                     .isEmpty());
+        const afford::Report close =
+            afford::affordability(near, *near.taskById(id2), now);
+        QVERIFY(close.behindOwnPlan);
+        QCOMPARE(close.verdict, afford::Verdict::Tight);
+    }
+
+    void affordabilityTrackedFocusPaysDownThePlan()
+    {
+        // The proxy is planned − TRACKED: focus segments on the task's own
+        // block reduce what is outstanding. 2h planned yesterday, 90min of
+        // focus actually tracked → 30min owed, deadline far → Comfortable,
+        // and behindOwnPlan is false (90 ≥ 0.5 × 120).
+        AppData data;
+        const QString cat = data.addCategory("School", "#2F7E6E");
+        const QString id  = data.addTask("Lab 4", cat, QDate(2026, 7, 6));
+        const QString ev =
+            data.addTaskEvent(QDate(2026, 6, 30), 540, 660, id);
+        QVERIFY(!ev.isEmpty());
+        data.appendSegment(
+            ev, makeSegment(SegmentKind::Focus,
+                            QDateTime(QDate(2026, 6, 30), QTime(9, 0)),
+                            90));
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(id), now);
+        QCOMPARE(r.minutesTracked, 90);
+        QCOMPARE(r.minutesOutstanding, 30);
+        QVERIFY(!r.behindOwnPlan);
+        QCOMPARE(r.verdict, afford::Verdict::Comfortable);
+        QCOMPARE(r.distinctDaysWorked, 1);
+    }
+
+    // ---- the manners gate (§F.3): each rule in isolation -------------------
+
+    void nudgeSpeaksOnlyOnAChangeOfVerdict()
+    {
+        // Tight→Tight is nagging; Comfortable→Tight is news. Same report,
+        // only lastSpoken differs.
+        Task t;
+        t.id = "t1"; t.title = "Lab 4"; t.dueDate = QDate(2026, 7, 2);
+        afford::Report r;
+        r.verdict = afford::Verdict::Tight;
+        r.minutesTracked = 60; r.daysLeft = 1;
+        r.minutesOutstanding = 120; r.minutesFreeAhead = 60;
+        const QDateTime day(QDate(2026, 7, 1), QTime(14, 0));
+
+        const afford::Nudge fresh = afford::decide(
+            r, t, afford::Verdict::Comfortable, 0, day);
+        QVERIFY(fresh.speak);
+        QVERIFY(fresh.title.contains(QStringLiteral("Lab 4")));
+        QVERIFY(!fresh.body.isEmpty());
+
+        const afford::Nudge repeat = afford::decide(
+            r, t, afford::Verdict::Tight, 0, day);
+        QVERIFY(!repeat.speak);
+    }
+
+    void nudgeRespectsQuietHoursIncludingTheMidnightWrap()
+    {
+        Task t;
+        t.id = "t1"; t.title = "Lab 4"; t.dueDate = QDate(2026, 7, 2);
+        afford::Report r; r.verdict = afford::Verdict::Tight;
+        const auto last = afford::Verdict::Comfortable;
+        // 23:40 — inside the wrap-around band.
+        QVERIFY(!afford::decide(r, t, last, 0,
+                                QDateTime(QDate(2026, 7, 1),
+                                          QTime(23, 40))).speak);
+        // 07:30 — still inside (before quietEnd 08:00).
+        QVERIFY(!afford::decide(r, t, last, 0,
+                                QDateTime(QDate(2026, 7, 1),
+                                          QTime(7, 30))).speak);
+        // 08:00 sharp — the band is [start, end): morning speech resumes.
+        QVERIFY(afford::decide(r, t, last, 0,
+                               QDateTime(QDate(2026, 7, 1),
+                                         QTime(8, 0))).speak);
+    }
+
+    void nudgeHonoursTheDailyCapAndTheDismissal()
+    {
+        Task t;
+        t.id = "t1"; t.title = "Lab 4"; t.dueDate = QDate(2026, 7, 2);
+        afford::Report r; r.verdict = afford::Verdict::Tight;
+        const QDateTime day(QDate(2026, 7, 1), QTime(14, 0));
+        const auto last = afford::Verdict::Comfortable;
+
+        QVERIFY(afford::decide(r, t, last, 2, day).speak);  // under cap (3)
+        QVERIFY(!afford::decide(r, t, last, 3, day).speak); // at cap
+
+        // §H.5 — a dismissed task said "not now"; the nudge must not make
+        // the snooze a lie.
+        t.dismissedUntil = QDateTime(QDate(2026, 7, 1), QTime(18, 0));
+        QVERIFY(!afford::decide(r, t, last, 0, day).speak);
+        // ...and it speaks again once the snooze lapses.
+        QVERIFY(afford::decide(r, t, last, 0,
+                               QDateTime(QDate(2026, 7, 1),
+                                         QTime(18, 1))).speak);
+    }
+
+    void nudgeStaysSilentForComfortableAndUnknown()
+    {
+        // Volunteer-mode (§O.1) volunteers NEWS OF TROUBLE only. Unknown's
+        // honest sentence exists — the chat can serve it — but it is not
+        // worth an interruption; "I don't know" as a toast is noise.
+        Task t;
+        t.id = "t1"; t.title = "Lab 4"; t.dueDate = QDate(2026, 7, 5);
+        const QDateTime day(QDate(2026, 7, 1), QTime(14, 0));
+        afford::Report r;
+        r.verdict = afford::Verdict::Comfortable;
+        QVERIFY(!afford::decide(r, t, afford::Verdict::Tight, 0, day)
+                     .speak);
+        r.verdict = afford::Verdict::Unknown;
+        QVERIFY(!afford::decide(r, t, afford::Verdict::Comfortable, 0, day)
+                     .speak);
+    }
+
+    // ---- v28.1: the model's half, pure (NudgePhrasing.h) -------------------
+
+    void nudgePromptCarriesTheRulesAboveTheStyle()
+    {
+        const QString bare = nudge::systemPrompt(QString());
+        QVERIFY(bare.contains(QStringLiteral("Inform, never forbid")));
+        QVERIFY(bare.contains(QStringLiteral("Never shame")));
+        QVERIFY(!bare.contains(QStringLiteral("STYLE"))); // empty band,
+                                                          // no empty header
+        const QString styled =
+            nudge::systemPrompt(QStringLiteral("Be brisk."));
+        QVERIFY(styled.contains(QStringLiteral("Be brisk.")));
+        // Order is the contract: the locked rules must come BEFORE the
+        // style band, because the prompt says the earlier section wins.
+        QVERIFY(styled.indexOf(QStringLiteral("RULES"))
+                < styled.indexOf(QStringLiteral("STYLE")));
+    }
+
+    void nudgeUserMessageStatesTheNumbersItWasGiven()
+    {
+        afford::Report r;
+        r.verdict = afford::Verdict::Tight;
+        r.daysLeft = 1; r.minutesTracked = 130;
+        r.minutesOutstanding = 180;
+        r.minutesPlannedAhead = 60; r.minutesFreeAhead = 60;
+        r.distinctDaysWorked = 5;
+        const QString msg =
+            nudge::userMessage(r, QStringLiteral("Lab 4"));
+        QVERIFY(msg.contains(QStringLiteral("Lab 4")));
+        QVERIFY(msg.contains(QStringLiteral("due tomorrow")));
+        QVERIFY(msg.contains(QStringLiteral("2h10")));  // tracked
+        QVERIFY(msg.contains(QStringLiteral("3h")));    // outstanding
+        QVERIFY(msg.contains(QStringLiteral("2h")));    // room
+        QVERIFY(msg.contains(QStringLiteral("5")));     // days worked
+    }
+
+    void nudgeAcceptGateCleansShapeAndRejectsEssays()
+    {
+        // Markdown and whitespace are cleaned, not punished...
+        QCOMPARE(nudge::accept(QStringLiteral(
+                     "  **Heads up!**\nLab 4 is `tight`.  ")),
+                 QStringLiteral("Heads up! Lab 4 is tight."));
+        // ...emptiness and essays are rejected — the fallback sentence is
+        // a better answer than a truncated one.
+        QVERIFY(nudge::accept(QStringLiteral("   \n  ")).isEmpty());
+        QVERIFY(nudge::accept(QString(300, QLatin1Char('x'))).isEmpty());
+        // Exactly at the cap passes: the limit is a limit, not a vibe.
+        QVERIFY(!nudge::accept(QString(nudge::kMaxChars,
+                                       QLatin1Char('x'))).isEmpty());
+    }
+
+    void briefingCarriesTheAffordabilityVerdicts()
+    {
+        // The ask-side: the chat's context now contains the same computed
+        // verdict the toast volunteers — TIGHT with its numbers, and the
+        // honest UNKNOWN.
+        AppData data;
+        const QString cat = data.addCategory("School", "#2F7E6E");
+        const QString tight =
+            data.addTask("Lab 4", cat, QDate(2026, 7, 2));
+        QVERIFY(!data.addTaskEvent(QDate(2026, 7, 1), 720, 840, tight)
+                     .isEmpty()); // 2h today, unstarted, due tomorrow
+        const QString unknown =
+            data.addTask("Essay", cat, QDate(2026, 7, 3)); // no blocks
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const QString brief =
+            brief::dayBriefing(data, now.date(), now);
+        QVERIFY(brief.contains(QStringLiteral("DEADLINE PRESSURE")));
+        QVERIFY(brief.contains(QStringLiteral("Lab 4: TIGHT")));
+        QVERIFY(brief.contains(QStringLiteral("Essay: UNKNOWN")));
+        Q_UNUSED(unknown);
+    }
+
+    // ---- v28.2 part 1: mood + the check-in gate (roadmap §G) ---------------
+
+    void moodUpsertsByDateAndRoundTripsThroughV12()
+    {
+        AppData data;
+        data.recordMood(QDate(2026, 7, 1), Mood::Level::Rough,
+                        QStringLiteral("slept badly"));
+        data.recordMood(QDate(2026, 7, 1), Mood::Level::Okay); // re-answer
+        QCOMPARE(data.moods().size(), 1); // upsert, not append
+        QCOMPARE(data.moodOn(QDate(2026, 7, 1))->level, Mood::Level::Okay);
+        QVERIFY(data.moodOn(QDate(2026, 7, 1))->note.isEmpty());
+
+        data.recordMood(QDate(2026, 7, 2), Mood::Level::Good,
+                        QStringLiteral("ça va bien"));
+        const QJsonObject root = JsonStore::toJsonObject(data);
+        // This pin is the FORMAT-VERSION TRIPWIRE: it names the current
+        // format and must be bumped in the same drop as JsonStore's
+        // literal. v28.3.0 bumped the format to 13 (subtasks) and missed
+        // this line — the suite's first real run caught it, which is the
+        // tripwire working, one drop late. Moods still round-trip below
+        // regardless of the number; the number is its own test.
+        QCOMPARE(root["version"].toInt(), 13);
+
+        AppData back;
+        QVERIFY(JsonStore::applyJsonObject(back, root, false));
+        QCOMPARE(back.moods().size(), 2);
+        QCOMPARE(back.moodOn(QDate(2026, 7, 2))->level, Mood::Level::Good);
+        QCOMPARE(back.moodOn(QDate(2026, 7, 2))->note,
+                 QStringLiteral("ça va bien")); // notes persist — for the
+                                                // OWNER, never the model
+    }
+
+    void moodTrimHonoursTheRetentionPromise()
+    {
+        AppData data;
+        data.recordMood(QDate(2026, 6, 15), Mood::Level::Okay); // 16 days old
+        data.recordMood(QDate(2026, 6, 18), Mood::Level::Good); // 13 days old
+        data.recordMood(QDate(2026, 7, 1),  Mood::Level::Rough);
+        QCOMPARE(data.trimMoods(QDate(2026, 7, 1), 14), 1);
+        QCOMPARE(data.moods().size(), 2);
+        QVERIFY(!data.moodOn(QDate(2026, 6, 15)));
+        // Idempotent: the knock runs daily; a second pass removes nothing.
+        QCOMPARE(data.trimMoods(QDate(2026, 7, 1), 14), 0);
+    }
+
+    void briefingSpeaksCoarseMoodAndNeverTheNote()
+    {
+        // THE privacy test (§G.2). The note is the owner's words about
+        // their own state; if this test ever fails, the fix is in the
+        // briefing, not here.
+        AppData data;
+        data.recordMood(QDate(2026, 7, 1), Mood::Level::Rough,
+                        QStringLiteral("fight with my brother"));
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        // v28.2p2 — §E.4 made mechanical. DEFAULT briefing: no mood at
+        // all; a new call site is private by accident, never leaky by
+        // accident.
+        const QString silent = brief::dayBriefing(data, now.date(), now);
+        QVERIFY(!silent.contains(QStringLiteral("MOOD")));
+
+        // Opted in (the chat does this only when every route seat is
+        // local): coarse value yes, the owner's note NEVER.
+        brief::Options opts;
+        opts.includeMood = true;
+        const QString brief =
+            brief::dayBriefing(data, now.date(), now, opts);
+        QVERIFY(brief.contains(QStringLiteral("MOOD")));
+        QVERIFY(brief.contains(QStringLiteral("today: rough")));
+        QVERIFY(!brief.contains(QStringLiteral("fight with my brother")));
+    }
+
+    void isLocalDrawsTheSeatBoundaryConservatively()
+    {
+        ai::Provider p;
+        p.baseUrl = QUrl(QStringLiteral("http://localhost:11434"));
+        QVERIFY(ai::isLocal(p));
+        p.baseUrl = QUrl(QStringLiteral("http://127.0.0.1:1234/v1"));
+        QVERIFY(ai::isLocal(p));
+        // A LAN machine is still a wire the mood crossed: remote.
+        p.baseUrl = QUrl(QStringLiteral("http://192.168.1.20:11434"));
+        QVERIFY(!ai::isLocal(p));
+        p.baseUrl = QUrl(QStringLiteral("https://api.anthropic.com"));
+        QVERIFY(!ai::isLocal(p));
+    }
+
+    void checkInHeavinessTripsOnBlocksOrDeadlines()
+    {
+        // Either wall of work OR deadline cluster; each alone suffices.
+        AppData planned;
+        const QString cat = planned.addCategory("School", "#2F7E6E");
+        const QString act = planned.addActivity("Study", cat);
+        QVERIFY(!planned.addEvent(QDate(2026, 7, 1), 540, 870, act)
+                     .isEmpty()); // 5h30 planned
+        QVERIFY(checkin::isDayHeavy(planned, QDate(2026, 7, 1)));
+
+        AppData deadlines;
+        const QString cat2 = deadlines.addCategory("School", "#2F7E6E");
+        deadlines.addTask("Lab 4", cat2, QDate(2026, 7, 2));
+        deadlines.addTask("Essay", cat2, QDate(2026, 7, 3));
+        QVERIFY(checkin::isDayHeavy(deadlines, QDate(2026, 7, 1)));
+
+        AppData quiet; // one small block, one far deadline: a quiet Tuesday
+        const QString cat3 = quiet.addCategory("School", "#2F7E6E");
+        const QString act3 = quiet.addActivity("Study", cat3);
+        QVERIFY(!quiet.addEvent(QDate(2026, 7, 1), 540, 600, act3)
+                     .isEmpty());
+        quiet.addTask("Essay", cat3, QDate(2026, 7, 20));
+        QVERIFY(!checkin::isDayHeavy(quiet, QDate(2026, 7, 1)));
+    }
+
+    void checkInOffersOncePerMorningOnHeavyDaysOnly()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", "#2F7E6E");
+        data.addTask("Lab 4", cat, QDate(2026, 7, 2));
+        data.addTask("Essay", cat, QDate(2026, 7, 3)); // heavy: 2 urgent
+
+        const QDate none; // never offered
+        // 08:30, heavy, not yet offered → yes.
+        QVERIFY(checkin::shouldOffer(
+            data, QDateTime(QDate(2026, 7, 1), QTime(8, 30)), none));
+        // Already offered today → once means once.
+        QVERIFY(!checkin::shouldOffer(
+            data, QDateTime(QDate(2026, 7, 1), QTime(9, 0)),
+            QDate(2026, 7, 1)));
+        // Yesterday's offer does not spend today's.
+        QVERIFY(checkin::shouldOffer(
+            data, QDateTime(QDate(2026, 7, 1), QTime(8, 30)),
+            QDate(2026, 6, 30)));
+        // 05:59 and 11:00 — outside the morning, [start, end).
+        QVERIFY(!checkin::shouldOffer(
+            data, QDateTime(QDate(2026, 7, 1), QTime(5, 59)), none));
+        QVERIFY(!checkin::shouldOffer(
+            data, QDateTime(QDate(2026, 7, 1), QTime(11, 0)), none));
+    }
+// ---- pieces & sizing (v28.3, roadmap §I / §J.1) -----------------------
+    // The five query policies, the cascades, and the two format-v13 facts.
+    // Each test pins ONE decision from the subtasks addendum, so a future
+    // change that breaks a policy names the policy it broke.
+
+    void subtaskBirthEnforcesTheDoorRules()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 4", cat, QDate(), QTime());
+
+        // Refusals: no parent, blank title.
+        QVERIFY(data.addSubtask("nope", "read the spec").isEmpty());
+        QVERIFY(data.addSubtask(parent, "   ").isEmpty());
+
+        // Birth: inherits the parent's category, records the link.
+        const QString piece = data.addSubtask(parent, "read the spec");
+        QVERIFY(!piece.isEmpty());
+        QCOMPARE(data.taskById(piece)->categoryId, cat);
+        QCOMPARE(data.taskById(piece)->parentId, parent);
+        QVERIFY(data.taskById(piece)->isPiece());
+
+        // THE ONE-LEVEL RULE: a piece may not have pieces.
+        QVERIFY(data.addSubtask(piece, "sub-sub").isEmpty());
+    }
+
+    void subtaskMayCarryItsOwnDeadline()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 4", cat,
+                                            QDate(2026, 8, 8), QTime());
+
+        const QString dated = data.addSubtask(parent, "Marc's section",
+                                              QDate(2026, 8, 4),
+                                              QTime(17, 0));
+        QCOMPARE(data.taskById(dated)->dueDate, QDate(2026, 8, 4));
+        QCOMPARE(data.taskById(dated)->dueTime, QTime(17, 0));
+
+        // Same orphan-clock rule as every other birth door: a time
+        // without a date is silently not a state.
+        const QString clockOnly = data.addSubtask(parent, "loose end",
+                                                  QDate(), QTime(9, 0));
+        QVERIFY(!data.taskById(clockOnly)->dueTime.isValid());
+    }
+
+    void subtasksOfKeepsInsertionOrderAndSkipsArchived()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 4", cat, QDate(), QTime());
+        const QString a = data.addSubtask(parent, "read the spec");
+        const QString b = data.addSubtask(parent, "write section 1");
+        const QString c = data.addSubtask(parent, "proofread");
+
+        // A checklist's order IS meaning — never sorted (header rationale).
+        auto pieces = data.subtasksOf(parent);
+        QCOMPARE(pieces.size(), 3);
+        QCOMPARE(pieces[0]->id, a);
+        QCOMPARE(pieces[1]->id, b);
+        QCOMPARE(pieces[2]->id, c);
+
+        // Archived pieces leave the list, so it always agrees with
+        // pieceProgress (they must describe the same set).
+        QVERIFY(data.setTaskArchived(b, true));
+        pieces = data.subtasksOf(parent);
+        QCOMPARE(pieces.size(), 2);
+        QCOMPARE(pieces[1]->id, c);
+
+        // Empty answers for a non-parent and for a piece.
+        QVERIFY(data.subtasksOf("nope").isEmpty());
+        QVERIFY(data.subtasksOf(a).isEmpty());
+    }
+
+    void pieceProgressCountsTheVisibleChecklist()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 4", cat, QDate(), QTime());
+        const QString a = data.addSubtask(parent, "read");
+        const QString b = data.addSubtask(parent, "write");
+        data.addSubtask(parent, "proofread");
+
+        QCOMPARE(data.pieceProgress(parent).done, 0);
+        QCOMPARE(data.pieceProgress(parent).total, 3);
+
+        QVERIFY(data.setTaskDone(a, true));
+        QCOMPARE(data.pieceProgress(parent).done, 1);
+
+        // Archiving removes a piece from BOTH numbers — an archived piece
+        // must not make a finished task read permanently incomplete.
+        QVERIFY(data.setTaskArchived(b, true));
+        QCOMPARE(data.pieceProgress(parent).done, 1);
+        QCOMPARE(data.pieceProgress(parent).total, 2);
+    }
+
+    void completionNeverRollsUp()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 4", cat, QDate(), QTime());
+        const QString a = data.addSubtask(parent, "read");
+        const QString b = data.addSubtask(parent, "write");
+
+        // Every piece done -> the parent stays OPEN. The tick is the
+        // reward (§I) — the app never takes it for you.
+        QVERIFY(data.setTaskDone(a, true));
+        QVERIFY(data.setTaskDone(b, true));
+        QVERIFY(!data.taskById(parent)->done);
+
+        // And downward: finishing the parent doesn't finish the pieces.
+        const QString c = data.addSubtask(parent, "late addition");
+        QVERIFY(data.setTaskDone(parent, true));
+        QVERIFY(data.taskById(parent)->done);
+        QVERIFY(!data.taskById(c)->done); // the parent's tick is its own
+    }
+
+    void archiveCascadesBothDirections()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 4", cat, QDate(), QTime());
+        const QString a = data.addSubtask(parent, "read");
+        const QString b = data.addSubtask(parent, "write");
+
+        // One piece archived by hand first — restore brings it back too
+        // (deliberately unconditional; see setTaskArchived's comment).
+        QVERIFY(data.setTaskArchived(a, true));
+
+        QVERIFY(data.setTaskArchived(parent, true));
+        QVERIFY(data.taskById(a)->archived);
+        QVERIFY(data.taskById(b)->archived);
+
+        QVERIFY(data.setTaskArchived(parent, false));
+        QVERIFY(!data.taskById(a)->archived);
+        QVERIFY(!data.taskById(b)->archived);
+
+        // Archiving a lone PIECE cascades nowhere.
+        QVERIFY(data.setTaskArchived(b, true));
+        QVERIFY(!data.taskById(parent)->archived);
+    }
+
+    void removingAParentTakesItsPieces()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 4", cat, QDate(), QTime());
+        const QString piece  = data.addSubtask(parent, "Marc's section");
+
+        // A block planned against the PIECE: after the cascade it must be
+        // demoted to text like any other reference to a removed task —
+        // the piece's title, not the parent's.
+        const QString ev = data.addTaskEvent(QDate(2026, 8, 4), 540, 600,
+                                             piece);
+        QVERIFY(!ev.isEmpty());
+
+        QVERIFY(data.removeTask(parent));
+        QVERIFY(!data.taskById(parent));
+        QVERIFY(!data.taskById(piece));  // the cascade
+        QVERIFY(data.eventById(ev)->taskId.isEmpty());
+        QCOMPARE(data.eventById(ev)->title, QString("Marc's section"));
+    }
+
+    void queryPoliciesDisagreeOnPurpose()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 4", cat,
+                                            QDate(2026, 8, 8), QTime());
+        const QString piece  = data.addSubtask(parent, "Marc's section",
+                                               QDate(2026, 8, 4), QTime());
+
+        // Workload surfaces: PARENTS ONLY — even for a dated piece.
+        for (const Task* t : data.upcomingTasks())
+            QVERIFY(t->id != piece);
+        for (const Task* t : data.tasksIn(cat))
+            QVERIFY(t->id != piece);
+
+        // The calendar day: the dated piece IS a real obligation there.
+        const auto due = data.tasksDueOn(QDate(2026, 8, 4));
+        QCOMPARE(due.size(), 1);
+        QCOMPARE(due.first()->id, piece);
+
+        // The guard counts EVERYTHING — and therefore keeps guarding.
+        QCOMPARE(data.taskCountIn(cat), 2);
+        QVERIFY(!data.removeCategory(cat));
+    }
+
+    void sizingClampsAndReadsHonestly()
+    {
+        AppData data;
+        const QString cat  = data.addCategory("School", QColor("#4C6FE0"));
+        const QString task = data.addTask("Lab 4", cat, QDate(), QTime());
+
+        QVERIFY(!data.taskById(task)->hasEstimate()); // 0 == unset, not instant
+
+        QVERIFY(data.setTaskSize(task, 90, true));
+        QCOMPARE(data.taskById(task)->estimateMinutes, 90);
+        QVERIFY(data.taskById(task)->chunkable);
+        QVERIFY(data.taskById(task)->hasEstimate());
+
+        // Negatives clamp back to "unset" — minus twenty minutes is not a size.
+        QVERIFY(data.setTaskSize(task, -20, false));
+        QVERIFY(!data.taskById(task)->hasEstimate());
+
+        QVERIFY(!data.setTaskSize("nope", 30, false));
+    }
+
+    void repeatingPieceSpawnsAsAPiece()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Weekly review", cat,
+                                            QDate(), QTime());
+        const QString piece  = data.addSubtask(parent, "clear inbox",
+                                               QDate(2026, 7, 6), QTime());
+        QVERIFY(data.setTaskSize(piece, 45, true));
+        // Give the piece a weekly rule through the coarse door.
+        const Task* p = data.taskById(piece);
+        QVERIFY(data.updateTask(piece, p->title, QString(),
+                                p->dueDate, QTime(),
+                                Task::Repeat::Weekly, Task::Priority::Medium));
+
+        QVERIFY(data.setTaskDone(piece, true));
+
+        // The spawned next occurrence is still a piece of the SAME parent,
+        // same size, same shape — a checklist line must not quietly promote
+        // itself to a full task every week.
+        const Task* next = nullptr;
+        for (const Task& t : data.tasks())
+            if (t.id != piece && t.parentId == parent)
+                next = &t;
+        QVERIFY(next);
+        QCOMPARE(next->dueDate, QDate(2026, 7, 13));
+        QCOMPARE(next->estimateMinutes, 45);
+        QVERIFY(next->chunkable);
+        QVERIFY(!next->done);
+    }
+
+    void formatV13RoundTripsTheThreeFacts()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("data.json");
+
+        AppData original;
+        const QString cat    = original.addCategory("School",
+                                                    QColor("#4C6FE0"));
+        const QString parent = original.addTask("Lab 4", cat,
+                                                QDate(2026, 8, 8), QTime());
+        const QString piece  = original.addSubtask(parent, "read the spec");
+        QVERIFY(original.setTaskSize(parent, 120, false));
+        QVERIFY(original.setTaskSize(piece, 25, true));
+
+        QVERIFY(JsonStore(path).save(original));
+        AppData loaded;
+        QVERIFY(JsonStore(path).load(loaded));
+
+        QCOMPARE(loaded.taskById(piece)->parentId, parent);
+        QCOMPARE(loaded.taskById(parent)->estimateMinutes, 120);
+        QCOMPARE(loaded.taskById(piece)->estimateMinutes, 25);
+        QVERIFY(loaded.taskById(piece)->chunkable);
+        QVERIFY(!loaded.taskById(parent)->chunkable);
+        QCOMPARE(loaded.pieceProgress(parent).total, 1);
+    }
+
+    void loadAdoptsOrphanedPieces()
+    {
+        // Hand-built vectors straight through the load door: one piece
+        // whose parent id resolves to nothing, one nested deeper than the
+        // domain allows. Both must come out as honest top-level tasks —
+        // invisible-but-counted is the failure mode this guards against.
+        Task parent;  parent.id = "p";  parent.title = "Lab 4";
+        Task good;    good.id   = "g";  good.title   = "fine";
+        good.parentId = "p";
+        Task dangling; dangling.id = "d"; dangling.title = "lost";
+        dangling.parentId = "ghost";
+        Task nested;  nested.id  = "n";  nested.title  = "too deep";
+        nested.parentId = "g"; // a piece under a piece
+
+        AppData data;
+        data.resetFrom({}, {}, {},
+                       {parent, good, dangling, nested}, {}, {},
+                       std::nullopt);
+
+        QCOMPARE(data.taskById("g")->parentId, QString("p")); // untouched
+        QVERIFY(data.taskById("d")->parentId.isEmpty());      // adopted
+        QVERIFY(data.taskById("n")->parentId.isEmpty());      // un-nested
+    }
+
+    void batchEmitsExactlyOnce()
+    {
+        AppData data;
+        const QString cat  = data.addCategory("School", QColor("#4C6FE0"));
+        const QString task = data.addTask("Lab 4", cat, QDate(), QTime());
+
+        QSignalSpy spy(&data, &AppData::changed);
+        {
+            AppData::Batch batch(data);
+            QVERIFY(data.setTaskSize(task, 60, false));
+            QVERIFY(!data.addSubtask(task, "read").isEmpty());
+            QVERIFY(!data.addSubtask(task, "write").isEmpty());
+            QCOMPARE(spy.count(), 0); // silence while the batch is alive
+        }
+        QCOMPARE(spy.count(), 1);     // ONE repaint for three mutations
+
+        // A batch in which nothing actually changed emits nothing at all —
+        // the idempotence promise, kept at the group level.
+        {
+            AppData::Batch batch(data);
+            QVERIFY(data.setTaskSize(task, 60, false)); // same values: no-op
+        }
+        QCOMPARE(spy.count(), 1);
+    }
+// ---- sizing intelligence (v28.4, roadmap §J.2) ------------------------
+    // The personal multiplier and the estimate-first affordability rewire.
+    // Each test passes the multiplier EXPLICITLY where the arithmetic is
+    // under test — the rate's own derivation gets its own tests first.
+
+    void multiplierIsOneWithoutEnoughHistory()
+    {
+        AppData data;
+        QCOMPARE(afford::personalMultiplier(data), 1.0); // no history at all
+
+        // Two finished-and-tracked estimates: still an anecdote, not a rate.
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        for (int i = 0; i < 2; ++i) {
+            const QString id = data.addTask(QStringLiteral("t%1").arg(i),
+                                            cat, QDate(), QTime());
+            QVERIFY(data.setTaskSize(id, 60, false));
+            const QString ev =
+                data.addTaskEvent(QDate(2026, 6, 1 + i), 540, 660, id);
+            QVERIFY(!ev.isEmpty());
+            QVERIFY(data.appendSegment(
+                ev, makeSegment(SegmentKind::Focus,
+                                QDateTime(QDate(2026, 6, 1 + i), QTime(9, 0)),
+                                90)));
+            QVERIFY(data.setTaskDone(id, true));
+        }
+        QCOMPARE(afford::personalMultiplier(data), 1.0);
+    }
+
+    void multiplierIsTheMedianOfFinishedRatiosAndClamps()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+
+        // Three finished 60-minute estimates, tracked 90 / 90 / 600 —
+        // ratios 1.5, 1.5, 10. The MEDIAN shrugs off the 10x disaster.
+        //
+        // Fixture note, learned the loud way: blocks must respect the
+        // planner's own day window (isFree refuses anything before
+        // plan::kDayStartMinutes) — the first draft planted 05:00 blocks,
+        // every addTaskEvent politely returned "", and the unchecked
+        // empty ids made appendSegment a silent no-op three asserts
+        // upstream of the failure. Hence 09:00–21:00, and a QVERIFY on
+        // EVERY door: a refusal you don't check becomes a mystery later.
+        const int tracked[] = {90, 90, 600};
+        for (int i = 0; i < 3; ++i) {
+            const QString id = data.addTask(QStringLiteral("t%1").arg(i),
+                                            cat, QDate(), QTime());
+            QVERIFY(data.setTaskSize(id, 60, false));
+            const QString ev =
+                data.addTaskEvent(QDate(2026, 6, 1 + i), 540, 1260, id);
+            QVERIFY(!ev.isEmpty());
+            QVERIFY(data.appendSegment(
+                ev, makeSegment(SegmentKind::Focus,
+                                QDateTime(QDate(2026, 6, 1 + i), QTime(9, 0)),
+                                tracked[i])));
+            QVERIFY(data.setTaskDone(id, true));
+        }
+        QCOMPARE(afford::personalMultiplier(data), 1.5);
+
+        // Evidence rules: an UNFINISHED estimate, a finished task WITHOUT
+        // an estimate, and a finished estimate with NO tracked focus are
+        // all non-samples — the rate must not move.
+        const QString open1 = data.addTask("open", cat, QDate(), QTime());
+        QVERIFY(data.setTaskSize(open1, 10, false));
+        const QString noEst = data.addTask("noEst", cat, QDate(), QTime());
+        QVERIFY(data.setTaskDone(noEst, true));
+        const QString offBooks = data.addTask("offBooks", cat, QDate(), QTime());
+        QVERIFY(data.setTaskSize(offBooks, 10, false));
+        QVERIFY(data.setTaskDone(offBooks, true));
+        QCOMPARE(afford::personalMultiplier(data), 1.5);
+
+        // The clamp: three 6x ratios -> median 6, ceiling says 3.0.
+        AppData wild;
+        const QString wcat = wild.addCategory("School", QColor("#4C6FE0"));
+        for (int i = 0; i < 3; ++i) {
+            const QString id = wild.addTask(QStringLiteral("w%1").arg(i),
+                                            wcat, QDate(), QTime());
+            QVERIFY(wild.setTaskSize(id, 60, false));
+            const QString ev =
+                wild.addTaskEvent(QDate(2026, 6, 1 + i), 540, 1260, id);
+            QVERIFY(!ev.isEmpty());
+            QVERIFY(wild.appendSegment(
+                ev, makeSegment(SegmentKind::Focus,
+                                QDateTime(QDate(2026, 6, 1 + i), QTime(9, 0)),
+                                360)));
+            QVERIFY(wild.setTaskDone(id, true));
+        }
+        QCOMPARE(afford::personalMultiplier(wild), 3.0);
+    }
+
+    void estimatedTaskIsNeverUnknown()
+    {
+        // The Unknown retirement (§J.2): a deadline plus an estimate is an
+        // answerable question even with ZERO blocks ever planned — the
+        // estimate answers what the blocks used to.
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString id  = data.addTask("Lab 4", cat, QDate(2026, 7, 20));
+        QVERIFY(data.setTaskSize(id, 120, false));
+
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(id), now, {}, 1.0);
+        QVERIFY(r.verdict != afford::Verdict::Unknown);
+        QVERIFY(r.estimateBased);
+        QCOMPARE(r.minutesEstimated, 120);
+        QCOMPARE(r.minutesOutstanding, 120); // nothing tracked yet
+        QCOMPARE(r.verdict, afford::Verdict::Comfortable); // weeks of room
+
+        // And the other verdict, still with zero blocks planned: an
+        // estimated task DUE TOMORROW with work outstanding trips the
+        // last-day rule — the estimate feeds every band the proxy used to.
+        const QString rush = data.addTask("Rush job", cat, QDate(2026, 7, 2));
+        QVERIFY(data.setTaskSize(rush, 120, false));
+        const afford::Report tight =
+            afford::affordability(data, *data.taskById(rush), now, {}, 1.0);
+        QVERIFY(tight.estimateBased);
+        QCOMPARE(tight.verdict, afford::Verdict::Tight);
+    }
+
+    void estimateOutstandingUsesTheMultiplierAndPaysDown()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString id  = data.addTask("Lab 4", cat, QDate(2026, 7, 20));
+        QVERIFY(data.setTaskSize(id, 60, false));
+        const QString ev = data.addTaskEvent(QDate(2026, 6, 30), 540, 600, id);
+        data.appendSegment(
+            ev, makeSegment(SegmentKind::Focus,
+                            QDateTime(QDate(2026, 6, 30), QTime(9, 0)), 30));
+
+        // 60min estimate at the user's 1.5x rate = 90 real minutes; 30
+        // already tracked -> 60 outstanding. The rate scales the ESTIMATE,
+        // never the work already done — done minutes are facts.
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(id), now, {}, 1.5);
+        QVERIFY(r.estimateBased);
+        QCOMPARE(r.multiplier, 1.5);
+        QCOMPARE(r.minutesOutstanding, 60);
+    }
+
+    void pieceEstimatesSizeAnUnsizedParent()
+    {
+        // The decomposition dividend (§J.3's opening move): "write lab
+        // report" is unguessable, its pieces aren't. An unsized parent
+        // borrows the SUM of its pieces' estimates — and an archived piece
+        // stops weighing, matching every other pieces query.
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 4", cat, QDate(2026, 7, 20));
+        const QString a = data.addSubtask(parent, "read the spec");
+        const QString b = data.addSubtask(parent, "draft section 1");
+        const QString c = data.addSubtask(parent, "old idea");
+        QVERIFY(data.setTaskSize(a, 25, true));
+        QVERIFY(data.setTaskSize(b, 35, false));
+        QVERIFY(data.setTaskSize(c, 100, false));
+        QVERIFY(data.setTaskArchived(c, true)); // ✕'d out of the checklist
+
+        const QDateTime now(QDate(2026, 7, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(parent), now, {}, 1.0);
+        QVERIFY(r.estimateBased);
+        QCOMPARE(r.minutesEstimated, 60); // 25 + 35; the archived 100 doesn't
+
+        // A parent with its OWN estimate ignores the pieces' numbers —
+        // the owner's direct answer outranks the derived one.
+        QVERIFY(data.setTaskSize(parent, 200, false));
+        const afford::Report own =
+            afford::affordability(data, *data.taskById(parent), now, {}, 1.0);
+        QCOMPARE(own.minutesEstimated, 200);
+    }
+
+    // ---- v28.9 — promotion: dated pieces answer for themselves ------------
+
+    // The headline: a dated piece gets its own verdict (this function's
+    // first guard makes it so), therefore its minutes leave the parent —
+    // the sweep must believe exactly what was entered, once.
+    void promotedPieceStopsWeighingOnItsParent()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent =
+            data.addTask("ING150 FINALS", cat, QDate(2026, 8, 14));
+        QVERIFY(data.setTaskSize(parent, 720, false)); // 12h, the owner's case
+        const QString ch10 = data.addSubtask(parent, "Chapter 10");
+        QVERIFY(data.setTaskSize(ch10, 240, false));
+        QVERIFY(data.updateTask(ch10, "Chapter 10", {}, QDate(2026, 8, 10),
+                                QTime(), Task::Repeat::None,
+                                Task::Priority::Medium)); // dated → promoted
+        const QString ch11 = data.addSubtask(parent, "Chapter 11");
+        QVERIFY(data.setTaskSize(ch11, 240, false)); // sized, UNDATED — stays
+
+        const QDateTime now(QDate(2026, 8, 1), QTime(10, 0));
+        const afford::Report p =
+            afford::affordability(data, *data.taskById(parent), now, {}, 1.0);
+        QCOMPARE(p.minutesEstimated, 480); // 720 − promoted 240; ch11 stays
+        QCOMPARE(p.minutesPromoted, 240);  // the ledger of what left
+        const afford::Report c =
+            afford::affordability(data, *data.taskById(ch10), now, {}, 1.0);
+        QCOMPARE(c.minutesEstimated, 240); // the piece answers for itself
+        // Believed total = 480 + 240 = 720: exactly what was entered, once.
+    }
+
+    // The borrow amendment: an unsized parent borrows ONLY from undated
+    // pieces — a dated piece's minutes are its own now, on the borrow
+    // path too (before this, unsized parent + dated sized piece was the
+    // second double-count).
+    void borrowSkipsPromotedPieces()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Lab 5", cat, QDate(2026, 8, 20));
+        const QString spec  = data.addSubtask(parent, "read the spec");
+        QVERIFY(data.setTaskSize(spec, 25, true)); // undated: borrowed
+        const QString draft = data.addSubtask(parent, "draft");
+        QVERIFY(data.setTaskSize(draft, 240, false));
+        QVERIFY(data.updateTask(draft, "draft", {}, QDate(2026, 8, 18),
+                                QTime(), Task::Repeat::None,
+                                Task::Priority::Medium)); // dated: its own
+
+        const QDateTime now(QDate(2026, 8, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(parent), now, {}, 1.0);
+        QCOMPARE(r.minutesEstimated, 25); // only the undated piece
+        QCOMPARE(r.minutesPromoted, 240);
+    }
+
+    // Over-decomposed: promoted pieces sum past the parent's estimate.
+    // The parent's number floors at 0 and its verdict basis honestly
+    // degrades to the planned-blocks proxy (estimateBased false) — the
+    // pieces are the truth now, and the parent must not go NEGATIVE and
+    // subsidize other work.
+    void fullyPromotedParentFallsBackToTheProxy()
+    {
+        AppData data;
+        const QString cat    = data.addCategory("School", QColor("#4C6FE0"));
+        const QString parent = data.addTask("Essay", cat, QDate(2026, 8, 20));
+        QVERIFY(data.setTaskSize(parent, 240, false));
+        for (int i = 0; i < 2; ++i) {
+            const QString p = data.addSubtask(
+                parent, QStringLiteral("part %1").arg(i));
+            QVERIFY(data.setTaskSize(p, 180, false)); // 2 × 3h > 4h parent
+            QVERIFY(data.updateTask(p, QStringLiteral("part %1").arg(i), {},
+                                    QDate(2026, 8, 15 + i), QTime(),
+                                    Task::Repeat::None,
+                                    Task::Priority::Medium));
+        }
+        const QDateTime now(QDate(2026, 8, 1), QTime(10, 0));
+        const afford::Report r =
+            afford::affordability(data, *data.taskById(parent), now, {}, 1.0);
+        QCOMPARE(r.minutesEstimated, 0);
+        QVERIFY(!r.estimateBased); // proxy basis, stated honestly
+        QCOMPARE(r.minutesPromoted, 360);
     }
 };
 

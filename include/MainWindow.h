@@ -29,8 +29,19 @@
 
 #include <QMainWindow>
 
+class BlockAlarmService;
+class AffordabilityService;
+class CheckInService;
+class ChatPage;
+class DebugPanel;
+class PlannerPage;
+class PomodoroEngine;
+class PomodoroLink;
 class QStackedWidget;
+class QSystemTrayIcon;
+class QTimer;
 class QToolButton;
+class QuickCaptureOverlay;
 class QVBoxLayout;
 class ShareClient;
 class SyncClient;
@@ -54,9 +65,14 @@ public:
     explicit MainWindow(const QString& username = QString());
 
     // Show a page by index (0 Calendar, 1 Upcoming, 2 Activities,
-    // 3 Special days, 4 Pomodoro),
+    // 3 Special days, 4 Pomodoro, 5 Archive, 6 Assistant),
     // keeping the nav highlight in sync. Exists mainly for the
     // screenshot tool — the UI itself navigates via the nav buttons.
+    //
+    // v25 note: 6 is the Assistant even though its rail button sits ABOVE
+    // Archive's. Page index is identity (old callers keep working); rail
+    // position is layout. m_navButtons is built in page-index order so this
+    // function's highlight stays correct.
     void showPage(int index);
 
 protected:
@@ -64,7 +80,44 @@ protected:
     // final save, then let the close proceed.
     void closeEvent(QCloseEvent* event) override;
 
+    // v23.1 — the debounce trio. Every way a window's rectangle can change
+    // arrives through one of these three events; each just pokes the same
+    // debounced save. See scheduleWindowStateSave() for why this exists
+    // (short version: closeEvent turned out to be a hook you can't rely on).
+    void moveEvent(QMoveEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void changeEvent(QEvent* event) override;
+
 private:
+    void setupNotifications(); // ONE tray icon; two clients: the Pomodoro's
+                               // phaseEnded and the agenda's blocksStarting
+
+    // The window's own memory (v23). A matched pair, deliberately adjacent:
+    // any key one of them touches, the other must too, and putting them side
+    // by side is the cheapest guard against the classic "we started saving a
+    // new field and forgot to read it back" drift.
+    //
+    // Called at the END of the constructor and from closeEvent respectively —
+    // restore AFTER the layout exists (so nothing we set gets overwritten by
+    // the chrome being built), save BEFORE the window goes away.
+    void restoreWindowState();
+    void saveWindowState();
+
+    // v23.1: geometry now also saves itself ~1s after the window stops
+    // moving/resizing, not only at close. Field lesson from v23.0, hours old:
+    // write-on-close protects nothing when the process is killed instead of
+    // closed — and a developer's Stop button kills. The debounce keeps the
+    // original objection intact (a drag is a hundred events describing one
+    // decision; we still write once per decision, just one second after it
+    // instead of at quit).
+    void scheduleWindowStateSave();
+    QTimer* m_saveWindowTimer   = nullptr;
+    // Gate: move/resize events also fire while the CONSTRUCTOR builds the
+    // chrome and while restoreWindowState() itself moves the window. A save
+    // scheduled then would overwrite the stored blob with the half-built
+    // default — the memory erasing itself on startup. False until restore
+    // has finished; nothing schedules before that.
+    bool m_windowStateRestored = false;
     // Declaration ORDER matters here, and it's a genuine C++ lesson:
     // members are constructed top-to-bottom and destroyed bottom-to-top.
     // TrackerService holds a pointer to AppData, so AppData is declared
@@ -75,10 +128,22 @@ private:
     TrackerService m_tracker;
 
     QStackedWidget* m_pages = nullptr;
+    PlannerPage*  m_planner = nullptr; // typed: Settings re-applies prefs here
+    PomodoroEngine* m_pomodoro     = nullptr; // app-lifetime, like m_tracker
+    PomodoroLink*   m_pomodoroLink = nullptr; // engine→tracker adapter
+    QSystemTrayIcon* m_tray        = nullptr; // shared by every notifier
+    BlockAlarmService* m_blockAlarm = nullptr; // "your 9:00 is starting"
+    AffordabilityService* m_afford = nullptr;  // "Lab 4 is looking tight" (v28)
+    CheckInService* m_checkIn = nullptr;       // the morning knock (v28.2p2)
+    ChatPage*       m_chat    = nullptr;       // typed: the check-in opens it
+    DebugPanel*     m_debug   = nullptr;       // lazy; Ctrl+Shift+D (v28.10)
     QString       m_username; // scopes local storage + sync state
     QVector<QToolButton*> m_navButtons;
+    QWidget*      m_nav        = nullptr; // the rail itself: its visibility is
+                                          // remembered across launches (v23)
     QVBoxLayout*  m_navLayout  = nullptr; // kept so enableSync can add to it
     SyncClient*   m_syncClient  = nullptr;
     SyncService*  m_sync        = nullptr;
     ShareClient*  m_shareClient = nullptr; // share & compare (needs the token)
+    QuickCaptureOverlay* m_capture = nullptr; // Ctrl+N global quick-add (v21.1)
 };

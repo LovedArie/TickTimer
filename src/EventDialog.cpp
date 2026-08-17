@@ -270,6 +270,36 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     layout->addLayout(taskRow);
     layout->addWidget(moveCaption);
     layout->addLayout(moveRow);
+
+    // ---- repeat (v19.10) ----------------------------------------------------
+    // The combo APPLIES ON CHANGE, like the nudge buttons around it — this
+    // dialog is a control panel, not a form; nothing here waits for an OK.
+    // Items in enum order so currentIndex IS the enum (the TaskDetailDialog
+    // precedent, same vocabulary, same trick).
+    auto* repeatRow = new QHBoxLayout;
+    repeatRow->setSpacing(6);
+    auto* repeatCaption = new QLabel(tr("Repeats"), this);
+    repeatCaption->setObjectName("sub");
+    auto* repeatCombo = new QComboBox(this);
+    repeatCombo->addItem(tr("Does not repeat")); // Repeat::None   == 0
+    repeatCombo->addItem(tr("Daily"));           // Repeat::Daily  == 1
+    repeatCombo->addItem(tr("Weekly"));          // Repeat::Weekly == 2
+    repeatCombo->addItem(tr("Monthly"));         // Repeat::Monthly== 3
+    repeatCombo->addItem(tr("Yearly"));          // Repeat::Yearly == 4
+    repeatCombo->setCurrentIndex(
+        int(m_data->eventById(m_eventId)->repeat));
+    repeatCombo->setToolTip(
+        tr("When this block's day has passed, the plan re-creates itself "
+           "on the next date the rule names (skipping dates whose slots "
+           "are taken). Tracked history stays on each past block."));
+    connect(repeatCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index) {
+                m_data->setEventRepeat(m_eventId, Task::Repeat(index));
+            });
+    repeatRow->addWidget(repeatCombo);
+    repeatRow->addStretch(1);
+    layout->addWidget(repeatCaption);
+    layout->addLayout(repeatRow);
     layout->addWidget(m_pva);
     layout->addWidget(m_legend);
     layout->addWidget(m_stateLabel);

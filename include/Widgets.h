@@ -106,13 +106,24 @@ inline QString timeLabel(int minutesAfterMidnight)
 // `slots` — Qt defines `slots` (and `signals`, `emit`) as macros for its
 // signal/slot syntax, so the name would be macro-erased and the file
 // wouldn't compile. Never use those three words as identifiers in Qt code.
-inline QString durationLabel(int slotCount)
+inline QString minutesLabel(int minutes)
 {
-    const int mins = slotCount * 30;
-    const int h = mins / 60, m = mins % 60;
+    // THE minutes-to-text formatter (v28.8). Two near-copies of this
+    // logic already existed (durationLabel below, DayBriefing's
+    // spanLabel) when the SIZE dropdown became a third caller — three
+    // shapes of one idea is how "45m" here and "45 min" there happens.
+    // durationLabel now delegates; spanLabel keeps its zero-padded
+    // briefing style on purpose (a different display contract), with a
+    // pointer here.
+    const int h = minutes / 60, m = minutes % 60;
     if (h == 0) return QStringLiteral("%1m").arg(m);
     if (m == 0) return QStringLiteral("%1h").arg(h);
     return QStringLiteral("%1h %2m").arg(h).arg(m);
+}
+
+inline QString durationLabel(int slotCount)
+{
+    return minutesLabel(slotCount * 30);
 }
 
 // Host a max-width panel at the top-left with breathing room to its
@@ -157,6 +168,51 @@ inline bool isCompactScreen()
         return false; // headless/offscreen: behave like desktop
     const QRect g = screen->availableGeometry();
     return qMin(g.width(), g.height()) < 600;
+}
+
+// "Would a window at this rectangle be reachable on this screen layout?"
+// (v23, window-memory arc.) Sibling of isCompactScreen() above — both answer
+// a question about SPACE, and neither knows anything about widgets.
+//
+// The problem it solves: QWidget::restoreGeometry() validates the saved
+// blob's FORMAT, never your monitor layout. Close the app on a second
+// monitor, unplug it, reopen — the geometry restores faithfully to
+// coordinates that no longer exist on any display, and the app looks like it
+// failed to start. This is one of the most-reported bugs in desktop software
+// and it is always exactly this.
+//
+// Deliberately PURE: it takes the screen rectangles instead of asking
+// QGuiApplication for them. The caller does the impure part (fetching the
+// real screens), which means the policy — what counts as reachable — can be
+// tested against any monitor layout you can imagine, including ones nobody
+// on the team owns. Same split as the domain/UI line the whole project runs
+// on, in miniature.
+//
+// The test is generous on purpose: ANY overlap counts, not containment. A
+// window hanging half off the right edge is a legitimate thing to restore —
+// the user dragged it there. A window entirely on a monitor that is gone
+// is not.
+inline bool overlapsAnyScreen(const QRect& frame,
+                              const QList<QRect>& screens)
+{
+    for (const QRect& s : screens)
+        if (s.intersects(frame))
+            return true;
+    return false;
+}
+
+// The impure half: today's real screens, as plain rectangles.
+// availableGeometry() rather than geometry() — it excludes taskbars and
+// docks, so a window "restored" entirely underneath the Windows taskbar
+// counts as unreachable, which is the honest answer.
+inline QList<QRect> availableScreenRects()
+{
+    QList<QRect> rects;
+    const auto screens = QGuiApplication::screens();
+    rects.reserve(screens.size());
+    for (const QScreen* s : screens)
+        rects.append(s->availableGeometry());
+    return rects;
 }
 
 // Make a QScrollArea flick-scrollable by finger. QScroller is Qt's kinetic-

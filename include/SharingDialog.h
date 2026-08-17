@@ -34,8 +34,12 @@ class SharingDialog : public QDialog
 {
     Q_OBJECT
 public:
+    // `myName`: the logged-in account, passed through to CompareDialog's
+    // pinned column headers. This dialog itself never shows it — it is a
+    // courier, and the parameter documents the delivery route.
     SharingDialog(ShareClient* client, AppData* myData,
-                  TrackerService* tracker, QWidget* parent = nullptr);
+                  TrackerService* tracker, const QString& myName,
+                  QWidget* parent = nullptr);
 
 private:
     void refresh();                 // ask the server for both lists
@@ -47,6 +51,7 @@ private:
     ShareClient*     m_client;
     AppData*         m_myData;  // live: CompareDialog v2 PLANS on it
     TrackerService*  m_tracker; // rides along for EventDialog inside compare
+    QString          m_myName;  // rides along for the compare headers
 
     QLineEdit*   m_nameEdit    = nullptr;
     QPushButton* m_shareBtn    = nullptr;

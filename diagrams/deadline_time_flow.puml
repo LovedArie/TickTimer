@@ -1,0 +1,69 @@
+@startuml deadline_time_flow
+' ---------------------------------------------------------------------------
+' deadline_time_flow — how a deadline TIME travels through the layers (v22).
+' Converted from Mermaid in the v26.8 audit (never rendered until now).
+'
+' Read it as ONE FACT crossing five boundaries. The thing to notice is where
+' the pairing invariant lives: "a time needs a date" is enforced at the
+' DOMAIN door — AppData — and nowhere else. Four capture surfaces, one rule.
+' Had the rule lived in the widgets, adding the LLM path in v21.2 would have
+' meant re-implementing it a fourth time, and the fourth copy is always the
+' one that gets it wrong.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title A deadline time, from four keyboards to five consumers
+
+package "Capture — four ways in" {
+  component "Quick-add text\n«lab 4 friday 17:00»" as qa
+  component "TaskDetailDialog\nQTimeEdit + «All day»" as dlg
+  component "DueDateDialog\ncalendar + time row" as due
+  component "LLM reply\ndue_time: «HH:MM»" as llm
+}
+
+component "ParsedTask\n{dueDate, dueTime}" as pt
+component "quickAddPreviewHtml\n(shows it BEFORE commit)" as prev
+
+qa --> pt : nlp::parseQuickAdd
+llm --> pt : llm::fromJsonObject
+pt --> prev
+
+package "Domain — the only place the invariant lives" {
+  database "AppData::addTask\nsetTaskDueDate · updateTask" as door
+  component "dueDate valid?" as inv
+  component "Task{dueDate, dueTime}" as task
+  door --> inv
+  inv --> task : yes
+  inv --> task : no — drop the orphan time
+}
+
+prev --> door
+dlg --> door : chosenDueDate / chosenDueTime
+due --> door : chosenDate / chosenTime
+
+component "TaskListModel · CategoryTaskModel\nDueTimeRole" as models
+database "JsonStore\n«dueTime»: ISO or «»" as json
+component "coverage::needsBlock\n(one clock-aware branch)" as cov
+component "TaskFilterProxy::lessThan\nsame day → earliest clock first" as proxy
+component "TaskCardDelegate\n«due 17:00»" as cards
+component "CategoryTaskDelegate\n«Aug 8 · 17:00»" as pills
+component "NeedsBlockCard\n«Fri 24 Jul 17:00 · in 3d»" as nbc
+component "sync + share\nfree ride on the wire" as wire
+
+task --> models : changed()
+task --> json
+task --> cov
+models --> proxy
+proxy --> cards
+models --> pills
+cov --> nbc
+json ..> wire : the field costs the wire nothing extra
+
+note bottom of inv
+  <b>An orphan time is dropped, not stored.</b>
+  "17:00, no date" is not a deadline, it is a
+  half-typed one — and storing it would force
+  every consumer downstream to invent its own
+  answer for what to paint.
+end note
+@enduml

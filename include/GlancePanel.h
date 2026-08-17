@@ -13,13 +13,22 @@
 // "a fresh start", never "you did nothing".
 // ---------------------------------------------------------------------------
 
+#include "Event.h"      // BlockOutcome rides the re-emitted resolve signal
+#include "Reschedule.h" // reschedule::Option rides the re-emitted accept
+
 #include <QDate>
+#include <QDateTime>
 #include <QFrame>
 
+#include <functional>
+
 class AppData;
+class CatchUpCard;
+class NeedsBlockCard;
 class TrackerService;
 class StatBox;
 class QLabel;
+class QWidget;
 class CategoryBars;
 
 class GlancePanel : public QFrame
@@ -32,6 +41,35 @@ public:
 
     void setDate(QDate date);
 
+    // The clock seam (needs-a-block part 2) — every gate/flag decision
+    // reads THIS, never the wall clock directly, so tests walk the gate
+    // through a whole day in microseconds. Same doctrine as
+    // TrackerService::nowProvider, and for the same reason: the v19.6
+    // "passing for the wrong reason" scar says seams must have no holes.
+    std::function<QDateTime()> nowProvider = [] {
+        return QDateTime::currentDateTime();
+    };
+
+signals:
+    // The needs-a-block card's asks, re-emitted upward. This panel is a
+    // CONST view of the data (const-correctness as architecture): the
+    // card reports, the panel forwards, PlannerPage — holder of the
+    // mutable pointer — decides. Wrong calls don't compile here.
+    void planTaskRequested(const QString& taskId);
+    void editDeadlineRequested(const QString& taskId);
+    void notUrgentRequested(const QString& taskId);
+    void dismissRequested(const QString& taskId);
+    void bringBackRequested(const QString& taskId);
+
+    // The catch-up card's asks, re-emitted the same way (catch-up §K): the
+    // card reports, this const panel forwards, PlannerPage decides.
+    void catchUpAcceptRequested(const QString& eventId,
+                                const reschedule::Option& option);
+    void catchUpResolveRequested(const QString& eventId, BlockOutcome outcome);
+    void catchUpShowDayRequested(QDate date);
+    void catchUpResolveAllRequested(const QStringList& eventIds,
+                                    BlockOutcome outcome);
+
 public slots:
     void refresh(); // recompute everything from the raw data
 
@@ -40,10 +78,16 @@ private:
     const TrackerService* m_tracker;
     QDate m_date;
 
+    NeedsBlockCard* m_needsBlock = nullptr; // the review card (part 2)
+    CatchUpCard*    m_catchUp    = nullptr; // missed blocks (catch-up §K)
+    QWidget*        m_reviewRow  = nullptr; // both of the above, one line
+                                            // (v26.7.1 — one pill grammar)
+    QWidget*        m_dayContent = nullptr; // everything the gate can hold back
+    QLabel*         m_sub        = nullptr; // swaps text with the gate state
+
     StatBox*      m_focusBox      = nullptr;
     StatBox*      m_breakBox      = nullptr;
     StatBox*      m_distractedBox = nullptr;
-    class CategoryPie* m_pie = nullptr;   // day's split, colours match rows
     CategoryBars* m_bars       = nullptr;
     QLabel*       m_encourage  = nullptr;
 };

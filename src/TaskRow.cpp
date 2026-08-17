@@ -18,12 +18,10 @@ TaskRow::TaskRow(AppData* data, const Task& task, bool showCategoryDot,
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(9);
 
-    const QString taskId = task.id; // captured by every lambda below
-    // A by-VALUE snapshot of the fields the detail panel seeds from. The
-    // `task` reference points into AppData's vector, which may move its
-    // elements on the next mutation — copying the plain values now means
-    // the click handler can never read a dangling reference.
-    const Task snapshot = task;
+    const QString taskId = task.id; // captured by every lambda below —
+    // an ID and not a Task snapshot since v28.5: runTaskDetail re-reads
+    // the task fresh from AppData at open time (and after every hop), so
+    // the handler holds nothing that can dangle OR go stale.
 
     auto* check = new QCheckBox(this);
     check->setChecked(task.done); // state FIRST, connect AFTER — restoring
@@ -59,22 +57,12 @@ TaskRow::TaskRow(AppData* data, const Task& task, bool showCategoryDot,
         "QPushButton:hover { color:#2F7E6E; }")
             .arg(task.done ? "#AEB4AC" : "#2B2F36"));
     connect(title, &QPushButton::clicked, this,
-            [this, data, taskId, snapshot]() {
-                // Parent the dialog to the top-level WINDOW, not to `this`
-                // (the row). Saving fires changed(), which rebuilds the pages
-                // and DELETES this row. If the row were the dialog's parent,
-                // Qt would destroy this stack dialog as a child mid-scope, and
-                // the stack unwind would destroy it AGAIN -> double free. The
-                // window outlives the dialog, so ownership stays sane.
-                TaskDetailDialog dialog(snapshot.title, snapshot.description,
-                                        snapshot.dueDate, snapshot.repeat,
-                                        snapshot.priority, window());
-                if (dialog.exec() == QDialog::Accepted)
-                    data->updateTask(taskId, dialog.chosenTitle(),
-                                     dialog.chosenDescription(),
-                                     dialog.chosenDueDate(),
-                                     dialog.chosenRepeat(),
-                                     dialog.chosenPriority());
+            [this, data, taskId]() {
+                // v28.5: the whole seed/exec/apply session — plus clicking
+                // through to pieces and back — lives in runTaskDetail. The
+                // window-not-row parenting rule (double-free protection)
+                // moved with it; see the function's header comment.
+                runTaskDetail(*data, taskId, window());
             });
 
     // The urgency chip (v7). Medium is silent — chips must stay rare to
@@ -115,24 +103,36 @@ TaskRow::TaskRow(AppData* data, const Task& task, bool showCategoryDot,
     // overdue, or the honest "date TBD". Kept as a quick one-tap shortcut
     // even though the detail panel can set the date too: single-field flicks
     // deserve single-field controls.
-    auto* dateBtn = new QPushButton(
-        task.dueDate.isValid() ? task.dueDate.toString("MMM d")
-                               : tr("date TBD"),
-        this);
+    // v22: the badge shows the clock too when one is set ("Aug 8 · 23:59").
+    // The date alone was a complete answer before; now it would be a partial
+    // one, and a badge that hides half the deadline is worse than no badge.
+    QString dueLabel = tr("date TBD");
+    if (task.dueDate.isValid()) {
+        dueLabel = task.dueDate.toString("MMM d");
+        if (task.dueTime.isValid())
+            dueLabel += QStringLiteral(" \u00B7 ") + dueTimeLabel(task.dueTime);
+    }
+    auto* dateBtn = new QPushButton(dueLabel, this);
     dateBtn->setCursor(Qt::PointingHandCursor);
     dateBtn->setStyleSheet(
-        task.isOverdue(QDate::currentDate())
+        // The time-aware overload: a task due today at 09:00 goes rose at
+        // 09:01, not at midnight. Same call site, sharper rule — that is
+        // what the QDateTime overload in Task.h exists to buy.
+        task.isOverdue(QDateTime::currentDateTime())
             ? "background:#F7ECEA; border:none; border-radius:8px; "
               "padding:5px 10px; color:#C25B54; font-weight:600;"
             : "background:#EEF0ED; border:none; border-radius:8px; "
               "padding:5px 10px; color:#616974;");
-    const QDate current = task.dueDate;
-    connect(dateBtn, &QPushButton::clicked, this, [this, data, taskId, current]() {
+    const QDate current     = task.dueDate;
+    const QTime currentTime = task.dueTime;
+    connect(dateBtn, &QPushButton::clicked, this,
+            [this, data, taskId, current, currentTime]() {
         // Same ownership rule as the title dialog above: parent to the
         // window, never to this row (which the save's rebuild deletes).
-        DueDateDialog dialog(current, window());
+        DueDateDialog dialog(current, currentTime, window());
         if (dialog.exec() == QDialog::Accepted)
-            data->setTaskDueDate(taskId, dialog.chosenDate());
+            data->setTaskDueDate(taskId, dialog.chosenDate(),
+                                 dialog.chosenTime());
     });
 
     // Archive appears the moment a task is DONE (item 4): "get this victory

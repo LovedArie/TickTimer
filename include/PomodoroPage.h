@@ -1,24 +1,28 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// PomodoroPage — the standalone Pomodoro timer (UC5): 25 min focus,
-// 5 min break, a 15-min long break every 4th round.
+// PomodoroPage — the Pomodoro timer's FULL-SIZE face (UC5).
 //
-// A second state machine to compare with TrackerService — same pattern
-// (an enum field + transitions), different shape: this one is driven by a
-// COUNTDOWN (remaining seconds hit zero -> advance phase) where the
-// tracker is driven by USER COMMANDS. Seeing the same pattern twice in
-// different clothes is how patterns stick.
+// History note worth keeping: this class used to BE the Pomodoro — phase,
+// round, countdown, all private members here. The state machine moved out
+// to PomodoroEngine the day three non-page consumers appeared (notifier,
+// mini window, tracker link); what remains is a view plus the settings
+// owner. Compare the diff of that refactor and notice what did NOT change:
+// the ring, the dots, the buttons — views survive extractions precisely
+// because they never owned the truth, only painted it.
 //
-// Deliberately self-contained: it records nothing into AppData. The design
-// docs keep UC5 separate from UC2's segments; linking a Pomodoro run to a
-// planned block is future work, and gluing them prematurely would tangle
-// two clean machines. Note what that buys: this page takes no AppData*,
-// so you could lift the whole file into another project unchanged.
+// This page still owns every QSettings read/write for the Pomodoro
+// (durations, notify toggle, link toggle) — doctrine: pages own settings;
+// services and widgets are TOLD. The engine gets setDurations(); the link
+// gets setEnabled(); neither ever sees a QSettings.
 // ---------------------------------------------------------------------------
 
-#include <QTimer>
 #include <QWidget>
 
+class AppData;
+class PomodoroEngine;
+class PomodoroLink;
+class TrackerService;
+class PomodoroMiniWindow;
 class QLabel;
 class QPushButton;
 class PomodoroRing;
@@ -28,41 +32,35 @@ class PomodoroPage : public QWidget
     Q_OBJECT
 
 public:
-    explicit PomodoroPage(QWidget* parent = nullptr);
-
-private slots:
-    void tick();          // one second passed
-    void toggleRunning(); // Start <-> Pause
-    void reset();
-    void skip();          // jump to the next phase (preview / bail out)
+    // tracker + data are here for one job: SAYING what the link is doing
+    // (v19.6 — owner report: the link worked invisibly). The page never
+    // commands the tracker; it reads state and names the block.
+    PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
+                 TrackerService* tracker, const AppData* data,
+                 QWidget* parent = nullptr);
+    ~PomodoroPage() override; // deletes the parentless mini card (v19.5.1)
 
 private:
-    enum class Phase { Focus, ShortBreak, LongBreak };
+    void refresh();        // repaint every control from the engine's state
+    void refreshHint();    // the durations sentence under the controls
+    void refreshLinkStatus(); // the one line that makes the link VISIBLE
+    void showMini();       // create-on-first-use, then just raise
 
-    int  phaseTotalSeconds() const;
-    void advancePhase();
-    void refresh();
-    void applyDurations(); // re-read the durations into the live timer + hint
-
-    Phase m_phase   = Phase::Focus;
-    int   m_remaining = 0; // seconds; seeded from settings in the ctor
-    int   m_round   = 1;
-    bool  m_running = false;
-    QTimer m_timer;
-
-    // The durations the user picks are SETTINGS, not domain data: they must
-    // survive a restart, but they are NOT facts about the user's time, so
-    // they live in QSettings (see the task-details addendum), never in
-    // data.json. The classic Pomodoro values are the defaults.
-    int m_focusMinutes      = 25;
-    int m_shortBreakMinutes = 5;
-    int m_longBreakMinutes  = 15;
+    PomodoroEngine* m_engine = nullptr; // not owned; owned by MainWindow
+    PomodoroLink*   m_link   = nullptr; // not owned; owned by MainWindow
+    TrackerService* m_tracker = nullptr; // read-only here (status line)
+    const AppData*  m_data    = nullptr; // read-only here (block's name)
+    PomodoroMiniWindow* m_mini = nullptr; // lazily created; owned BY HAND —
+                                           // it is parentless on purpose
+                                           // (Windows owner semantics), so
+                                           // Qt's tree can't delete it
 
     QLabel*       m_phaseLabel = nullptr;
     PomodoroRing* m_ring       = nullptr;
     QVector<QLabel*> m_dots;
     QPushButton*  m_startBtn   = nullptr;
-    QLabel*       m_hint       = nullptr; // dynamic: reflects current durations
+    QLabel*       m_hint       = nullptr;
+    QLabel*       m_linkStatus = nullptr;
 };
 
 // The countdown ring: progress arc, mm:ss, and the round number — one more

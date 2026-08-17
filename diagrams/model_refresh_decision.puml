@@ -1,0 +1,50 @@
+@startuml model_refresh_decision
+' ---------------------------------------------------------------------------
+' model_refresh_decision — TaskListModel::refresh() (v20.1).
+' Converted from Mermaid in the v26.8 audit: this diagram was indexed as
+' canonical but had never been rendered once, so nobody had actually seen it.
+'
+' The lesson it carries: a QAbstractItemModel has three ways to say "things
+' changed", and they are ranked by how much of the user's context they
+' destroy. dataChanged keeps scroll AND selection; insert/remove keeps
+' scroll mostly; reset throws both away. So you spend effort proving you
+' may use the cheap one, and fall back honestly when you cannot.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title TaskListModel::refresh() — spend a diff to save the user's scroll position
+
+start
+:AppData::changed() fires;
+:take a fresh snapshot,
+diff it against the old one;
+
+if (same ids, same order?) then (yes)
+  :<b>dataChanged</b> on rows whose
+  <i>visible role</i> actually moved;
+  note right
+    A description-only edit emits NOTHING:
+    the description is not a role this view
+    paints. Scroll and selection both survive.
+  end note
+else (no)
+  if (do the survivors keep\ntheir relative order?) then (yes)
+    :<b>beginRemoveRows</b> (vanished ids)
+    + <b>beginInsertRows</b> (new ids)
+    + dataChanged (edited survivors);
+    note right
+      Scroll mostly survives; selection
+      follows the rows Qt can track.
+    end note
+  else (no — a due-date edit re-sorted a row)
+    :<b>beginResetModel</b>;
+    note right
+      The honest fallback: assume everything
+      moved. Cheap to write, expensive to the
+      user — which is exactly why it is last.
+    end note
+  endif
+endif
+
+stop
+@enduml

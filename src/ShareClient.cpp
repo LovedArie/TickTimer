@@ -1,5 +1,7 @@
 #include "ShareClient.h"
 
+#include "AuthClient.h" // normalizeServerUrl — the consumer v29.0.1 missed
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkReply>
@@ -9,7 +11,7 @@
 ShareClient::ShareClient(const QString& serverUrl, const QString& token,
                          QObject* parent)
     : QObject(parent)
-    , m_url(serverUrl)
+    , m_url(AuthClient::normalizeServerUrl(serverUrl)) // defense in depth; the SOURCE fix lives in LoginDialog::serverUrl (v29.0.2)
     , m_token(token)
 {
 }
@@ -43,10 +45,17 @@ ShareClient::Outcome ShareClient::classify(QNetworkReply* reply,
     case 401: return Outcome::AuthError;
     case 403: return Outcome::Forbidden;
     case 404:
-        // Two different 404s travel this wire: "no such route" and "no such
-        // user". Both mean the thing you named doesn't exist; NotFound
-        // covers them and the dialog words it for a human.
-        return Outcome::NotFound;
+        // Two different 404s travel this wire — and v29.0.2 stops
+        // pretending they're one. "no_such_user" is the owner's typo;
+        // any OTHER 404 (a route-level not_found from a malformed base
+        // URL, say) is our problem, and telling the owner to check her
+        // spelling for it is the error-taxonomy crime this file's first
+        // version committed with a straight face. The body was already
+        // in hand; the distinction was one comparison away.
+        return obj.value(QStringLiteral("error")).toString()
+                       == QLatin1String("no_such_user")
+                   ? Outcome::NotFound
+                   : Outcome::UnexpectedReply;
     default:  break;
     }
     if (!obj.value(QStringLiteral("ok")).toBool())

@@ -1,0 +1,109 @@
+@startuml affordability_flow
+' ---------------------------------------------------------------------------
+' affordability_flow — v28.0, the proactive pipeline with no model in it.
+'
+' Read the boxes as the §A spine made visible: the timer decides WHEN, the
+' pure namespace computes WHAT IS TRUE, and the sentence box is the ONLY
+' thing 28.1 will replace with a model. Everything else in this picture is
+' finished — which is the design: the fallback path shipped first, so the
+' model can only ever be an enhancement, never a dependency.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title Affordability v28.0/28.1 — trigger → verdict → manners → sentence → toast
+
+start
+
+partition "WHEN — AffordabilityService (dumb on purpose)" {
+  :20-min timer fires,
+  or 30 s of quiet after AppData::changed();
+  note right
+    The debounce matters: a half-built plan
+    (three blocks placed, two to go) is exactly
+    when a "Tight" verdict would be
+    wrong-and-alarming.
+  end note
+  :for each open task with a deadline;
+}
+
+partition "WHAT IS TRUE — afford:: (pure, tested headless)" {
+  :affordability(data, task, now) → Report;
+  if (blocks ever planned?) then (no)
+    :verdict = <b>Unknown</b>
+    "…I can't tell how much is left";
+    note right
+      §H.3 — the honest hand. Unknown
+      never toasts: "I don't know" as an
+      interruption is noise. Chat serves
+      it in 28.1.
+    end note
+    stop
+  else (yes)
+  endif
+  :outstanding = plannedAll − tracked
+  capacity = plannedAhead + free daytime;
+  if (cramped, last-call,\nor slipping?) then (no)
+    :verdict = Comfortable;
+    :service re-arms silently
+    (a FUTURE Tight is news again);
+    stop
+  else (yes)
+    :verdict = <b>Tight</b>;
+  endif
+}
+
+partition "MANNERS — afford::decide (§F.3, load-bearing)" {
+  if (already said Tight?\n(change-of-verdict)) then (yes)
+    :silence — a secretary does not
+    mention it four times;
+    stop
+  else (no)
+  endif
+  if (quiet hours? · daily cap?\n· task dismissed — §H.5?) then (suppressed)
+    :store NOTHING — the heads-up was never
+    delivered, so it is still owed. The next
+    sweep outside the suppression says it;
+    stop
+  else (clear to speak)
+  endif
+}
+
+partition "SENTENCE — 28.1: the model phrases, the C++ voice guarantees" {
+  :NudgeClient.phrase — one seat
+  (the configured primary), 8 s budget;
+  note right
+    No route walk: the fallback seat IS
+    afford::sentence(), the quick-add
+    argument again. A nudge cannot fail —
+    only sound more or less human.
+  end note
+  if (reply arrives AND passes
+nudge::accept — length,
+whitespace, markdown?) then (yes)
+    :the model's wording, in the
+    chat's persona voice — locked
+    rules (inform-never-forbid,
+    non-shaming) above every style;
+  else (no key · unreachable · timeout
+· essay · empty)
+    :afford::sentence(report) — the
+    v28.0 voice, kept warm:
+    «…<b>Your call.</b>»;
+  endif
+  :deliver() — the ONE exit: cap bump +
+  verdict store happen at DELIVERY, so
+  the two voices cannot diverge on
+  bookkeeping;
+}
+
+:emit nudge(title, body, taskId);
+:MainWindow → ToastSpec, Kind::Alert
+→ NotificationToast, danger-red accent;
+note right
+  taskId rides along unused — the §G.1
+  seam, for when tapping a toast has
+  somewhere to GO (the check-in, v28.2).
+end note
+
+stop
+@enduml

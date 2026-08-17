@@ -1,0 +1,26 @@
+%% The needs-a-block card's height, in three acts.
+%% v21 froze the window; v22 fixed that but squashed the card; v22.1 moves
+%% the decision to the panel. Read left to right as a debugging story.
+flowchart LR
+    subgraph v21["v21 — unbounded"]
+        B1["20 due tasks"] --> B2["rows in a QVBoxLayout"]
+        B2 --> B3["layout minimum =<br/>SUM of children"]
+        B3 --> B4["QMainWindow minimum grows"]
+        B4 --> B5["window cannot shrink"]
+    end
+
+    subgraph v22["v22 — self-capped (wrong)"]
+        C1["QScrollArea, max 280px"] --> C2["window free again ✓"]
+        C1 --> C3["but sizeHint is a<br/>CACHED GUESS"]
+        C3 --> C4["card squashed to 2 lines<br/>over an empty panel ✗"]
+    end
+
+    subgraph v221["v22.1 — the panel decides"]
+        D1["GlancePanel::refresh()"] --> D2{"gate closed?"}
+        D2 -->|yes| D3["stretch → card<br/>(card IS the panel, §E)"]
+        D2 -->|no| D4["stretch → day content<br/>card sizes to its strip"]
+        D3 --> D5["rows fill the height;<br/>scroll only when it runs out"]
+    end
+
+    B5 -.->|"scroll area's small constant<br/>MINIMUM survives into v22.1"| C2
+    C4 -.->|"stretch factors CLAIM space;<br/>hints only suggest it"| D1

@@ -1,32 +1,18 @@
 #include "TaskDetailDialog.h"
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QDateEdit>
+#include "AppData.h"         // the free helpers only
+#include "TaskDetailPanel.h" // runTaskDetail's preferred container (v28.6)
+
 #include <QHBoxLayout>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
 
-namespace
-{
-// A tiny section caption, reused for each field — the uppercase grey label
-// idiom already used across the app's panels.
-QLabel* caption(const QString& text, QWidget* parent)
-{
-    auto* l = new QLabel(text, parent);
-    l->setStyleSheet(
-        "color:#616974; font-size:10px; font-weight:700; letter-spacing:1px;");
-    return l;
-}
-} // namespace
-
 TaskDetailDialog::TaskDetailDialog(const QString& title,
                                    const QString& description, QDate dueDate,
-                                   Task::Repeat repeat,
-                                   Task::Priority priority, QWidget* parent)
+                                   QTime dueTime, Task::Repeat repeat,
+                                   Task::Priority priority,
+                                   int estimateMinutes, bool chunkable,
+                                   QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle(tr("Task details"));
@@ -36,75 +22,21 @@ TaskDetailDialog::TaskDetailDialog(const QString& title,
     layout->setContentsMargins(18, 16, 18, 14);
     layout->setSpacing(8);
 
-    // ---- title -------------------------------------------------------------
-    layout->addWidget(caption(tr("TITLE"), this));
-    m_title = new QLineEdit(title, this);
-    m_title->setPlaceholderText(tr("What needs doing?"));
-    layout->addWidget(m_title);
+    m_form = new TaskDetailForm(title, description, dueDate, dueTime, repeat,
+                                priority, estimateMinutes, chunkable, this);
+    layout->addWidget(m_form);
 
-    // ---- description (the multi-line notes field) --------------------------
-    layout->addSpacing(4);
-    layout->addWidget(caption(tr("DESCRIPTION"), this));
-    m_notes = new QPlainTextEdit(this);
-    m_notes->setPlainText(description);
-    m_notes->setPlaceholderText(
-        tr("Notes, links, a checklist — anything that helps future you."));
-    m_notes->setFixedHeight(96);
-    layout->addWidget(m_notes);
+    // THE modal navigation policy, in one connect: record + accept. The
+    // hop saves the sitting (v28.5's rule) because accept() is what makes
+    // the caller apply — reject would silently discard every edit as the
+    // price of navigation.
+    connect(m_form, &TaskDetailForm::navigateRequested, this,
+            [this](const QString& id) {
+                m_navigateTo = id;
+                accept();
+            });
 
-    // ---- due date ----------------------------------------------------------
-    layout->addSpacing(4);
-    layout->addWidget(caption(tr("DUE DATE"), this));
-    auto* dateRow = new QHBoxLayout;
-    dateRow->setSpacing(8);
-    m_date = new QDateEdit(this);
-    m_date->setCalendarPopup(true);
-    m_date->setDisplayFormat("MMM d, yyyy");
-    // A sensible starting point either way: the task's current date, or
-    // today for a task that has none yet.
-    m_date->setDate(dueDate.isValid() ? dueDate : QDate::currentDate());
-    m_noDate = new QCheckBox(tr("No due date"), this);
-    m_noDate->setChecked(!dueDate.isValid()); // TBD tasks start ticked
-    // The checkbox owns the date field's enabled state: ticking "no date"
-    // greys the calendar, because a disabled control says "this answer is
-    // off" far more clearly than a value you must remember to ignore.
-    m_date->setEnabled(dueDate.isValid());
-    connect(m_noDate, &QCheckBox::toggled, this,
-            [this](bool noDate) { m_date->setEnabled(!noDate); });
-    dateRow->addWidget(m_date, 1);
-    dateRow->addWidget(m_noDate);
-    layout->addLayout(dateRow);
-
-    // ---- repeat ------------------------------------------------------------
-    layout->addSpacing(4);
-    layout->addWidget(caption(tr("REPEAT"), this));
-    m_repeat = new QComboBox(this);
-    // The item ORDER matches the enum's order, so the enum's integer value
-    // IS the combo index — no lookup table, no chance of drift. (If the
-    // enum ever gains a value mid-list, this assumption is where you'd fix
-    // it; the comment is the tripwire.)
-    m_repeat->addItem(tr("Does not repeat")); // Repeat::None  == 0
-    m_repeat->addItem(tr("Daily"));           // Repeat::Daily == 1
-    m_repeat->addItem(tr("Weekly"));          // Repeat::Weekly== 2
-    m_repeat->addItem(tr("Monthly"));         // Repeat::Monthly==3
-    m_repeat->addItem(tr("Yearly"));          // Repeat::Yearly ==4
-    m_repeat->setCurrentIndex(static_cast<int>(repeat));
-    layout->addWidget(m_repeat);
-
-    // ---- priority (v7) ------------------------------------------------------
-    // Same combo-index-equals-enum-value trick as repeat: the item order IS
-    // the enum order, so the mapping is one static_cast each way and there
-    // is no translation table to fall out of sync.
-    layout->addSpacing(4);
-    layout->addWidget(caption(tr("PRIORITY"), this));
-    m_priority = new QComboBox(this);
-    m_priority->addItem(tr("Urgent — do this first"));   // Priority::Urgent == 0
-    m_priority->addItem(tr("Medium — the default"));     // Priority::Medium == 1
-    m_priority->addItem(tr("Low — when there's time"));  // Priority::Low    == 2
-    m_priority->setCurrentIndex(static_cast<int>(priority));
-    layout->addWidget(m_priority);
-
-    // ---- buttons -----------------------------------------------------------
+    // ---- buttons — the modality half the form doesn't carry ---------------
     layout->addSpacing(8);
     auto* buttons = new QHBoxLayout;
     auto* cancel = new QPushButton(tr("Cancel"), this);
@@ -118,32 +50,174 @@ TaskDetailDialog::TaskDetailDialog(const QString& title,
 
     connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
     connect(save, &QPushButton::clicked, this, &QDialog::accept);
-
-    m_title->setFocus(); // land the cursor where editing usually starts
 }
 
-QString TaskDetailDialog::chosenTitle() const
+void TaskDetailDialog::seedPieces(const QVector<Piece>& pieces)
 {
-    return m_title->text();
+    m_form->seedPieces(pieces);
 }
 
+void TaskDetailDialog::setBreadcrumb(const QString& parentId,
+                                     const QString& parentTitle)
+{
+    m_form->setBreadcrumb(parentId, parentTitle);
+    setWindowTitle(tr("Piece details")); // same widget, honest label
+}
+
+QString TaskDetailDialog::chosenTitle() const { return m_form->chosenTitle(); }
 QString TaskDetailDialog::chosenDescription() const
 {
-    return m_notes->toPlainText();
+    return m_form->chosenDescription();
 }
-
 QDate TaskDetailDialog::chosenDueDate() const
 {
-    // The checkbox is the source of truth for "has a date at all".
-    return m_noDate->isChecked() ? QDate() : m_date->date();
+    return m_form->chosenDueDate();
 }
-
-Task::Priority TaskDetailDialog::chosenPriority() const
+QTime TaskDetailDialog::chosenDueTime() const
 {
-    return static_cast<Task::Priority>(m_priority->currentIndex());
+    return m_form->chosenDueTime();
 }
-
 Task::Repeat TaskDetailDialog::chosenRepeat() const
 {
-    return static_cast<Task::Repeat>(m_repeat->currentIndex());
+    return m_form->chosenRepeat();
+}
+Task::Priority TaskDetailDialog::chosenPriority() const
+{
+    return m_form->chosenPriority();
+}
+int TaskDetailDialog::chosenEstimateMinutes() const
+{
+    return m_form->chosenEstimateMinutes();
+}
+bool TaskDetailDialog::chosenChunkable() const
+{
+    return m_form->chosenChunkable();
+}
+QVector<TaskDetailDialog::Piece> TaskDetailDialog::chosenPieces() const
+{
+    return m_form->chosenPieces();
+}
+
+// ---- the free-function family ----------------------------------------------
+
+void seedTaskDetailPieces(TaskDetailForm& form, const AppData& data,
+                          const QString& taskId)
+{
+    const Task* task = data.taskById(taskId);
+    if (!task || task->isPiece())
+        return; // no section at all for a piece — one level only
+
+    QVector<TaskDetailForm::Piece> pieces;
+    for (const Task* piece : data.subtasksOf(taskId)) {
+        TaskDetailForm::Piece p;
+        p.id    = piece->id;
+        p.title = piece->title;
+        p.done  = piece->done;
+        p.dueDate         = piece->dueDate;         // the row's chip
+        p.estimateMinutes = piece->estimateMinutes; // (display hints)
+        pieces.append(p);
+    }
+    form.seedPieces(pieces); // even when empty: the add-row must appear,
+                             // or a task could never gain its FIRST piece
+}
+
+void seedTaskDetailPieces(TaskDetailDialog& dialog, const AppData& data,
+                          const QString& taskId)
+{
+    seedTaskDetailPieces(dialog.form(), data, taskId);
+}
+
+void applyTaskDetailAnswers(AppData& data, const QString& taskId,
+                            const TaskDetailForm& form)
+{
+    AppData::Batch batch(data); // N mutations, ONE changed() at the brace
+
+    data.updateTask(taskId, form.chosenTitle(), form.chosenDescription(),
+                    form.chosenDueDate(), form.chosenDueTime(),
+                    form.chosenRepeat(), form.chosenPriority());
+    data.setTaskSize(taskId, form.chosenEstimateMinutes(),
+                     form.chosenChunkable());
+
+    for (const TaskDetailForm::Piece& piece : form.chosenPieces()) {
+        if (piece.id.isEmpty()) {
+            // Born in the form. A line added and then ✕ed in the same
+            // sitting was a change of mind, not a task — never create it.
+            if (piece.archived)
+                continue;
+            const QString newId = data.addSubtask(taskId, piece.title);
+            if (!newId.isEmpty() && piece.done)
+                data.setTaskDone(newId, true);
+        } else {
+            data.setTaskDone(piece.id, piece.done);
+            if (piece.archived)
+                data.setTaskArchived(piece.id, true);
+        }
+    }
+}
+
+void applyTaskDetailAnswers(AppData& data, const QString& taskId,
+                            const TaskDetailDialog& dialog)
+{
+    applyTaskDetailAnswers(data, taskId, dialog.form());
+}
+
+void runTaskDetailNaming(AppData& data, const QString& taskId,
+                         QWidget* windowParent)
+{
+    // Same discovery as runTaskDetail (window() → findChild), then the
+    // one extra step the naming flow needs. Falls through to the plain
+    // session when no panel exists.
+    if (QWidget* w = windowParent ? windowParent->window() : nullptr)
+        if (auto* panel = w->findChild<TaskDetailPanel*>()) {
+            panel->openTask(taskId);
+            panel->focusTitleForNaming();
+            return;
+        }
+    runTaskDetail(data, taskId, windowParent);
+}
+
+void runTaskDetail(AppData& data, QString taskId, QWidget* windowParent)
+{
+    // v28.6: the docked panel is the preferred container. Found by
+    // findChild from the top-level window — which is exactly the handle
+    // every call site already passes (the window-not-row ownership rule),
+    // so adding the panel changed ZERO call sites. One panel per window by
+    // construction (MainWindow builds it); other windows have none and
+    // fall through to the modal loop below.
+    if (QWidget* w = windowParent ? windowParent->window() : nullptr)
+        if (auto* panel = w->findChild<TaskDetailPanel*>()) {
+            panel->openTask(taskId);
+            return; // the panel owns the session from here — no loop:
+                    // navigation is swap-in-place, not close-and-reopen
+        }
+
+    // ---- the modal fallback: the v28.5 loop, verbatim ----------------------
+    // Each hop re-reads the task FRESH from AppData rather than trusting a
+    // snapshot across iterations.
+    while (!taskId.isEmpty()) {
+        const Task* task = data.taskById(taskId);
+        if (!task)
+            return; // navigated to a task that vanished — stop quietly
+        const Task snapshot = *task; // by value: updateTask may move the vector
+
+        TaskDetailDialog dialog(snapshot.title, snapshot.description,
+                                snapshot.dueDate, snapshot.dueTime,
+                                snapshot.repeat, snapshot.priority,
+                                snapshot.estimateMinutes, snapshot.chunkable,
+                                windowParent);
+
+        // A piece gets the way back up. Guarded twice on purpose: isPiece()
+        // says there SHOULD be a parent, taskById says there IS.
+        if (snapshot.isPiece())
+            if (const Task* parent = data.taskById(snapshot.parentId))
+                dialog.setBreadcrumb(parent->id, parent->title);
+
+        seedTaskDetailPieces(dialog, data, taskId); // no-op for a piece
+
+        if (dialog.exec() != QDialog::Accepted)
+            return; // Cancel means "discard AND stay" — both, always
+
+        applyTaskDetailAnswers(data, taskId, dialog);
+        taskId = dialog.navigationTarget(); // empty = a plain save = done
+    }
 }

@@ -1,0 +1,62 @@
+@startuml window_memory_restore
+' ---------------------------------------------------------------------------
+' window_memory_restore — v23/v23.1, restoring and saving the window.
+' Converted from Mermaid in the v26.8 audit (never rendered until now).
+'
+' FOUR ways in, ONE way out: every failure path lands on the same default
+' rectangle, so no branch needs its own recovery code. That is the shape
+' worth stealing — an error-handling design where the failures converge
+' instead of each growing a bespoke tail.
+'
+' The interesting check is the LAST one, because Qt cannot do it for you:
+' restoreGeometry() validates BYTES, not monitors. A perfectly valid blob can
+' put your window on a screen that went home with the docking station.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title The window's memory — restore (four ways in, one way out) and save
+
+start
+:MainWindow constructor ends;
+:<b>resize(kDefaultWidth, kDefaultHeight)</b>
+set FIRST, so every exit below
+already stands on a sane window;
+:restoreWindowState();
+:RAIL — m_nav->setVisible(
+  prefs::sidebarVisible(!isCompactScreen()));
+
+if (isCompactScreen()?) then (yes)
+  :<b>DONE</b> — geometry is neither saved
+  nor restored on phone-sized screens;
+  stop
+else (no)
+endif
+
+if (prefs::windowGeometry() empty?) then (yes — first run here)
+  :<b>DONE</b> — default rectangle;
+  stop
+else (no)
+endif
+
+if (restoreGeometry(blob)) then (false — Qt refused the bytes:\nwrong version, corrupt, hand-edited)
+  :<b>DONE</b> — default rectangle;
+  stop
+else (true)
+endif
+
+if (overlapsAnyScreen(frameGeometry(),\navailableScreenRects())) then (true)
+  :<b>DONE</b> — window is where you left it,
+  maximized state and all;
+  stop
+else (false — the monitor it lived on is gone)
+  :setWindowState(WindowNoState)
+  — drop a maximize aimed at a screen
+  that no longer exists;
+  :resize + centre on primary;
+  :<b>DONE</b> — default rectangle.
+  Silent: an unreadable preference is
+  not an error the user can act on;
+  stop
+endif
+
+@enduml

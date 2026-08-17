@@ -1,0 +1,17 @@
+%% Two model/view pipelines contrasted: Upcoming (v20) vs Activities tasks (v20.2). See docs/design-addendum-model-view.md §J
+flowchart LR
+    subgraph U["Upcoming page (v20 / v20.1)"]
+        direction TB
+        UM["TaskListModel<br/>FIXED query: upcomingTasks()<br/>granular diff on change"]
+        UP["TaskFilterProxy<br/>priority lens + due-date sort"]
+        UV["QListView<br/>+ TaskCardDelegate (cards)"]
+        UM --> UP --> UV
+    end
+    subgraph A["Activities detail pane (v20.2)"]
+        direction TB
+        AM["CategoryTaskModel<br/>PARAMETERISED: tasksIn(categoryId)<br/>re-pointable · plain reset"]
+        AV["QListView<br/>+ CategoryTaskDelegate (flat rows)"]
+        AM --> AV
+    end
+    RAIL["rail click"] -->|"setCategoryId(id)"| AM
+    NOTE["no proxy: no lens, keep insertion order"] -.-> AM

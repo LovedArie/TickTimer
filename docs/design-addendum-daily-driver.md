@@ -99,6 +99,13 @@ feature: comparing isn't a scoreboard, it's **planning**. v2:
 Still true from v1: the peer data is a **snapshot** from the moment
 Compare opened (fresh data = reopen), and the whole thing runs on the
 share blob + snapshot-AppData machinery bought two sessions ago.
+Field-tested addition: the server can only hand out what the peer has
+**pushed** — sync is a manual button — so a never-synced peer used to
+open as a silently empty day, indistinguishable from "has no plans".
+Now SharingDialog refuses with the true sentence ("ask them to press
+Sync first"), and each agenda column labels its own freshness
+("live — edit freely" / "as of their last sync"). An app that knows
+something the user needs must SAY it.
 
 ## F. Special days grow up (item 8)
 
@@ -119,6 +126,50 @@ later) stands — absence-as-default, the TBD-date trick again.
 - v19.1.0 via `Version.h` — the single source of truth doing its job:
   one edit, both exes and the update check follow.
 
+## I. Auto-sync — a debounce, not a heartbeat (owner feedback, round 2)
+
+*"Manually syncing isn't user friendly."* Correct — and the fix is a
+**debounce inside SyncService**: every `AppData::changed()` restarts a
+one-shot 5-second timer, so the push fires after the *last* change in a
+burst. Drag a block through six slots: the server hears one push, not six
+(the live test pins exactly this — three edits, revision +1).
+
+The boundaries are the design:
+- **Auto means auto-WHEN, never auto-WHO-WINS.** The timeout calls the
+  same `syncNow()` the button calls — same truth table, same
+  never-silently-resolve rule. A conflict *pauses* auto-sync (re-ramming
+  an unresolved conflict would spam a human who already knows).
+- **A conflict can now arrive with no dialog open** — so the held state
+  became *queryable* (`hasPendingConflict()`), the Sync button turns
+  **⚠ Sync** as the nudge, and SyncDialog checks the state on open
+  instead of only listening for future signals. Signals only reach the
+  living; state answers latecomers.
+- It lives in the **policy layer**, not MainWindow — which is why a live
+  end-to-end test could prove it against a real server.
+
+## J. The login door opens on Log in (and a bug confession)
+
+The owner asked for login-first — and the fix uncovered that the ctor's
+mode-setting dance flipped `toggleMode()` **twice** and had always opened
+on *Create account*, while its own comment claimed login. Worse: our UI
+test had already met this bug (it couldn't find a "Log in" button) and we
+worked around the symptom with an objectName lookup instead of reading
+three lines. Lesson, engraved: **when a test can't find what the code
+claims exists, the claim is the suspect.** Now pinned by a test that
+checks the button says "Log in" on open.
+
+## K. Whole life areas retire (format v8)
+
+The owner's real archive use case is *semesters*: a term's classes live
+in one category — term ends, the **area** retires whole. `Category` gains
+`archived` (v8, additive as ever), with one cascade rule named once and
+reused: **hidden = own flag OR the owning category's flag**
+(`AppData::taskHidden`). Crucially, archiving an area sets *no flags on
+its children* — restore the category and everything returns exactly as it
+was, because nothing was touched. The ActivitiesPage repeats the pattern
+one level up: delete when empty, **Archive area** when in use; the
+Archive page grew a Life Areas section.
+
 ## H. Limits, named out loud
 
 - Archived things still **sync and share** (they're in the blob) — a peer
@@ -131,3 +182,10 @@ later) stands — absence-as-default, the TBD-date trick again.
   might legitimately mean to). Facts over validation, deliberately.
 - The Archive page will migrate into a real settings area when one
   exists; today's nav placement is the honest minimum.
+- Auto-sync pushes 5s after edits — but only while the app runs; edits
+  made seconds before closing race the debounce. A push-on-quit hook is
+  the obvious next stitch.
+- Restoring an archived life area restores its *tasks and activities*
+  visibility wholesale; per-child exceptions ("restore the area but keep
+  one old class hidden") would need the child's own flag — which already
+  exists. The two flags compose; the UI just doesn't surface the combo.

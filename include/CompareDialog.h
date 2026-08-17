@@ -38,9 +38,13 @@ class CompareDialog : public QDialog
 {
     Q_OBJECT
 public:
+    // `myName` (owner request): the columns are labelled with real account
+    // names, PINNED above the scroll — scrolling to 9 PM must not scroll
+    // away the answer to "which side is me?". Empty myName degrades to
+    // "You" (tests, or a session that somehow has no name).
     CompareDialog(AppData* mine, TrackerService* tracker,
-                  const QString& peerName, const QJsonObject& peerBlob,
-                  QWidget* parent = nullptr);
+                  const QString& myName, const QString& peerName,
+                  const QJsonObject& peerBlob, QWidget* parent = nullptr);
 
     // Public + parameterless-refresh entry so tests can drive the dialog to
     // a KNOWN date and read the labels — never trust "today" in a test.
@@ -53,6 +57,7 @@ private:
     AppData*        m_mine;    // live and editable — that's the point now
     TrackerService* m_tracker; // for EventDialog (timers keep working here)
     AppData         m_peer;    // owned snapshot — read-only forever
+    QString         m_myName;  // the logged-in account, for the column header
     QString         m_peerName;
     QDate           m_day;
 

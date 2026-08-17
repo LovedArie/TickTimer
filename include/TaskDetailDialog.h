@@ -1,65 +1,112 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// TaskDetailDialog — the "mini panel" that opens when you click a task:
-// its title, a free-text description (notes), a due date, and a repeat
-// setting, all in one place.
+// TaskDetailDialog — the MODAL wrapper around TaskDetailForm.
 //
-// SAME CONTRACT as DueDateDialog and PickActivityDialog, and worth stating
-// out loud because it is the pattern behind every dialog in this app: a
-// dialog is a pure QUESTION. It gathers an answer and mutates NOTHING. The
-// caller reads the getters and decides what to do — here, it calls
-// AppData::updateTask exactly once. Keeping the dialog domain-free is what
-// lets AppData stay the single door to every change (its whole reason to
-// exist) and lets this class be reused or tested without a live data store.
+// v28.6 hollowed this class out: every field it used to build now lives in
+// TaskDetailForm (see that header for the story), and this wrapper adds
+// exactly what modality needs — a window title, Save/Cancel buttons, and
+// ONE policy decision: what does a navigation request mean here? Answer:
+// record the target and accept ("save-then-go", the v28.5 rule) — because
+// a modal dialog cannot swap content in place; the caller's loop
+// (runTaskDetail) closes this one and opens the next.
 //
-// Why a QPlainTextEdit for the notes and not a QLineEdit: notes are
-// multi-line by nature ("bring the form / room B-204 / email prof first").
-// QLineEdit is one line; QPlainTextEdit is the multi-line plain-text field.
-// (QTextEdit would work too but carries rich-text machinery we do not want —
-// pick the smallest widget that fits the job.)
+// Still here at all because it is the FALLBACK: runTaskDetail prefers the
+// docked TaskDetailPanel when the window has one, and falls back to this
+// modal loop when it doesn't (other windows, tests, tools). Same form,
+// same answers, two containers.
 //
-// The due-date control is a QDateEdit paired with a "No due date" checkbox,
-// because — as everywhere in this domain — "no date" is a real answer, not
-// an absence. Ticking the box greys the calendar and makes chosenDueDate()
-// return an invalid QDate: the "DATE TBD" state, §3.11.
+// The pure-question contract is unchanged in substance and has simply
+// moved down a level with the fields: the FORM gathers answers and
+// mutates nothing; this wrapper decides when the answer is final
+// (Accepted) and nothing else.
 // ---------------------------------------------------------------------------
 
-#include "Task.h" // for Task::Repeat — a value type, safe to include here
+#include "TaskDetailForm.h" // the fields; Piece lives there now
 
 #include <QDate>
 #include <QDialog>
 #include <QString>
+#include <QTime>
+#include <QVector>
 
-class QLineEdit;
-class QPlainTextEdit;
-class QDateEdit;
-class QCheckBox;
-class QComboBox;
+class AppData; // for the free helpers below — the dialog itself never uses it
 
 class TaskDetailDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    // Seeded from the task's CURRENT values so opening the panel shows the
-    // truth; the dialog never reaches back into the task after that.
-    TaskDetailDialog(const QString& title, const QString& description,
-                     QDate dueDate, Task::Repeat repeat,
-                     Task::Priority priority = Task::Priority::Medium,
-                     QWidget* parent = nullptr);
+    // The v28.3 name every call site and test knows — now an alias for the
+    // form's struct, so nobody learned a new spelling in the extraction.
+    using Piece = TaskDetailForm::Piece;
 
-    // Valid only after exec() returned Accepted.
-    QString      chosenTitle() const;
-    QString      chosenDescription() const;
-    QDate        chosenDueDate() const;   // invalid == "no due date" (TBD)
-    Task::Repeat chosenRepeat() const;
+    // Same signature since v28.3 (sizing inserted before `parent` so a
+    // forgotten seed is a compile error, not a silent 0-over-real-estimate
+    // save — updateTask's v22 reasoning).
+    TaskDetailDialog(const QString& title, const QString& description,
+                     QDate dueDate, QTime dueTime, Task::Repeat repeat,
+                     Task::Priority priority, int estimateMinutes,
+                     bool chunkable, QWidget* parent = nullptr);
+
+    // Thin forwards to the form — kept so the public face of "the detail
+    // dialog" did not change shape in the refactor.
+    void seedPieces(const QVector<Piece>& pieces);
+    void setBreadcrumb(const QString& parentId, const QString& parentTitle);
+
+    // Where the user asked to GO, as part of the answer (v28.5). Empty = a
+    // plain save. Set by this wrapper's navigation policy: record + accept.
+    QString navigationTarget() const { return m_navigateTo; }
+
+    // Valid only after exec() returned Accepted. All forwards.
+    QString        chosenTitle() const;
+    QString        chosenDescription() const;
+    QDate          chosenDueDate() const;
+    QTime          chosenDueTime() const;
+    Task::Repeat   chosenRepeat() const;
     Task::Priority chosenPriority() const;
+    int            chosenEstimateMinutes() const;
+    bool           chosenChunkable() const;
+    QVector<Piece> chosenPieces() const;
+
+    // The wrapped form — the free helpers (seed/apply) address the form
+    // directly, so both containers share one code path.
+    TaskDetailForm&       form()       { return *m_form; }
+    const TaskDetailForm& form() const { return *m_form; }
 
 private:
-    QLineEdit*      m_title    = nullptr;
-    QPlainTextEdit* m_notes    = nullptr;
-    QDateEdit*      m_date     = nullptr;
-    QCheckBox*      m_noDate   = nullptr;
-    QComboBox*      m_priority = nullptr;
-    QComboBox*      m_repeat   = nullptr;
+    TaskDetailForm* m_form = nullptr;
+    QString         m_navigateTo;
 };
+
+// ---------------------------------------------------------------------------
+// The free-function family. seed READS, apply WRITES, run ORCHESTRATES —
+// and since v28.6 the form-taking overloads are the real ones; the
+// dialog-taking overloads forward, kept for the existing tests and any
+// future modal-only caller.
+// ---------------------------------------------------------------------------
+
+void seedTaskDetailPieces(TaskDetailForm& form, const AppData& data,
+                          const QString& taskId);
+void seedTaskDetailPieces(TaskDetailDialog& dialog, const AppData& data,
+                          const QString& taskId);
+
+void applyTaskDetailAnswers(AppData& data, const QString& taskId,
+                            const TaskDetailForm& form);
+void applyTaskDetailAnswers(AppData& data, const QString& taskId,
+                            const TaskDetailDialog& dialog);
+
+// The whole detail experience, one call. v28.6: prefers the docked
+// TaskDetailPanel when windowParent's window has one (the TickTick-style
+// swap-in-place — openTask and done); falls back to the v28.5 modal loop
+// otherwise. The four call sites still don't know or care which — that
+// was the point of the seam.
+void runTaskDetail(AppData& data, QString taskId, QWidget* windowParent);
+
+// v28.7 — runTaskDetail plus the naming handoff: when the panel serves
+// the session, the title arrives focused and fully selected (a
+// just-created "New piece" dies to the first keystroke). The modal
+// fallback degrades to plain runTaskDetail — exec() blocks, so there is
+// no "after open" moment to focus into; acceptable, since the fallback
+// only serves panel-less windows.
+void runTaskDetailNaming(AppData& data, const QString& taskId,
+                         QWidget* windowParent);

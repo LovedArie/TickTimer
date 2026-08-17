@@ -147,12 +147,23 @@ void MonthGrid::setMonth(QDate anyDayInMonth,
     update();
 }
 
+void MonthGrid::setFirstDayOfWeek(Qt::DayOfWeek day)
+{
+    if (m_firstDay == day)
+        return;
+    m_firstDay = day;
+    updateGeometry(); // the row count can change, not just the pixels
+    update();
+}
+
 QSize MonthGrid::sizeHint() const
 {
     if (!m_month.isValid())
         return {7 * (kCell + kGap), 6 * (kCell + kGap) + kHeaderBand};
     const QDate first(m_month.year(), m_month.month(), 1);
-    const int startColumn = first.dayOfWeek() - 1; // Monday-first grid
+    // Column of the 1st under the chosen week start — the same modular
+    // snap as stats::weekStart, expressed as a column index.
+    const int startColumn = (first.dayOfWeek() - int(m_firstDay) + 7) % 7;
     const int rows = (startColumn + first.daysInMonth() + 6) / 7;
     return {7 * (kCell + kGap), rows * (kCell + kGap) + kHeaderBand};
 }
@@ -166,18 +177,22 @@ void MonthGrid::paintEvent(QPaintEvent*)
     p.setRenderHint(QPainter::Antialiasing);
     p.setFont(scaledFont(font(), -1.5));
 
+    // Header names rotate with the week-start preference: column c shows
+    // the day (firstDay + c). The array stays Monday-anchored (Qt's
+    // DayOfWeek numbering) and the index does the rotating.
     static const char* dows[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
     p.setPen(theme::inkSoft());
     for (int c = 0; c < 7; ++c)
         p.drawText(QRect(c * (kCell + kGap), 0, kCell, kHeaderBand),
-                   Qt::AlignCenter, dows[c]);
+                   Qt::AlignCenter,
+                   dows[(int(m_firstDay) - 1 + c) % 7]);
 
     const QColor levelColors[] = {QColor("#DFE3DD"), theme::brk(),
                                   QColor("#7FC3B4"), theme::focus()};
     const int levelSizes[] = {7, 10, 13, 17};
 
     const QDate first(m_month.year(), m_month.month(), 1);
-    const int startColumn = first.dayOfWeek() - 1;
+    const int startColumn = (first.dayOfWeek() - int(m_firstDay) + 7) % 7;
 
     for (int day = 1; day <= first.daysInMonth(); ++day) {
         const int index = startColumn + day - 1;
@@ -253,9 +268,18 @@ void WeekReviewPage::setDate(QDate anyDayInWeek)
     refresh();
 }
 
+void WeekReviewPage::setFirstDayOfWeek(Qt::DayOfWeek day)
+{
+    if (m_firstDay == day)
+        return;
+    m_firstDay = day;
+    refresh(); // the same date now names a different set of seven days
+}
+
 void WeekReviewPage::refresh()
 {
-    const stats::PeriodSummary s = stats::summarizeWeek(*m_data, m_date);
+    const stats::PeriodSummary s =
+        stats::summarizeWeek(*m_data, m_date, m_firstDay);
 
     m_focusBox->setValue(stats::formatSeconds(s.totals.focusSeconds));
     m_breakBox->setValue(stats::formatSeconds(s.totals.breakSeconds));
@@ -370,6 +394,11 @@ MonthReviewPage::MonthReviewPage(const AppData* data, QWidget* parent)
 
     connect(m_data, &AppData::changed, this, &MonthReviewPage::refresh);
     refresh();
+}
+
+void MonthReviewPage::setFirstDayOfWeek(Qt::DayOfWeek day)
+{
+    m_grid->setFirstDayOfWeek(day); // pure forwarding — the grid owns the how
 }
 
 void MonthReviewPage::setDate(QDate anyDayInMonth)

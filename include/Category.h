@@ -26,4 +26,11 @@ struct Category
     QString folderId; // OPTIONAL home in the rail: id of a Folder, or ""
                       // for top level. Same reference-by-id discipline as
                       // every other link in this model (see Activity.h).
+
+    // v8: whole LIFE AREAS retire too (owner's use case: a semester's
+    // classes live in one area — new term, archive the whole thing, make
+    // the next). Archiving hides the category AND its world (activities,
+    // tasks) from every list and picker — but sets NO flags on children:
+    // restore the area and everything returns exactly as it was.
+    bool archived = false;
 };

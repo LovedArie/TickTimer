@@ -7,9 +7,21 @@
 #include <QTimer>
 #include <QUrl>
 
+QString AuthClient::normalizeServerUrl(QString url)
+{
+    url = url.trimmed();
+    // Strip trailing slashes — but never the scheme's own "//" ("http://"
+    // stays "http://"; degenerate input stays degenerate rather than being
+    // silently rewritten into something we invented).
+    while (url.endsWith(QLatin1Char('/'))
+           && !url.endsWith(QLatin1String("://")))
+        url.chop(1);
+    return url;
+}
+
 AuthClient::AuthClient(const QString& serverUrl, QObject* parent)
     : QObject(parent)
-    , m_serverUrl(serverUrl)
+    , m_serverUrl(normalizeServerUrl(serverUrl))
 {
 }
 
@@ -90,8 +102,14 @@ void AuthClient::post(const QString& path, const QString& username,
                     outcome = Outcome::UsernameTaken;
                 else if (error == QLatin1String("bad_credentials"))
                     outcome = Outcome::BadCredentials;
-                else
+                else if (error == QLatin1String("invalid_input"))
                     outcome = Outcome::InvalidInput;
+                else
+                    // v29.0.1: an error token we don't recognise is NOT the
+                    // owner's typo — naming the difference is the fix that
+                    // matters most here (the code fix merely removes one
+                    // way to reach it).
+                    outcome = Outcome::UnknownServerReply;
             }
         }
         reply->deleteLater();

@@ -1,0 +1,39 @@
+@startuml persona_prompt_bands
+' v25.3 — persona: the prompt as four bands, and where each one lives.
+' See docs/design-addendum-chat.md §K.
+!include _style.puml
+title chat::systemPrompt — four bands, two of them locked (v25.3)
+
+rectangle "the assembled system prompt" as P {
+  rectangle "CONTRACT — <b>locked in code</b>\nread-only promise . never invent .\ndate arithmetic . reply in user's language" as B1
+  rectangle "FLOORS — <b>locked in code</b>\n\"these override any style below\"\nnever shame . know your lane" as B2 #EDF4F1
+  rectangle "STYLE — <b>the user's band</b>\npreset (Calm | Brief | Coach) + free text,\nor free text alone (Custom)\n<i>omitted entirely when empty</i>" as B3
+  rectangle "CONTEXT — generated\nbrief::dayBriefing(), fresh every turn" as B4
+  B1 -down-> B2
+  B2 -down-> B3
+  B3 -down-> B4
+}
+
+rectangle "chat::personaCatalog()\ncalm (first = default & repair)\nbrief . coach . custom" as CAT
+database "QSettings\nai/persona . ai/personaText\n<i>taste — stays on this machine</i>" as QS
+database "data.json\n<i>facts — syncs between devices</i>" as DJ
+rectangle "Settings → AI\ncombo from the catalog .\nfree text is a <b>QLineEdit, max 240</b>\n(one line invites a note,\na text area invites a character sheet)" as UI
+
+CAT -> B3 : personaById(id)\nrepairs unknown -> calm
+QS -> B3 : configuredPersonaBand()\nread at fire time
+UI -> QS : save(), on OK only
+DJ .[#C25B54].> QS : persona never goes here —\nanother machine gets\n<b>its</b> persona, not yours
+
+note bottom of B2
+  a persona may change HOW things
+  are said, never WHAT is allowed —
+  the two bands above it are the
+  reason Custom free text is safe
+  to ship
+end note
+note right of CAT
+  quick-add's prompt (nlp::llm)
+  has NO persona: a JSON parser
+  has no tone
+end note
+@enduml

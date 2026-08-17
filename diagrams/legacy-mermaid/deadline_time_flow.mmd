@@ -1,0 +1,37 @@
+%% How a deadline TIME travels through the layers (v22).
+%% Read it as one fact crossing five boundaries — and notice that the
+%% pairing invariant (a time needs a date) is enforced at the DOMAIN door,
+%% not in the widgets, which is why no surface has to remember it.
+flowchart TD
+    subgraph capture["Capture — three ways in"]
+        QA["Quick-add text<br/>'lab 4 friday 17:00'"]
+        DLG["TaskDetailDialog<br/>QTimeEdit + 'All day'"]
+        DUE["DueDateDialog<br/>calendar + time row"]
+        LLM["LLM reply<br/>due_time: 'HH:MM'"]
+    end
+
+    QA -->|"nlp::parseQuickAdd"| PT["ParsedTask<br/>{dueDate, dueTime}"]
+    LLM -->|"llm::fromJsonObject"| PT
+    PT --> PREV["quickAddPreviewHtml<br/>(shows it BEFORE commit)"]
+    PREV --> DOOR
+    DLG -->|"chosenDueDate/chosenDueTime"| DOOR
+    DUE -->|"chosenDate/chosenTime"| DOOR
+
+    subgraph domain["Domain — the only place the invariant lives"]
+        DOOR["AppData::addTask<br/>setTaskDueDate · updateTask"]
+        INV{"dueDate valid?"}
+        TASK["Task{dueDate, dueTime}"]
+        DOOR --> INV
+        INV -->|yes| TASK
+        INV -->|"no — drop the orphan"| TASK
+    end
+
+    TASK -->|"changed()"| MODELS["TaskListModel · CategoryTaskModel<br/>DueTimeRole"]
+    TASK --> JSON["JsonStore<br/>'dueTime': ISO or ''"]
+    TASK --> COV["coverage::needsBlock<br/>(one clock-aware branch)"]
+
+    MODELS --> PROXY["TaskFilterProxy::lessThan<br/>same day → earliest clock first"]
+    PROXY --> CARDS["TaskCardDelegate<br/>'due 17:00'"]
+    MODELS --> PILLS["CategoryTaskDelegate<br/>'Aug 8 · 17:00'"]
+    COV --> NBC["NeedsBlockCard<br/>'Fri 24 Jul 17:00 · in 3d'"]
+    JSON -.->|"sync + share reuse it"| WIRE["free ride on the wire"]

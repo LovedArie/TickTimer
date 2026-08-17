@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TickTimer — "Needs a block" prototype v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Theme tokens lifted from include/Theme.h so this reads as the same product. */
+  :root{
+    --bg:#F1F4F0; --surface:#FFFFFF; --ink:#272C33; --ink-soft:#616974;
+    --line:#E2E6E0; --focus:#2F7E6E; --break:#DD9B4A; --track:#EAEDE8;
+    --urgent:#C05B5B;
+    --cat-school:#4A7CC4; --cat-health:#2F7E6E; --cat-home:#B0679A; --cat-work:#C4703A;
+    --font-display:'Nunito', system-ui, sans-serif;
+    --font-body:'Inter', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);
+       line-height:1.5;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:var(--font-display);margin:0;font-weight:700;letter-spacing:-0.01em;}
+
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:16px 26px;background:var(--surface);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:20;flex-wrap:wrap;}
+  .brand{display:flex;align-items:baseline;gap:12px;}
+  .brand h1{font-size:19px;}
+  .brand .tag{color:var(--ink-soft);font-size:12.5px;}
+  .topacts{display:flex;gap:8px;align-items:center;}
+  .protopill{background:rgba(224,164,74,0.16);border:1px solid rgba(224,164,74,0.5);
+    color:#8a5a12;border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:600;}
+  .tbtn{border:1px solid var(--line);background:var(--surface);border-radius:9px;
+    padding:7px 13px;font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;
+    font-family:var(--font-body);}
+  .tbtn:hover{border-color:var(--focus);color:var(--focus);}
+  .tbtn.on{border-color:var(--focus);color:var(--focus);background:rgba(47,126,110,0.07);}
+
+  .shell{max-width:1180px;margin:0 auto;padding:20px 26px 70px;}
+  .daybar{margin-bottom:14px;}
+  .daybar .date{font-family:var(--font-display);font-weight:700;font-size:17px;}
+  .daybar .hint{color:var(--ink-soft);font-size:12.5px;}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:22px;}
+  @media(max-width:900px){.layout{grid-template-columns:1fr;}}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;}
+  .panel h2{font-size:15px;margin-bottom:3px;}
+  .panel .sub{color:var(--ink-soft);font-size:12.5px;margin-bottom:14px;}
+
+  /* ---- agenda ---- */
+  .agenda-track{position:relative;}
+  .hour-line{position:absolute;left:54px;right:0;border-top:1px solid var(--line);}
+  .half-line{position:absolute;left:54px;right:0;border-top:1px dashed #EEF0EC;}
+  .hour-label{position:absolute;left:0;width:46px;text-align:right;font-size:11.5px;
+    color:var(--ink-soft);margin-top:-7px;}
+  .event{position:absolute;left:54px;right:0;border-radius:10px;color:#fff;padding:6px 11px;
+    overflow:hidden;display:flex;flex-direction:column;justify-content:center;
+    box-shadow:0 1px 0 rgba(0,0,0,0.04);}
+  .event .name{font-family:var(--font-display);font-weight:700;font-size:12.5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .event .span{font-size:10.5px;opacity:0.9;}
+  .event.fresh{animation:pop .45s ease;}
+  @keyframes pop{0%{transform:scale(.94);opacity:0;}100%{transform:scale(1);opacity:1;}}
+
+  .cand{position:absolute;left:54px;right:0;border-radius:9px;border:1px dashed var(--focus);
+    background:rgba(47,126,110,0.09);cursor:pointer;display:flex;align-items:center;
+    justify-content:center;color:var(--focus);font-size:11.5px;font-weight:600;z-index:4;}
+  .cand:hover{background:rgba(47,126,110,0.22);border-width:2px;}
+  .cand.best{background:rgba(47,126,110,0.16);border-width:2px;}
+  .cand .badge{position:absolute;top:3px;right:8px;font-size:9.5px;text-transform:uppercase;
+    letter-spacing:.05em;opacity:.75;}
+
+  .placing-banner{background:rgba(47,126,110,0.10);border:1px solid rgba(47,126,110,0.35);
+    color:#245f53;border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:12px;
+    display:flex;align-items:center;gap:9px;}
+  .placing-banner button{border:none;background:var(--focus);color:#fff;border-radius:7px;
+    padding:4px 11px;font-size:12px;cursor:pointer;margin-left:auto;font-family:var(--font-body);}
+
+  /* ---- needs-a-block, gate-closed state ---- */
+  .nb-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+  .nb-head h3{font-size:14px;}
+  .nb-count{margin-left:auto;font-size:11px;font-weight:700;border-radius:20px;padding:2px 9px;}
+  .gentle .nb-count{background:rgba(47,126,110,0.14);color:var(--focus);}
+  .urgent .nb-count{background:rgba(192,91,91,0.16);color:var(--urgent);}
+  .nb-sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;}
+
+  .nb-task{display:flex;align-items:flex-start;gap:9px;padding:10px 0;border-top:1px solid var(--line);}
+  .nb-task:first-of-type{border-top:none;padding-top:2px;}
+  .nb-task .dot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:5px;}
+  .nb-task .body{flex:1;min-width:0;}
+  .nb-task .t{font-size:12.5px;font-weight:600;line-height:1.35;}
+  .nb-task .meta{font-size:11px;color:var(--ink-soft);margin-top:3px;
+    display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .nb-task .meta .sep{opacity:.45;}
+  .pchip{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    border-radius:4px;padding:1px 5px;}
+  .pchip.urgent{background:rgba(192,91,91,0.14);color:var(--urgent);}
+  .pchip.overdue{background:rgba(192,91,91,0.14);color:var(--urgent);}
+  .pchip.soon{background:rgba(224,164,74,0.18);color:#8a5a12;}
+  .nb-acts{display:flex;gap:6px;margin-top:8px;}
+  .nb-acts button{border:1px solid var(--line);background:var(--surface);border-radius:7px;
+    padding:4px 10px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--ink-soft);
+    font-family:var(--font-body);}
+  .nb-acts button.primary{background:var(--focus);border-color:var(--focus);color:#fff;}
+  .nb-acts button:hover{border-color:var(--focus);color:var(--focus);}
+  .nb-acts button.primary:hover{filter:brightness(1.07);color:#fff;}
+
+  .gate-foot{border-top:1px solid var(--line);margin-top:12px;padding-top:12px;}
+  .gate-foot button{width:100%;border:1px solid var(--line);background:var(--surface);
+    border-radius:9px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer;
+    color:var(--ink-soft);font-family:var(--font-body);}
+  .gate-foot button:hover{border-color:var(--focus);color:var(--focus);
+    background:rgba(47,126,110,0.05);}
+  .gate-foot .note{font-size:10.5px;color:var(--ink-soft);text-align:center;margin-top:6px;
+    opacity:.8;}
+
+  /* ---- collapsed strip, gate-open state ---- */
+  .nb-strip{display:flex;align-items:center;gap:8px;border-radius:10px;padding:8px 11px;
+    font-size:12px;cursor:pointer;margin-bottom:14px;user-select:none;}
+  .nb-strip.gentle{background:rgba(47,126,110,0.07);border:1px solid rgba(47,126,110,0.28);
+    color:#245f53;}
+  .nb-strip.urgent{background:rgba(192,91,91,0.07);border:1px solid rgba(192,91,91,0.35);
+    color:#8c3d3d;}
+  .nb-strip:hover{filter:brightness(0.98);}
+  .nb-strip .chev{margin-left:auto;font-size:10px;opacity:.7;}
+  .nb-strip.clear{background:rgba(47,126,110,0.06);border-color:rgba(47,126,110,0.22);
+    color:var(--focus);cursor:default;}
+  .nb-expand{border:1px solid var(--line);border-radius:12px;padding:12px 13px;
+    margin:-6px 0 14px;background:#FCFDFC;}
+
+  /* ---- the gated content ---- */
+  .stat-row{display:flex;gap:9px;margin-bottom:14px;}
+  .stat{flex:1;border:1px solid var(--line);border-radius:12px;padding:9px 11px;}
+  .stat .k{font-size:10px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;}
+  .stat .v{font-family:var(--font-display);font-weight:800;font-size:19px;margin-top:1px;}
+  .stat.focus .v{color:var(--focus);} .stat.brk .v{color:var(--break);}
+  .catbar{margin:10px 0;}
+  .catbar .lab{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;}
+  .catbar .lab .t{display:flex;align-items:center;gap:7px;}
+  .dotc{width:9px;height:9px;border-radius:50%;flex:none;}
+  .catbar .bar{height:8px;border-radius:5px;background:var(--track);overflow:hidden;}
+  .catbar .bar i{display:block;height:100%;border-radius:5px;}
+  .encourage{margin-top:14px;padding:11px 13px;background:rgba(47,126,110,0.08);
+    border-radius:11px;color:#245f53;font-size:12.5px;}
+  .reveal{animation:fade .35s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+
+  /* ---- settings modal ---- */
+  .scrim{position:fixed;inset:0;background:rgba(39,44,51,0.45);z-index:40;display:none;}
+  .scrim.show{display:block;}
+  .modal{position:fixed;z-index:50;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:min(440px,92vw);background:var(--surface);border-radius:16px;padding:22px;
+    box-shadow:0 18px 48px rgba(0,0,0,0.22);display:none;max-height:88vh;overflow:auto;}
+  .modal.show{display:block;}
+  .modal h2{font-size:16px;margin-bottom:2px;}
+  .modal .msub{color:var(--ink-soft);font-size:12.5px;margin-bottom:18px;}
+  .srow{padding:13px 0;border-top:1px solid var(--line);}
+  .srow:first-of-type{border-top:none;padding-top:2px;}
+  .srow .sl{font-size:12.5px;font-weight:600;margin-bottom:3px;}
+  .srow .sd{font-size:11.5px;color:var(--ink-soft);margin-bottom:9px;}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;}
+  .chipbtn{border:1px solid var(--line);background:var(--surface);border-radius:20px;
+    padding:5px 13px;font-size:12px;font-weight:600;color:var(--ink-soft);cursor:pointer;
+    font-family:var(--font-body);}
+  .chipbtn.on{background:var(--focus);border-color:var(--focus);color:#fff;}
+  .modal select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;
+    font-size:12.5px;font-family:var(--font-body);color:var(--ink);background:var(--surface);}
+  .checkrow{display:flex;align-items:flex-start;gap:9px;}
+  .checkrow input{margin-top:3px;accent-color:var(--focus);width:15px;height:15px;}
+  .modal .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;}
+  .modal .foot button{border:1px solid var(--line);background:var(--surface);border-radius:9px;
+    padding:8px 16px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--font-body);
+    color:var(--ink-soft);}
+  .modal .foot button.primary{background:var(--focus);border-color:var(--focus);color:#fff;}
+  .live{font-size:11.5px;color:var(--focus);background:rgba(47,126,110,0.08);
+    border-radius:8px;padding:8px 11px;margin-top:14px;}
+
+  /* ---- annotations ---- */
+  .annot{border-left:3px solid var(--break);background:rgba(224,164,74,0.09);
+    border-radius:0 9px 9px 0;padding:9px 12px;font-size:12px;color:#7a5010;margin:12px 0;}
+  .annot b{font-family:var(--font-display);}
+  .annot.hidden{display:none;}
+  .annot .n{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
+    border-radius:50%;background:var(--break);color:#fff;font-size:10px;font-weight:700;
+    margin-right:6px;vertical-align:1px;}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;border-radius:11px;padding:10px 18px;font-size:12.5px;
+    opacity:0;transition:all .25s;pointer-events:none;z-index:60;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .questions{margin-top:28px;background:var(--surface);border:1px solid var(--line);
+    border-radius:16px;padding:20px 22px;}
+  .questions h2{font-size:15px;margin-bottom:4px;}
+  .questions .sub{color:var(--ink-soft);font-size:12.5px;margin-bottom:14px;}
+  .questions ol{margin:0;padding-left:20px;}
+  .questions li{font-size:13px;margin-bottom:11px;}
+  .questions li b{font-family:var(--font-display);}
+  .questions .mine{color:var(--ink-soft);font-size:12.5px;display:block;margin-top:2px;}
+  .settled{background:rgba(47,126,110,0.06);border:1px solid rgba(47,126,110,0.25);
+    border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:12.5px;color:#245f53;}
+  .settled b{font-family:var(--font-display);}
+  .settled ul{margin:7px 0 0;padding-left:18px;}
+  .settled li{margin-bottom:4px;}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>TickTimer</h1>
+    <span class="tag">"Needs a block" — v2, gated glance panel</span>
+  </div>
+  <div class="topacts">
+    <span class="protopill">PROTOTYPE</span>
+    <button class="tbtn" id="settings-btn">⚙ Settings</button>
+    <button class="tbtn on" id="annot-btn">Design notes: on</button>
+    <button class="tbtn" id="reset-btn">↺ Reset day</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <div class="settled">
+    <b>Settled since v1:</b>
+    <ul>
+      <li>Lives in the <b>glance panel only</b> — banner variant dropped.</li>
+      <li>It <b>gates</b> the rest of the panel: today's numbers wait until you've looked.</li>
+      <li>Default rule is <b>Urgent + due within 3 days</b>, changeable in Settings.</li>
+      <li>Due dates now show as <b>real dates</b> alongside the countdown.</li>
+    </ul>
+  </div>
+
+  <div class="daybar">
+    <div class="date">Tuesday, 21 July 2026</div>
+    <div class="hint">Plan vs. actual · 30-minute slots</div>
+  </div>
+
+  <div class="annot" data-annot>
+    <span class="n">1</span><b>The gate is a pause, not a toll booth.</b> "Show my day"
+    is always available and dismisses nothing. That matters: if the only way to reach your
+    numbers were to clear the list, the fastest path would be to hit "Not today" on
+    everything — and you'd have built a machine that teaches dismissal. The gate buys one
+    honest look, then gets out of the way.
+  </div>
+
+  <div class="layout">
+
+    <!-- ================= AGENDA ================= -->
+    <div class="panel">
+      <h2>Today's plan</h2>
+      <div class="sub">Click a highlighted slot while placing a task.</div>
+      <div id="placing-host"></div>
+      <div class="agenda-track" id="agenda" style="height:600px;"></div>
+    </div>
+
+    <!-- ================= GLANCE PANEL ================= -->
+    <div>
+      <div class="panel">
+        <h2>Glance</h2>
+        <div class="sub" id="glance-sub">Where today actually went</div>
+        <div id="glance-host"></div>
+      </div>
+
+      <div class="annot" data-annot>
+        <span class="n">2</span><b>Why gating earns its keep.</b> The panel is a fixed,
+        narrow column. Adding a card would push the category bars below the fold on a
+        laptop — so the card would compete with the very numbers it sits next to. Taking
+        the panel <em>over</em> costs nothing, because unscheduled urgent work is the more
+        useful thing to know first. When the list is empty the panel is exactly what it
+        always was.
+      </div>
+    </div>
+  </div>
+
+  <div class="annot" data-annot>
+    <span class="n">3</span><b>Two settings, OR'd — not three presets.</b> Your default
+    ("urgent + due ≤3d") is really <em>a priority set</em> plus <em>a due window</em>, and
+    they're independent. Modelling it that way means someone who wants "only ever urgent"
+    sets the window to Off, and someone who wants "everything this week" sets priorities to
+    none and the window to 7 — without the app shipping a preset for each combination.
+    Open Settings and watch the live preview count change.
+  </div>
+
+  <div class="annot" data-annot>
+    <span class="n">4</span><b>Where this rule lives in the real code.</b>
+    <code>needsBlock(task)</code> is a pure function of the task plus the two settings —
+    no widget state. In the build it belongs in the domain beside <code>Task.h</code>,
+    with the settings read through <code>prefs::</code>, not inside <code>GlancePanel</code>.
+    Otherwise the panel, and later the week view, each grow their own subtly different
+    answer — the exact drift <code>eventLabel()</code> was extracted to stop.
+  </div>
+
+  <div class="questions">
+    <h2>Still open — your call</h2>
+    <div class="sub">Reduced from five; two got answered by your notes.</div>
+    <ol>
+      <li><b>Does a block on a <em>future</em> day count as scheduled?</b>
+        <span class="mine">Prototype says yes ("Read chapter 7" is blocked Thursday and
+        stays quiet). But a task due Wednesday with a block on Thursday looks handled and
+        isn't. Catch it, or over-thinking?</span></li>
+      <li><b>Does the gate re-arm the next day?</b>
+        <span class="mine">Prototype assumes yes — one look per day, reset at midnight.
+        The alternative is re-arming whenever a <em>new</em> task qualifies, which is
+        quieter but means a deadline can creep up without a fresh prompt.</span></li>
+      <li><b>How long does "Not today" last?</b>
+        <span class="mine">Until midnight here. A task dismissed seven mornings running is
+        telling you something — should the app stop asking, or say something else?</span></li>
+      <li><b>Does this belong on the week view too?</b>
+        <span class="mine">Still untouched. "Nothing planned all week for a Friday
+        deadline" may be the more useful warning, and the week view has room to act.</span></li>
+      <li><b>Is "Needs a block" the right name?</b>
+        <span class="mine">It names the fix rather than the failure — deliberate, but
+        yours to overrule. ("Unscheduled" / "No time set aside" / "Waiting for time")</span></li>
+    </ol>
+  </div>
+
+</div>
+
+<!-- ================= SETTINGS MODAL ================= -->
+<div class="scrim" id="scrim"></div>
+<div class="modal" id="modal">
+  <h2>Settings — Needs a block</h2>
+  <div class="msub">Which open tasks should the glance panel flag as having no time
+    set aside?</div>
+
+  <div class="srow">
+    <div class="sl">Always flag these priorities</div>
+    <div class="sd">A task at one of these priorities is flagged whatever its due date —
+      including tasks with no due date at all.</div>
+    <div class="chips" id="pri-chips">
+      <button class="chipbtn on" data-p="urgent">Urgent</button>
+      <button class="chipbtn" data-p="medium">Medium</button>
+      <button class="chipbtn" data-p="low">Low</button>
+    </div>
+  </div>
+
+  <div class="srow">
+    <div class="sl">Also flag anything due within</div>
+    <div class="sd">Catches an ordinary task whose deadline is closing in. Overdue tasks
+      are always flagged.</div>
+    <select id="win-select">
+      <option value="0">Off — priority only</option>
+      <option value="1">1 day</option>
+      <option value="3" selected>3 days</option>
+      <option value="7">7 days</option>
+      <option value="14">14 days</option>
+    </select>
+  </div>
+
+  <div class="srow">
+    <div class="checkrow">
+      <input type="checkbox" id="gate-check" checked>
+      <div>
+        <div class="sl">Hold today's numbers until I've looked</div>
+        <div class="sd" style="margin-bottom:0">The glance panel shows this list first.
+          Your focus/break totals and life-area bars appear once you've reviewed it —
+          or immediately, if nothing needs a block.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="srow">
+    <div class="sl">Tone</div>
+    <div class="sd">Still undecided in the design — try both.</div>
+    <div class="chips" id="tone-chips">
+      <button class="chipbtn on" data-t="gentle">Gentle</button>
+      <button class="chipbtn" data-t="urgent">Urgent</button>
+    </div>
+  </div>
+
+  <div class="live" id="live-preview"></div>
+
+  <div class="foot">
+    <button class="primary" id="modal-close">Done</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Prototype state. Crude on purpose — plain objects, no framework, no storage.
+// Its only job is to make the design decisions arguable.
+// ---------------------------------------------------------------------------
+
+const DAY_START = 8 * 60, DAY_END = 20 * 60;
+const PX_PER_MIN = 600 / (DAY_END - DAY_START);
+
+const CATS = {
+  school:{name:'School', raw:'#4A7CC4'},
+  health:{name:'Health', raw:'#2F7E6E'},
+  home:  {name:'Home',   raw:'#B0679A'},
+  work:  {name:'Work',   raw:'#C4703A'},
+};
+
+const TODAY = new Date(2026, 6, 21);           // Tue 21 July 2026, pinned
+
+// ---- settings (in the real app: QSettings, read via prefs::) --------------
+let settings = {
+  priorities: {urgent:true, medium:false, low:false},
+  dueWithinDays: 3,
+  gateEnabled: true,
+  tone: 'gentle',
+};
+
+let events = [], tasks = [], gateOpen = false, stripExpanded = false, placing = null;
+let showAnnot = true;
+
+function seed(){
+  events = [
+    {id:'e1', start: 9*60,     end:10*60+30, label:'GTI350 lecture', cat:'school'},
+    {id:'e2', start:12*60,     end:12*60+30, label:'Lunch',          cat:'home'},
+    {id:'e3', start:14*60,     end:15*60,    label:'Gym',            cat:'health'},
+    {id:'e4', start:17*60+30,  end:18*60+30, label:'Shift prep',     cat:'work'},
+  ];
+  tasks = [
+    {id:'t1', title:'Lab 4 — Exigences contractuelles (5%)', cat:'school',
+     priority:'urgent', dueIn:3,  blockedDays:[], dismissed:false},
+    {id:'t2', title:'LOG410 final — study sheet', cat:'school',
+     priority:'urgent', dueIn:6,  blockedDays:[], dismissed:false},
+    {id:'t3', title:'Renew health card', cat:'home',
+     priority:'medium', dueIn:-2, blockedDays:[], dismissed:false},
+    {id:'t4', title:'Reply to internship email', cat:'work',
+     priority:'medium', dueIn:1,  blockedDays:[], dismissed:false},
+    {id:'t5', title:'Book dentist', cat:'health',
+     priority:'low',    dueIn:12, blockedDays:[], dismissed:false},
+    {id:'t6', title:'Read chapter 7', cat:'school',
+     priority:'medium', dueIn:2,  blockedDays:[2], dismissed:false},
+    {id:'t7', title:'Groceries', cat:'home',
+     priority:'low',    dueIn:null, blockedDays:[], dismissed:false},   // no due date
+  ];
+  gateOpen = false; stripExpanded = false; placing = null;
+}
+
+// ---- THE RULE ------------------------------------------------------------
+// Pure function of (task, settings). Two independent conditions, OR'd:
+//   1. the task's priority is one the user always wants flagged
+//   2. the task's deadline falls inside the due window (overdue always counts)
+// In the real build this belongs in the domain, not in a widget.
+function needsBlock(t){
+  if (t.dismissed) return false;
+  if (t.blockedDays.length > 0) return false;          // has time somewhere → quiet
+  if (settings.priorities[t.priority]) return true;    // condition 1
+  if (t.dueIn === null) return false;                  // no date → window can't apply
+  if (t.dueIn < 0) return true;                        // overdue always counts
+  return settings.dueWithinDays > 0                    // condition 2
+      && t.dueIn <= settings.dueWithinDays;
+}
+
+function rank(t){
+  if (t.dueIn !== null && t.dueIn < 0) return 0;
+  if (t.priority === 'urgent') return 1;
+  return 2;
+}
+function qualifying(){
+  return tasks.filter(needsBlock).sort((a,b) =>
+    rank(a) - rank(b) ||
+    (a.dueIn === null ? 999 : a.dueIn) - (b.dueIn === null ? 999 : b.dueIn));
+}
+
+// ---- date formatting (you liked this — now with the absolute date too) ----
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function dueDate(t){
+  if (t.dueIn === null) return null;
+  const d = new Date(TODAY); d.setDate(d.getDate() + t.dueIn); return d;
+}
+function absLabel(t){
+  const d = dueDate(t);
+  if (!d) return 'no due date';
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONS[d.getMonth()]}`;
+}
+function relLabel(t){
+  if (t.dueIn === null) return null;
+  if (t.dueIn < 0)   return `${-t.dueIn}d overdue`;
+  if (t.dueIn === 0) return 'today';
+  if (t.dueIn === 1) return 'tomorrow';
+  return `in ${t.dueIn}d`;
+}
+
+// ---- free-slot finding ---------------------------------------------------
+function freeRuns(minMinutes){
+  const busy = [...events].sort((a,b) => a.start - b.start);
+  const runs = []; let cursor = DAY_START;
+  for (const e of busy){
+    if (e.start - cursor >= minMinutes) runs.push({start:cursor, end:e.start});
+    cursor = Math.max(cursor, e.end);
+  }
+  if (DAY_END - cursor >= minMinutes) runs.push({start:cursor, end:DAY_END});
+  return runs;
+}
+
+// ---- rendering -----------------------------------------------------------
+function y(m){ return (m - DAY_START) * PX_PER_MIN; }
+function fmt(m){
+  const h = Math.floor(m/60), mm = m%60, ampm = h>=12?'PM':'AM';
+  const hh = h%12===0?12:h%12;
+  return mm===0 ? `${hh} ${ampm}` : `${hh}:${String(mm).padStart(2,'0')} ${ampm}`;
+}
+
+function renderAgenda(){
+  const host = document.getElementById('agenda');
+  host.innerHTML = '';
+  for (let m = DAY_START; m <= DAY_END; m += 30){
+    const l = document.createElement('div');
+    l.className = (m%60===0) ? 'hour-line' : 'half-line';
+    l.style.top = y(m)+'px'; host.appendChild(l);
+    if (m%60===0 && m < DAY_END){
+      const lab = document.createElement('div');
+      lab.className='hour-label'; lab.style.top=y(m)+'px'; lab.textContent=fmt(m);
+      host.appendChild(lab);
+    }
+  }
+  for (const e of events){
+    const el = document.createElement('div');
+    el.className = 'event' + (e.fresh?' fresh':'');
+    el.style.top = y(e.start)+'px';
+    el.style.height = Math.max(20,(e.end-e.start)*PX_PER_MIN-3)+'px';
+    el.style.background = CATS[e.cat].raw;
+    el.innerHTML = `<div class="name">${e.label}</div>` +
+      ((e.end-e.start)>=45 ? `<div class="span">${fmt(e.start)} – ${fmt(e.end)}</div>` : '');
+    host.appendChild(el); e.fresh = false;
+  }
+  if (placing){
+    const t = tasks.find(x => x.id === placing);
+    freeRuns(60).forEach((r,i) => {
+      const el = document.createElement('div');
+      el.className = 'cand' + (i===0?' best':'');
+      el.style.top = y(r.start)+'px';
+      el.style.height = Math.max(24,(r.end-r.start)*PX_PER_MIN-3)+'px';
+      el.innerHTML = `${fmt(r.start)} – ${fmt(r.end)} free` +
+        (i===0?`<span class="badge">earliest</span>`:'');
+      el.onclick = () => placeInto(t, r);
+      host.appendChild(el);
+    });
+  }
+}
+
+function renderPlacing(){
+  const host = document.getElementById('placing-host');
+  if (!placing){ host.innerHTML=''; return; }
+  const t = tasks.find(x => x.id === placing);
+  host.innerHTML = `<div class="placing-banner">
+      <span>Placing <b>${t.title}</b> — pick a free run below.</span>
+      <button onclick="cancelPlacing()">Cancel</button></div>`;
+}
+
+function taskRowHtml(t){
+  const chips = [];
+  if (t.dueIn !== null && t.dueIn < 0)  chips.push(`<span class="pchip overdue">overdue</span>`);
+  else if (t.priority === 'urgent')     chips.push(`<span class="pchip urgent">urgent</span>`);
+  else if (t.dueIn !== null && t.dueIn <= 3) chips.push(`<span class="pchip soon">due soon</span>`);
+
+  const rel = relLabel(t);
+  const dateBit = t.dueIn === null
+    ? `<span>no due date</span>`
+    : `<span><b>${absLabel(t)}</b></span><span class="sep">·</span><span>${rel}</span>`;
+
+  return `<div class="nb-task">
+      <span class="dot" style="background:${CATS[t.cat].raw}"></span>
+      <div class="body">
+        <div class="t">${t.title}</div>
+        <div class="meta">${chips.join('')}${dateBit}
+          <span class="sep">·</span><span>${CATS[t.cat].name}</span></div>
+        <div class="nb-acts">
+          <button class="primary" onclick="startPlacing('${t.id}')">Find time</button>
+          <button onclick="dismiss('${t.id}')">Not today</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function gatedContentHtml(){
+  return `<div class="reveal">
+    <div class="stat-row">
+      <div class="stat focus"><div class="k">Focus</div><div class="v">2h 10m</div></div>
+      <div class="stat brk"><div class="k">Break</div><div class="v">35m</div></div>
+    </div>
+    <div class="catbar"><div class="lab"><span class="t">
+      <span class="dotc" style="background:#4A7CC4"></span>School</span><span>1h 30m</span></div>
+      <div class="bar"><i style="width:62%;background:#4A7CC4"></i></div></div>
+    <div class="catbar"><div class="lab"><span class="t">
+      <span class="dotc" style="background:#2F7E6E"></span>Health</span><span>1h 00m</span></div>
+      <div class="bar"><i style="width:41%;background:#2F7E6E"></i></div></div>
+    <div class="catbar"><div class="lab"><span class="t">
+      <span class="dotc" style="background:#B0679A"></span>Home</span><span>30m</span></div>
+      <div class="bar"><i style="width:20%;background:#B0679A"></i></div></div>
+    <div class="catbar"><div class="lab"><span class="t">
+      <span class="dotc" style="background:#C4703A"></span>Work</span><span>1h 00m</span></div>
+      <div class="bar"><i style="width:41%;background:#C4703A"></i></div></div>
+    <div class="encourage">Four life areas got real time today. That's a balanced day.</div>
+  </div>`;
+}
+
+function renderGlance(){
+  const host = document.getElementById('glance-host');
+  const sub  = document.getElementById('glance-sub');
+  const list = qualifying();
+  const tone = settings.tone;
+
+  // Nothing qualifies → the panel is exactly what it always was.
+  if (list.length === 0){
+    sub.textContent = 'Where today actually went';
+    host.innerHTML =
+      `<div class="nb-strip clear">✓ Everything's on the calendar</div>` +
+      gatedContentHtml();
+    return;
+  }
+
+  // Gate CLOSED: the card IS the panel.
+  if (settings.gateEnabled && !gateOpen){
+    sub.textContent = 'First, a look at what has no time set aside';
+    host.innerHTML = `<div class="${tone}">
+        <div class="nb-head"><h3>Needs a block</h3>
+          <span class="nb-count">${list.length}</span></div>
+        <div class="nb-sub">${tone==='gentle'
+          ? 'Open work with no time set aside yet.'
+          : 'No time booked for these. Deadlines are closing in.'}</div>
+        ${list.map(taskRowHtml).join('')}
+        <div class="gate-foot">
+          <button onclick="openGate()">Show my day →</button>
+          <div class="note">Nothing is dismissed — these stay in the strip above.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Gate OPEN: collapsed strip + the real glance content.
+  sub.textContent = 'Where today actually went';
+  const strip = `<div class="nb-strip ${tone}" onclick="toggleStrip()">
+      <span><b>${list.length}</b> still ${list.length===1?'needs':'need'} a block</span>
+      <span class="chev">${stripExpanded?'▲':'▼'}</span></div>`;
+  const expanded = stripExpanded
+    ? `<div class="nb-expand">${list.map(taskRowHtml).join('')}</div>` : '';
+  host.innerHTML = strip + expanded + gatedContentHtml();
+}
+
+function renderAnnot(){
+  document.querySelectorAll('[data-annot]').forEach(el =>
+    el.classList.toggle('hidden', !showAnnot));
+}
+
+function renderAll(){ renderPlacing(); renderAgenda(); renderGlance(); renderAnnot(); }
+
+// ---- actions -------------------------------------------------------------
+function startPlacing(id){ placing = id; renderAll(); }
+function cancelPlacing(){ placing = null; renderAll(); }
+function openGate(){ gateOpen = true; renderAll(); toast('Numbers unlocked — nothing dismissed'); }
+function toggleStrip(){ stripExpanded = !stripExpanded; renderAll(); }
+
+function placeInto(task, run){
+  const dur = Math.min(60, run.end - run.start);
+  events.push({id:'ev'+Date.now(), start:run.start, end:run.start+dur,
+               label:task.title, cat:task.cat, fresh:true});
+  task.blockedDays.push(0);
+  placing = null;
+  renderAll();
+  toast(`Blocked ${fmt(run.start)} – ${fmt(run.start+dur)}`);
+}
+
+function dismiss(id){
+  const t = tasks.find(x => x.id === id);
+  t.dismissed = true;
+  if (placing === id) placing = null;
+  renderAll();
+  toast(`"${t.title}" won't be suggested again today`);
+}
+
+let toastTimer = null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// ---- settings modal wiring ----------------------------------------------
+const scrim = document.getElementById('scrim'), modal = document.getElementById('modal');
+function openSettings(){ scrim.classList.add('show'); modal.classList.add('show'); livePreview(); }
+function closeSettings(){ scrim.classList.remove('show'); modal.classList.remove('show'); }
+document.getElementById('settings-btn').onclick = openSettings;
+document.getElementById('modal-close').onclick = closeSettings;
+scrim.onclick = closeSettings;
+
+document.querySelectorAll('#pri-chips .chipbtn').forEach(b => {
+  b.onclick = () => {
+    const p = b.dataset.p;
+    settings.priorities[p] = !settings.priorities[p];
+    b.classList.toggle('on', settings.priorities[p]);
+    renderAll(); livePreview();
+  };
+});
+document.getElementById('win-select').onchange = function(){
+  settings.dueWithinDays = parseInt(this.value, 10);
+  renderAll(); livePreview();
+};
+document.getElementById('gate-check').onchange = function(){
+  settings.gateEnabled = this.checked;
+  if (!this.checked) gateOpen = false;   // so re-enabling re-arms honestly
+  renderAll(); livePreview();
+};
+document.querySelectorAll('#tone-chips .chipbtn').forEach(b => {
+  b.onclick = () => {
+    settings.tone = b.dataset.t;
+    document.querySelectorAll('#tone-chips .chipbtn')
+      .forEach(x => x.classList.toggle('on', x === b));
+    renderAll();
+  };
+});
+
+function livePreview(){
+  const n = qualifying().length;
+  const pri = Object.entries(settings.priorities).filter(([,v]) => v).map(([k]) => k);
+  const priTxt = pri.length ? pri.join(' + ') : 'no priority rule';
+  const winTxt = settings.dueWithinDays > 0
+    ? `anything due within ${settings.dueWithinDays} day${settings.dueWithinDays>1?'s':''}`
+    : 'no due-date rule';
+  document.getElementById('live-preview').innerHTML =
+    `<b>Right now:</b> ${priTxt}, plus ${winTxt} → <b>${n}</b> of ${tasks.length} tasks flagged.`;
+}
+
+document.getElementById('annot-btn').onclick = function(){
+  showAnnot = !showAnnot;
+  this.classList.toggle('on', showAnnot);
+  this.textContent = 'Design notes: ' + (showAnnot ? 'on' : 'off');
+  renderAnnot();
+};
+document.getElementById('reset-btn').onclick = () => {
+  seed(); renderAll(); toast('Day reset');
+};
+
+seed();
+renderAll();
+</script>
+</body>
+</html>

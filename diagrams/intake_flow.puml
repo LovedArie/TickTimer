@@ -1,0 +1,42 @@
+@startuml intake_flow
+' ---------------------------------------------------------------------------
+' intake_flow — v29.1: the interview. Everything left of the card is words;
+' the model is one optional box; the C++ path is complete without it.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title The intake interview (v29.1) — three answer tiers, one boundary
+
+rectangle "NEEDS DETAILS queue\n(derived, briefing §K.1)" as queue
+rectangle "triage (C++, §K.6)\ndeadline ∨ urgent ∨\nheavy-history area;\nnever if dismissed" as triage
+rectangle "the question (C++, §K.2)\n+ guess from history (§K.3)\n\"Lab 4 — how long?\n(2 finished School tasks\nran ~2h — sound right?)\"" as question
+rectangle "≈ guess button" as guessbtn
+rectangle "typed answer" as typed
+rectangle "Skip\n→ dismissTask(+1y)\nowner's act, own door" as skipbtn
+rectangle "crisp parse (C++)\n\"2h\" / \"1h30\" / \"90 min\"\nrefuses prose on purpose" as crisp
+rectangle "IntakeClient → model\nJSON out, no tool API\n(runs on every seat,\nOllama included)" as model
+rectangle "honest hint\n\"give me something\nlike 2h\" — stays open" as hint
+rectangle "verbs::Proposal\n→ the Slice 1 card\n→ your tap → the door" as card
+
+queue --> triage
+triage --> question
+question --> guessbtn
+question --> typed
+question --> skipbtn
+guessbtn --> card : the guess crosses\nthe card too
+typed --> crisp
+crisp --> card : parsed
+crisp --> model : not a plain\nduration
+model --> card : extracted
+model --> hint : couldn't read /\nseat down
+skipbtn ..> question : next task\n(ask once: never\nthis one again)
+card ..> question : settle → next
+
+note bottom of card
+  Slice 1 unchanged: validate, re-validate at
+  the tap, additive only, copy-aside, receipt.
+  The model swapped in as a proposer — nothing
+  right of the card moved.
+end note
+
+@enduml

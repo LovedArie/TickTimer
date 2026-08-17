@@ -1,0 +1,88 @@
+@startuml catch_up_ladder
+' ---------------------------------------------------------------------------
+' catch_up_ladder — v26.2 part 1 (design-addendum-catch-up).
+'
+' Two things the picture is for:
+'   1. the derive/store line — everything above the dashed note is computed
+'      from facts that already exist; only the VERDICT is written down;
+'   2. the ladder is an EARLY-OUT: the cheap rungs are tried first and the
+'      expensive ones are only reached when nothing better exists. An empty
+'      hand is a legal result.
+' ---------------------------------------------------------------------------
+!include _style.puml
+
+title Catch-up — judging a block, then proposing where it goes
+
+start
+
+:a planned block\n(Event + its Segments);
+
+if (window still open?\nmissed::hasEnded) then (no)
+  :Reason::None;
+  stop
+endif
+
+if (older than lookBackDays?) then (yes)
+  :not surfaced\n(still judged as failed —\nhistory, not a to-do list);
+  stop
+endif
+
+if (Event::outcome != Unset?) then (yes)
+  :already decided\n(Done / Moved / Dropped);
+  stop
+endif
+
+:focus = sum of Focus segments\n(Break and Distracted deliberately excluded);
+
+if (focus == 0?) then (yes)
+  :Reason::NeverStarted\nshortfall = whole block;
+else
+  if (focus * 100 < minPercent * planned?) then (yes)
+    :Reason::Partial\nshortfall = planned - focus;
+  else
+    :Reason::None\n(enough happened);
+    stop
+  endif
+endif
+
+note right
+  DERIVED to here — nothing written.
+  Change minPercent in Settings and
+  every block re-judges on next read,
+  with nothing to migrate.
+end note
+
+partition "reschedule::propose — cheapest rung first" {
+  :need = shortfall, snapped to the 30-min grid\n(NOT the original duration);
+
+  if (a free gap >= need, before the deadline?) then (yes)
+    :**FreeSlot**\nprefer the original time of day;
+    stop
+  endif
+
+  if (fragments add up to need?) then (yes)
+    :**Split**\nsame total, more context switches;
+    stop
+  endif
+
+  if (any gap at all?) then (yes)
+    :**Shorten**\nless than you owed — you decide if it's enough;
+    stop
+  endif
+
+  if (an unworked block big enough exists?) then (yes)
+    :**Bump** (candidates only)\nthe user picks the victim, never the app;
+    stop
+  endif
+
+  if (room exists PAST the deadline?) then (yes)
+    :**BeyondDeadline**\nthe deadline is the wrong constraint;
+    stop
+  endif
+
+  :**nothing fits**\nan honest dead end beats a fake placement;
+}
+
+stop
+
+@enduml

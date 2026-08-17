@@ -63,6 +63,11 @@ public:
     explicit MonthGrid(QWidget* parent = nullptr);
     void setMonth(QDate anyDayInMonth,
                   QVector<QPair<QDate, stats::Totals>> days);
+    // Which day heads the columns (settings addendum). Changes the grid's
+    // SHAPE (a month starting Sunday may need one more row), hence the
+    // updateGeometry inside — a preference that only recoloured pixels
+    // wouldn't need it.
+    void setFirstDayOfWeek(Qt::DayOfWeek day);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -71,6 +76,7 @@ protected:
 private:
     QDate m_month;
     QVector<QPair<QDate, stats::Totals>> m_days;
+    Qt::DayOfWeek m_firstDay = Qt::Monday;
 };
 
 // -- the two assembled review pages ---------------------------------------------
@@ -80,6 +86,10 @@ class WeekReviewPage : public QWidget
 public:
     explicit WeekReviewPage(const AppData* data, QWidget* parent = nullptr);
     void setDate(QDate anyDayInWeek);
+    // Told by the page, forwarded into stats::summarizeWeek. The week
+    // AGENDA above these numbers snaps with the same preference — totals
+    // over Mon–Sun beneath a Sun–Sat grid would be a quiet lie.
+    void setFirstDayOfWeek(Qt::DayOfWeek day);
 public slots:
     void refresh();
 private:
@@ -91,6 +101,7 @@ private:
     WeekBarsChart* m_bars = nullptr;
     CategoryPie*   m_pie  = nullptr;
     QVBoxLayout*   m_legend = nullptr;
+    Qt::DayOfWeek  m_firstDay = Qt::Monday;
 };
 
 class MonthReviewPage : public QWidget
@@ -99,6 +110,7 @@ class MonthReviewPage : public QWidget
 public:
     explicit MonthReviewPage(const AppData* data, QWidget* parent = nullptr);
     void setDate(QDate anyDayInMonth);
+    void setFirstDayOfWeek(Qt::DayOfWeek day); // forwarded to the grid
 public slots:
     void refresh();
 private:

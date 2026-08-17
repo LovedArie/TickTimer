@@ -1,0 +1,33 @@
+@startuml quickadd_flow
+' Natural-language quick-add (v21 / v21.1). See docs/design-addendum-quickadd.md
+!include _style.puml
+title Quick-add — three surfaces, one parse, one AI fallback (v21.2)
+
+rectangle "surfaces" as S #EDF4F1 {
+  rectangle "Activities task input\n<i>context: the selected area</i>" as IN1
+  rectangle "QuickCaptureOverlay (Ctrl+N)\n<i>no context: #tag -> remembered\ndefault -> first category</i>" as IN2
+}
+rectangle "nlp::parseQuickAdd(text, today)\n<b>pure function</b>\ntokenize -> first-match-wins per facet:\ndate . priority . repeat . #category\nleftovers = title (casing kept)" as P
+rectangle "ParsedTask\ntitle . dueDate . priority .\nrepeat . categoryHint" as PT
+rectangle "quickAddPreviewHtml()\n<b>shared readout</b> — the\nsecond consumer forced the home" as PV
+rectangle "commit\nAppData::categoryIdByName (domain)\n-> addTask + updateTask" as CM
+database "AppData" as AD
+
+IN1 --> P : textChanged / returnPressed
+IN2 --> P : textChanged / returnPressed
+P --> PT
+PT ..> PV : live, every keystroke
+PT --> CM : Enter
+CM --> AD : one fully-dressed task
+CM ..> IN2 : taskCaptured(catId)\n-> QSettings "capture memory"
+rectangle "LlmQuickAddClient (wire)\nPOST /v1/messages . key read\nat request time . stale-guard" as AI
+rectangle "nlp::llm (pure)\nsystemPrompt(today) .\nparseApiReply -> ParsedTask\n<i>defensive: garbage degrades</i>" as AIP
+IN2 --> AI : Ctrl+Enter (explicit)
+AI --> AIP : reply bytes
+AIP ..> PT : same struct, \u2728 marker\nany edit disarms
+note bottom of P
+  same function on every path:
+  no surface can disagree with
+  what Enter will do
+end note
+@enduml

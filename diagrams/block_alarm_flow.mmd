@@ -1,0 +1,14 @@
+%% Block-start alarms — derive-don't-store, applied to time (v19.5)
+flowchart LR
+    AD[("AppData<br/><i>events: date + start minutes</i>")]
+
+    SVC["BlockAlarmService  (domain)<br/><i>high-water mark, born at 'now'<br/>grace window: 120 s<br/>Qt::PreciseTimer single-shot,<br/>nap capped at 1 h</i>"]
+
+    MW["MainWindow toast client<br/><i>pref read at fire time ·<br/>titles resolved fresh by id ·<br/>mutes blocks already tracking ·<br/>same tray icon as the Pomodoro</i>"]
+
+    TRAY["beep + tray toast<br/><i>'Starting now —<br/>Study GTI350 · 9:00 – 10:30'</i>"]
+
+    AD -.->|"changed() → re-derive<br/>the NEXT start, re-aim"| SVC
+    SVC -->|"blocksStarting(ids)<br/>fresh-only; stale swept in silence"| MW
+    MW -->|"unless muted"| TRAY
+    MW -.->|"eventById / activityById /<br/>taskById at toast time"| AD
