@@ -2,10 +2,13 @@
 
 **Follow this top to bottom. Each step sets up the next.** Tick as you go.
 
-The automated suites cover the logic — 379 green, 24 of them new for this
-slice. They cannot cover the one thing this checklist exists for: whether a
-**real model**, on **your real data**, follows the contract — and whether the
-boundary holds when it doesn't.
+The automated suites cover the logic — six suites green, 401 passing test
+functions, 17 of them new for this slice. (Measured, not remembered: 401 is
+what QTest reports across the six binaries, and it includes each suite's
+synthesized `initTestCase`/`cleanupTestCase` pair. Re-measure before editing
+this line.) They cannot cover the one thing this checklist exists for:
+whether a **real model**, on **your real data**, follows the contract — and
+whether the boundary holds when it doesn't.
 
 > **Read this before you start, it will save you an hour.** When the
 > assistant does something wrong below, the odds are overwhelming that the
@@ -18,8 +21,18 @@ boundary holds when it doesn't.
 
 ## Before you start
 
-- [ ] **1. Build and launch.** `tools\deploy-windows.bat`, or Qt Creator
-      (start the server first, then the app)
+- [ ] **1. Build and launch — and launch the build you just made.**
+      `tools\deploy-windows.bat`, or Qt Creator (start the server first, then
+      the app)
+      - **Neither of those touches the installed copy.** If you normally open
+        TickTimer from the Start Menu or a desktop shortcut, that is
+        `%LOCALAPPDATA%\Programs\TickTimer\ticktimer.exe` and it is still
+        whatever you last installed. Run `installer\ticktimer.iss` through
+        Inno Setup, or launch `dist\TickTimer\ticktimer.exe` directly
+      - Both builds report the same version string, so *Help → About* cannot
+        tell you which one you opened. The check that can: step 7 either
+        shows `[B1]` handles or it doesn't. No handles means an old binary,
+        not a bug
 - [ ] **2. Run the tests once.** `tools\run-tests.bat` — **from PowerShell or
       the Qt prompt, not Git Bash** (output vanishes there)
       - Expect all six green. If not, stop and send `test-results.txt`
@@ -61,6 +74,13 @@ boundary holds when it doesn't.
       - The block moves: original marked as moved, replacement on the agenda
       - A `✓ Applied:` line joins the chat
       - `data.json.pre-apply` now sits beside your `data.json`
+      - **The original stays on its old day, and that is not a duplicate.**
+        You should now see it twice: once where you planned it (now carrying
+        `outcome = Moved`, which is why it left `UNRESOLVED BLOCKS`) and once
+        where it moved to. Editing the date in place would rewrite "I planned
+        this and didn't do it" into "I always meant to do it later", and take
+        any tracked segments with it — the app appends a replacement rather
+        than deleting a fact. Step 20 is the same principle with teeth
 
 ## Check it doesn't overclaim
 
