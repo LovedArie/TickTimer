@@ -300,6 +300,13 @@ qt_add_executable(test_domain
 )
 target_include_directories(test_domain PRIVATE include)
 target_link_libraries(test_domain PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+# installerVersionMatchesTheHeader() reads the .iss and compares its
+# AppVersion to Version.h. A test binary has no reliable idea where the
+# source tree is — it may be run from build-release/, from ctest, or from
+# a deploy folder — so the path is baked in at configure time rather than
+# guessed from argv[0] or the working directory.
+target_compile_definitions(test_domain PRIVATE
+    TICKTIMER_ISS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/installer/ticktimer.iss")
 
 add_test(NAME domain COMMAND test_domain)
 

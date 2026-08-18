@@ -2,8 +2,8 @@
 
 **Follow this top to bottom. Each step sets up the next.** Tick as you go.
 
-The automated suites cover the logic — six suites green, 401 passing test
-functions, 17 of them new for this slice. (Measured, not remembered: 401 is
+The automated suites cover the logic — six suites green, 402 passing test
+functions, 18 of them new for this slice. (Measured, not remembered: 402 is
 what QTest reports across the six binaries, and it includes each suite's
 synthesized `initTestCase`/`cleanupTestCase` pair. Re-measure before editing
 this line.) They cannot cover the one thing this checklist exists for:

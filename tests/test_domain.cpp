@@ -1456,6 +1456,52 @@ private slots:
                  int(Banner::Silent));
     }
 
+    // The one seam a static_assert cannot reach. Version.h pins its STRING
+    // against its own three macros at compile time, but Inno Setup cannot
+    // include a C header, so installer/ticktimer.iss restates the version
+    // as a literal — and two files holding one fact will drift.
+    //
+    // deploy-windows.bat already compares them, which sounds like enough
+    // and isn't: it catches a HALF bump and stays silent about NO bump,
+    // because both files agreeing on a stale number is exactly what it
+    // asserts. v29.2 shipped seven commits and a full manual QA pass while
+    // the app called itself 29.1.0, and the cost was not cosmetic — the
+    // installed build and the fresh build reported the same version, so
+    // "am I running the new code?" could not be answered from the app.
+    //
+    // Here instead of at CMake time on purpose: a configure-time check only
+    // fires when someone reconfigures, and the failure mode is an ordinary
+    // incremental build where nobody does. This runs on every run-tests.bat.
+    void installerVersionMatchesTheHeader()
+    {
+        QFile iss(QStringLiteral(TICKTIMER_ISS_PATH));
+        QVERIFY2(iss.open(QIODevice::ReadOnly | QIODevice::Text),
+                 qPrintable(QStringLiteral("cannot open %1 — if the "
+                                           "installer moved, fix the path "
+                                           "in CMakeLists.txt rather than "
+                                           "deleting this test")
+                                .arg(QStringLiteral(TICKTIMER_ISS_PATH))));
+
+        // Anchored at line start so the commented-out examples ABOVE the
+        // real line (ticktimer.iss quotes an older "28.3.0" as a worked
+        // example, and Inno comments start with ';') cannot match.
+        //
+        // Written with escapes rather than a raw string ON PURPOSE: moc runs
+        // its own simplified preprocessor, mis-lexes R"delim( ... )delim",
+        // and then reports "missing ')' in macro usage" — after which it
+        // writes no .moc at all and the compiler blames a missing include
+        // instead. Don't "tidy" this back into a raw string.
+        static const QRegularExpression re(
+            QStringLiteral("^#define\\s+AppVersion\\s+\"([^\"]+)\""),
+            QRegularExpression::MultilineOption);
+        const QRegularExpressionMatch m =
+            re.match(QString::fromUtf8(iss.readAll()));
+        QVERIFY2(m.hasMatch(),
+                 "no '#define AppVersion \"...\"' line in ticktimer.iss");
+
+        QCOMPARE(m.captured(1), version::current());
+    }
+
     // ---- v7: archive, priority, honest tracking, editable days ------------
 
     void archivedThingsVanishFromEveryListButSurviveTheFile()

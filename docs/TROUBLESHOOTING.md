@@ -1257,6 +1257,48 @@ Hand-testing goes through `run-tests.bat`, full releases through
 `deploy-windows.bat`. Neither leaves DLL resolution to the shell you
 happen to be standing in.
 
+### `fatal error: test_domain.moc: No such file or directory` — after editing the .cpp, and it survives every rebuild
+
+**SYMPTOM**
+A file that has always built suddenly can't find its own generated `.moc`,
+on a line (`#include "test_domain.moc"`) you did not touch:
+```
+tests/test_domain.cpp:4710:10: fatal error: test_domain.moc: No such file
+```
+`run-tests.bat` shows only this. Rebuilding changes nothing — later runs
+even report `Built target test_domain_autogen` as though the work were
+done.
+
+**CAUSE**
+Two failures stacked, and the visible one is the second.
+
+First: `moc` runs its own *simplified* C++ preprocessor before the compiler
+sees anything. It does not lex raw string literals correctly. A
+`R"RX( ... )RX"` added to the file left it hunting for a closing paren,
+so it aborted with a message the build script never surfaced:
+```
+AutoMoc: tests/test_domain.cpp:1490:1: error: missing ')' in macro usage
+```
+No `.moc` was written, and the compiler blamed the include instead of the
+cause — the same misdirection as a header missing from `CMakeLists.txt`
+reporting "undefined reference to vtable".
+
+Second, and why it looked unfixable: that aborted run still refreshed
+`build-release/test_domain_autogen/timestamp`. AUTOMOC compares that stamp
+against the sources, decided it was current, and skipped regenerating on
+every subsequent build — including after the code was fixed.
+
+**FIX**
+See the real error first: `cmake --build build-release --target test_domain`
+directly, not through `run-tests.bat`. Then rewrite the literal with
+ordinary escapes (`"^#define\\s+AppVersion\\s+\"([^\"]+)\""`), and clear
+`build-release/test_domain_autogen/` to break the stale-stamp loop. v29.2.
+
+**PREVENT**
+Don't use raw string literals in a file that carries `Q_OBJECT`. The
+regex in `installerVersionMatchesTheHeader()` carries a comment saying so,
+because the escaped version looks strictly worse and invites tidying.
+
 ### A test's own fixture data silently doesn't exist — a query over it returns the empty/default answer
 
 **SYMPTOM**
