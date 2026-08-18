@@ -36,9 +36,9 @@
 // this repo — when you catch a class of bug with a compile-time check, write
 // down what the check still cannot see, or you will trust it for that too.
 #define TICKTIMER_VERSION_MAJOR  29
-#define TICKTIMER_VERSION_MINOR  1
+#define TICKTIMER_VERSION_MINOR  2
 #define TICKTIMER_VERSION_PATCH  0
-#define TICKTIMER_VERSION_STRING "29.1.0"
+#define TICKTIMER_VERSION_STRING "29.2.0"
 
 #ifndef RC_INVOKED
 
