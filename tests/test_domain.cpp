@@ -17,6 +17,7 @@
 #include "AppData.h"
 #include "AssistantVerbs.h" // v29.0 — the write boundary
 #include "Intake.h"          // v29.1 — the interview's brain
+#include "ProposalScrub.h"   // v29.2 — a proposal inside a chat reply
 #include "DayBriefing.h"
 #include "Compare.h"
 #include "ReturnPolicy.h"
@@ -2684,6 +2685,121 @@ private slots:
 
         QVERIFY(text.contains(QStringLiteral("UNRESOLVED BLOCKS")));
         QVERIFY(!text.contains(QStringLiteral("can move to:")));
+    }
+
+    // ---- v29.2: scrubbing a proposal out of a conversational reply ---------
+
+    // The shape the contract promises: prose for the person, object for the
+    // machine, and the object never reaches the bubble.
+    void scrubSplitsProseFromTheProposal()
+    {
+        const scrub::MoveReply r = scrub::moveFromReply(QStringLiteral(
+            "Sure - that Tuesday slot is the cleanest swap, it keeps the\n"
+            "block before your Thursday deadline.\n\n"
+            "{\"move\": {\"block\": \"B1\", \"date\": \"2026-07-21\", "
+            "\"start\": \"09:00\", \"end\": \"10:00\"}}"));
+
+        QVERIFY(r.hasMove);
+        QVERIFY(r.complete());
+        QCOMPARE(r.blockHandle, QStringLiteral("B1"));
+        QCOMPARE(r.date, QDate(2026, 7, 21));
+        QCOMPARE(r.startMinutes, 9 * 60);
+        QCOMPARE(r.endMinutes, 10 * 60);
+
+        // The payload was addressed to the machine and must not be shown.
+        QVERIFY(!r.prose.contains(QStringLiteral("{")));
+        QVERIFY(r.prose.startsWith(QStringLiteral("Sure")));
+        QVERIFY(r.prose.endsWith(QStringLiteral("deadline.")));
+    }
+
+    // An ordinary conversational turn is left completely alone. This is the
+    // common case by far, and the one a greedy parser would damage.
+    void scrubLeavesAPlainReplyUntouched()
+    {
+        const QString plain =
+            QStringLiteral("You have two blocks left today; the gym one is "
+                           "the easier to protect if something slips.");
+        const scrub::MoveReply r = scrub::moveFromReply(plain);
+        QVERIFY(!r.hasMove);
+        QVERIFY(!r.complete());
+        QCOMPARE(r.prose, plain);
+    }
+
+    // JSON about something else is not a proposal. The "move" key is the
+    // whole signal - a model quoting a config blob must not move anything.
+    void scrubIgnoresJsonThatIsNotAMove()
+    {
+        const scrub::MoveReply r = scrub::moveFromReply(QStringLiteral(
+            "Your settings look like {\"theme\": \"dark\", \"week\": 1} "
+            "which is fine."));
+        QVERIFY(!r.hasMove);
+        QVERIFY(r.prose.contains(QStringLiteral("theme")));
+    }
+
+    // Every malformed payload degrades to "not a usable proposal" - never to
+    // a partial one. complete() is the gate the caller checks, and a missing
+    // or unreadable field must never survive it.
+    void scrubDegradesRatherThanGuessing()
+    {
+        const QStringList broken = {
+            // no block handle
+            QStringLiteral("{\"move\": {\"date\": \"2026-07-21\", "
+                           "\"start\": \"09:00\", \"end\": \"10:00\"}}"),
+            // unreadable date
+            QStringLiteral("{\"move\": {\"block\": \"B1\", \"date\": \"next "
+                           "tuesday\", \"start\": \"09:00\", \"end\": \"10:00\"}}"),
+            // clock that is not a clock
+            QStringLiteral("{\"move\": {\"block\": \"B1\", \"date\": "
+                           "\"2026-07-21\", \"start\": \"morning\", "
+                           "\"end\": \"10:00\"}}"),
+            // end before start
+            QStringLiteral("{\"move\": {\"block\": \"B1\", \"date\": "
+                           "\"2026-07-21\", \"start\": \"10:00\", "
+                           "\"end\": \"09:00\"}}"),
+            // truncated - never closes
+            QStringLiteral("{\"move\": {\"block\": \"B1\", \"date\": "),
+        };
+        for (const QString& bad : broken)
+            QVERIFY2(!scrub::moveFromReply(bad).complete(), qPrintable(bad));
+    }
+
+    // A brace inside a block title is text, not structure. Naive brace
+    // counting is exactly the bug the string-aware scan exists to prevent.
+    void scrubSurvivesBracesInsideStrings()
+    {
+        const scrub::MoveReply r = scrub::moveFromReply(QStringLiteral(
+            "Moving it.\n{\"move\": {\"block\": \"B1\", \"note\": \"a { in "
+            "the title\", \"date\": \"2026-07-21\", \"start\": \"09:00\", "
+            "\"end\": \"10:30\"}}"));
+        QVERIFY(r.complete());
+        QCOMPARE(r.endMinutes, 10 * 60 + 30);
+        QVERIFY(!r.prose.contains(QStringLiteral("title")));
+    }
+
+    // Models restate. The LAST object is the one they meant, and the earlier
+    // draft must not be what gets proposed.
+    void scrubTakesTheLastProposalWhenAModelRestates()
+    {
+        const scrub::MoveReply r = scrub::moveFromReply(QStringLiteral(
+            "First thought:\n{\"move\": {\"block\": \"B1\", \"date\": "
+            "\"2026-07-21\", \"start\": \"09:00\", \"end\": \"10:00\"}}\n"
+            "Actually this is better:\n"
+            "{\"move\": {\"block\": \"B2\", \"date\": \"2026-07-22\", "
+            "\"start\": \"14:00\", \"end\": \"15:00\"}}"));
+        QVERIFY(r.complete());
+        QCOMPARE(r.blockHandle, QStringLiteral("B2"));
+        QCOMPARE(r.date, QDate(2026, 7, 22));
+    }
+
+    // Fenced payloads are common; the leftovers must not reach the bubble.
+    void scrubClearsCodeFencesLeftBehind()
+    {
+        const scrub::MoveReply r = scrub::moveFromReply(QStringLiteral(
+            "Here you go.\n\n```json\n{\"move\": {\"block\": \"B1\", "
+            "\"date\": \"2026-07-21\", \"start\": \"09:00\", "
+            "\"end\": \"10:00\"}}\n```"));
+        QVERIFY(r.complete());
+        QCOMPARE(r.prose, QStringLiteral("Here you go."));
     }
 
     // ---- v29.1: the interview's brain (all C++) ----------------------------

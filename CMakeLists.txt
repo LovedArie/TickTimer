@@ -73,6 +73,8 @@ set(DOMAIN_SOURCES
     include/AppData.h
     include/AssistantVerbs.h
     src/AssistantVerbs.cpp
+    include/ProposalScrub.h
+    src/ProposalScrub.cpp
     include/Intake.h
     src/Intake.cpp
     include/Category.h
