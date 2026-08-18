@@ -6,8 +6,9 @@ Companions: `design-addendum-write-boundary.md` (Slice 1, the machine),
 `design-addendum-intake.md` (Slice 2, the model as proposer),
 `design-addendum-catch-up.md` (where `reschedule::` was born).*
 
-**Status: draft for review. Nothing below is built.** Sections F and G are
-open questions, recorded rather than guessed at.
+**Status: design settled, nothing built yet.** §F decided (`Role::Chat`), §G
+answered (the criterion does not fire, third time). §H names the one domain
+door this slice must add before the verb can honour §B.1.
 
 ---
 
@@ -112,19 +113,58 @@ replacement block actually exists." The domain already treats a move as
 something **earned by construction rather than asserted**. This verb must not
 become the loophole that lets it be asserted.
 
-## F. Which role holds it — OPEN
+## F. Which role holds it — DECIDED: `Role::Chat`
 
-Roles are per call-site (§B.4), and this verb's natural home is the catch-up
-drawer, where the ranked options are already on screen. Candidates:
+`Role::Chat` gains `MoveBlock`, its first write verb. The alternative — a new
+`Role::CatchUp` scoped to the drawer — was the smaller, safer slice; it was
+rejected because the gesture people actually have is a sentence ("find a slot
+for the study block I missed"), and a verb reachable only from a drawer they
+must first open is a feature they must first remember.
 
-1. A new `Role::CatchUp` — cleanest fit with §B.4's "one scope per place the
-   assistant speaks from", and keeps Chat's list empty for one more slice.
-2. `Role::Chat` gains its first verb — lets you *ask* ("can you find a slot for
-   the study block I missed?"), which is the more natural user gesture, at the
-   cost of Chat no longer being a read-only surface.
+Nudge and CheckIn keep empty lists **forever**, unchanged. That is the part of
+§B.4 doing its work: widening one role's scope leaves the other two provably
+untouched, and the diff says so on one screen.
 
-These are materially different products, not two spellings of one. **Not
-decided here.** Whichever wins, Nudge and CheckIn keep empty lists forever.
+**Two consequences that must be paid deliberately, not discovered:**
+
+1. **`test_domain.cpp` asserts `verbsFor(Role::Chat).isEmpty()`.** That test is
+   the tripwire the verb layer was built to trip. It flips in the same commit
+   as the verb, with the new expectation naming the single verb explicitly —
+   never loosened to "not empty", which would stop pinning anything.
+2. **"The assistant is read-only" is asserted in ten documents**, including the
+   README's headline paragraph and `design-addendum-chat.md`. The claim is now
+   false for one verb, and a claim that is 95% true reads as a lie to the one
+   person who relied on it. Retiring it is part of this slice's definition of
+   done, not documentation follow-up.
+
+## G. §B.3's third recorded answer: it still does not fire
+
+*(Revised after §F was decided. The first draft of this section assumed the
+Chat reading would force the promotion. It does not, and the difference is
+worth stating precisely, because the criterion is only useful if it is applied
+honestly rather than triumphantly.)*
+
+The criterion is: **does a dialect need to hold state across calls?**
+The answer here is still no, and conversation does not change it.
+
+A back-and-forth ("not Thursday — what else have you got?") is carried by
+`ChatSession`'s transcript, which is dialect-neutral and has been multi-turn
+since v25. Each model call stays single-shot: system prompt + transcript +
+the freshly computed option list → one JSON object out. The dialect holds
+nothing between calls, because nothing between calls is dialect-shaped.
+
+What *would* fire the criterion is adopting the vendors' native
+`tool_use`/`tool_result` blocks, which must be threaded per provider. That is
+declined here for intake §B's three reasons, and the first is decisive: a local
+Ollama seat has no native tool support, and this verb must not become a
+premium-seat feature. The confirm loop remains the tool layer, with the owner
+as the dispatcher.
+
+So: Slice 1 recorded "no cross-call state because C++ composes the proposals";
+Slice 2 recorded "no cross-call state because extraction is one exchange by
+construction"; Slice 3 records **"no cross-call state because the conversation
+is the transcript's job, not the dialect's."** Three iterations, three
+non-firings, one unchanged criterion — still armed, and still honest.
 
 ## G. §B.3's third recorded answer — provisional
 
