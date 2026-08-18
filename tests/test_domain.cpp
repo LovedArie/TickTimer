@@ -2616,6 +2616,76 @@ private slots:
         QCOMPARE(data.eventsOn(piece.date).size(), 0); // replacement gone
     }
 
+    // The briefing carries each missed block's LEGAL MOVES, so the model can
+    // select without inventing — and every line it can copy back is one the
+    // verb will accept. That round trip is the test: read an offer out of the
+    // briefing text, propose it verbatim, and it validates.
+    void briefingOffersMovesThatTheVerbThenAccepts()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        handles.clear(); // the briefing rebuilds the world it prints
+
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+        brief::Options opts;
+        opts.rescheduleCtx.dayStartMinutes = 6 * 60;
+        opts.rescheduleCtx.dayEndMinutes   = 24 * 60;
+
+        const QString text =
+            brief::dayBriefing(data, now.date(), now, opts, &handles);
+        QVERIFY(text.contains(QStringLiteral("can move to:")));
+
+        // Pull the first offered slot straight out of the text the model
+        // sees — "2026-07-21 09:00-10:00".
+        const int at = text.indexOf(QStringLiteral("can move to: "));
+        const QString tail =
+            text.mid(at + 13).section(QLatin1Char('\n'), 0, 0);
+        const QString first = tail.section(QStringLiteral(" | "), 0, 0).trimmed();
+
+        const QDate offerDate = QDate::fromString(first.left(10), Qt::ISODate);
+        QVERIFY(offerDate.isValid());
+        const QString span = first.mid(11);
+        const int startMin = span.left(2).toInt() * 60 + span.mid(3, 2).toInt();
+        const int endMin   = span.mid(6, 2).toInt() * 60 + span.mid(9, 2).toInt();
+
+        verbs::World world = moveWorld(now);
+        world.reschedule.dayStartMinutes = 6 * 60;
+        world.reschedule.dayEndMinutes   = 24 * 60;
+
+        verbs::Proposal p;
+        p.verb            = verbs::Verb::MoveBlock;
+        p.targetHandle    = handles.blockIdFor(QStringLiteral("B1")) == id
+                                ? QStringLiteral("B1")
+                                : QString();
+        p.newDate         = offerDate;
+        p.newStartMinutes = startMin;
+        p.newEndMinutes   = endMin;
+
+        const verbs::Verdict v =
+            verbs::validate(data, handles, verbs::Role::Chat, p, world);
+        QVERIFY2(v.ok, qPrintable(v.reason));
+    }
+
+    // Silence, not an empty header, when the search has nothing to offer —
+    // reschedule:: is allowed to return nothing, and an empty "can move to:"
+    // would invite the model to fill it. Same manners as the MOOD section.
+    void briefingSaysNothingWhenThereAreNoLegalMoves()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        plantMissedBlock(data, handles);
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+
+        brief::Options opts;
+        opts.maxMoveOptions = 0; // a caller with no write verb in its role
+        const QString text =
+            brief::dayBriefing(data, now.date(), now, opts, &handles);
+
+        QVERIFY(text.contains(QStringLiteral("UNRESOLVED BLOCKS")));
+        QVERIFY(!text.contains(QStringLiteral("can move to:")));
+    }
+
     // ---- v29.1: the interview's brain (all C++) ----------------------------
 
     // §K.3's guess: two finished samples minimum, the MEDIAN of tracked

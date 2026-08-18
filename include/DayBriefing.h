@@ -48,6 +48,7 @@
 #include <QString>
 
 #include "AssistantVerbs.h" // HandleMap — the briefing prints what it registers
+#include "Reschedule.h"     // the "can move to:" search under missed blocks
 
 class AppData;
 
@@ -75,6 +76,23 @@ struct Options
     // prefs::missedRule() so the assistant and the card judge by the same
     // bar; a caller that doesn't gets the shipped defaults.
     missed::Rule missedRule;
+
+    // v29.2: the search policy behind "can move to:" under each unresolved
+    // block. A field for the same reason missedRule is one — brief:: is
+    // domain-only and reads no QSettings — and it MUST match what
+    // verbs::World carries, or the model would be offered placements the
+    // verb then refuses as "not one of the options".
+    //
+    // deadline is left unset here too: it belongs to each block's own task
+    // and is derived per block while printing.
+    reschedule::Context rescheduleCtx;
+
+    // How many slots to offer per unresolved block. Three is enough to feel
+    // like a choice and few enough that the section stays readable — the
+    // same number, and the same reasoning, as reschedule::maxFreeSlotOptions.
+    // Zero suppresses the lines entirely, which is what a caller that cannot
+    // act on them (no write verb in its role) should pass.
+    int maxMoveOptions = 3;
 };
 
 // The context block. `now` is a parameter, defaulted to the wall clock — the

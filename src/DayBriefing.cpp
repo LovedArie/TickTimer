@@ -256,6 +256,54 @@ QString dayBriefing(const AppData& data, QDate today, const QDateTime& now,
                                 clockLabel(e.plannedStartMinutes),
                                 clockLabel(e.plannedEndMinutes),
                                 data.eventLabel(e), why);
+
+                // v29.2: the legal moves, computed here so the model never
+                // has to invent one (addendum §C). This is the whole reason
+                // MoveBlock can stay single-shot: the option set travels
+                // with the block that owns it, so a request to reschedule
+                // is answerable from the context already in hand.
+                //
+                // Printed in the SAME grid and order reschedule:: ranks
+                // them, and matched later by exact placement — so a model
+                // that copies a line back is proposing something the verb
+                // will recognise. Anything it types instead will not match,
+                // and that is the point.
+                if (opts.maxMoveOptions > 0) {
+                    reschedule::Context ctx = opts.rescheduleCtx;
+                    ctx.now = now;
+                    if (const Task* t = data.taskById(e.taskId))
+                        ctx.deadline = coverage::deadlineOf(*t, today);
+
+                    const QVector<reschedule::Option> offers =
+                        reschedule::propose(e, v, data.events(), ctx);
+
+                    QStringList lines;
+                    for (const reschedule::Option& o : offers) {
+                        // Single-replacement kinds only — exactly what the
+                        // verb accepts (§I). Offering a Split here would
+                        // advertise a move the confirm card cannot make.
+                        if (o.kind == reschedule::Kind::Split
+                            || o.kind == reschedule::Kind::Bump)
+                            continue;
+                        if (o.pieces.size() != 1)
+                            continue;
+                        const reschedule::Piece& pc = o.pieces.first();
+                        lines << QStringLiteral("%1 %2-%3")
+                                     .arg(pc.date.toString(Qt::ISODate),
+                                          clockLabel(pc.startMinutes),
+                                          clockLabel(pc.endMinutes));
+                        if (lines.size() >= opts.maxMoveOptions)
+                            break;
+                    }
+
+                    // Silence when there is nothing to offer, deliberately.
+                    // reschedule:: is ALLOWED to return nothing, and an
+                    // empty "can move to:" header would invite the model to
+                    // fill it — the same manners the MOOD section keeps.
+                    if (!lines.isEmpty())
+                        out += QStringLiteral("    can move to: %1\n")
+                                   .arg(lines.join(QStringLiteral(" | ")));
+                }
             }
             if (unresolved.size() > shown)
                 out += QStringLiteral("- (+%1 more)\n")
