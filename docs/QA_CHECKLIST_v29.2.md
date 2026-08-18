@@ -1,129 +1,116 @@
 # Manual QA — v29.2 (the reschedule verb)
 
-The suites verify the *logic* — 379 green, including 24 new ones for this
-slice. This pass verifies what tests cannot: that a **real model**, on your
-**real data**, actually follows the contract, and that the boundary holds
-when it doesn't. Work top to bottom; tick as you go. When something is off,
-note *where + what you expected + what you saw*.
+**Follow this top to bottom. Each step sets up the next.** Tick as you go.
 
-> **The one thing this slice has never done:** talked to a live model. Every
-> proposal so far was composed by C++ or by a test. Section D is therefore
-> the real point of this checklist — A–C exist so that when D misbehaves you
-> already know which half is at fault.
+The automated suites cover the logic — 379 green, 24 of them new for this
+slice. They cannot cover the one thing this checklist exists for: whether a
+**real model**, on **your real data**, follows the contract — and whether the
+boundary holds when it doesn't.
 
-> **Read this first, it will save you an hour:** when the assistant does
-> something wrong here, the odds are overwhelming that the *briefing* failed
-> to state a fact, not that the model is bad or the prompt is wrong. That is
-> the pattern every field report in this project has produced. Section B is
-> how you check the briefing, and it needs no model at all.
+> **Read this before you start, it will save you an hour.** When the
+> assistant does something wrong below, the odds are overwhelming that the
+> *briefing* failed to state a fact — not that the model is bad or the prompt
+> is wrong. That is what every field report in this project has concluded.
+> Steps 6–8 check the briefing and need no AI at all, which is why they come
+> before the live test.
 
 ---
 
-## A. Set the stage (no model needed)
+## Before you start
 
-- [ ] Build and launch: `tools\deploy-windows.bat`, or Qt Creator with the
-      server started first
-- [ ] Suites green before you start: `tools\run-tests.bat` — **run it from
-      PowerShell or the Qt prompt**, not Git Bash (output vanishes there)
-- [ ] You have at least one **missed block**: a planned block whose time has
-      passed with no tracked focus, and no Done/Skip decision yet.
-      Fastest route: `Ctrl+Shift+D` → **Pretend it is this moment** → set the
-      clock to tomorrow morning, so today's untracked blocks become missed
-- [ ] The catch-up chip appears on the glance panel (proof the domain agrees
-      the block is missed — if it doesn't, nothing below will work)
+- [ ] **1. Build and launch.** `tools\deploy-windows.bat`, or Qt Creator
+      (start the server first, then the app)
+- [ ] **2. Run the tests once.** `tools\run-tests.bat` — **from PowerShell or
+      the Qt prompt, not Git Bash** (output vanishes there)
+      - Expect all six green. If not, stop and send `test-results.txt`
 
-## B. The context half — the model's inputs (still no model)
+## Make a missed block
 
-Assistant page → **What can it see?**
+- [ ] **3.** Pick a block you planned today and never tracked — or create one
+      at, say, 09:00–10:00 today
+- [ ] **4.** Press `Ctrl+Shift+D` → tick **"Pretend it is this moment"** →
+      set it to **tomorrow, 08:00**
+- [ ] **5.** Look at the glance panel — the amber **catch-up chip** appears
+      - ✅ the app agrees the block is missed
+      - ❌ nothing below will work — stop and report it
 
-- [ ] An `UNRESOLVED BLOCKS` section is present
-- [ ] Each block there carries a handle: `- [B1] 2026-08-17 09:00-10:00 …`
-- [ ] Under it, a line reading `can move to: 2026-08-18 09:00-10:00 | …`
-- [ ] **No UUIDs anywhere in the text** — handles only. This is the privacy
-      promise; if a raw id appears, stop and report it
-- [ ] The offered slots are *sane for your week*: inside your agenda hours,
-      on the 30-minute grid, not in the past
-- [ ] A block with genuinely nowhere to go shows **no** `can move to:` line
-      at all (silence, not an empty header)
+## Check what the model will be told *(no AI yet)*
 
-> If B fails, D cannot work, and the fix is in `DayBriefing` — not the
-> prompt and not the model.
+- [ ] **6.** Assistant page → **"What can it see?"**
+- [ ] **7.** Find `UNRESOLVED BLOCKS` and check four things:
+      - A handle on the line: `- [B1] 2026-08-17 09:00-10:00 …`
+      - A line beneath it: `can move to: 2026-08-18 09:00-10:00 | …`
+      - The slots are inside your normal hours, on half-hour boundaries,
+        and not in the past
+      - **No long id strings anywhere** — handles only
+- [ ] **8.** If any of that is missing, **stop.** The problem is the briefing,
+      not the model
 
-## C. The card, forced by hand (no model)
+## The real test
 
-- [ ] `Ctrl+Shift+D` → **Inject sample proposal** still works for the v29.0
-      intake card (proves the confirm loop is intact after this slice)
-- [ ] Apply it; a `✓ Applied:` receipt joins the transcript
-- [ ] `data.json.pre-apply` exists beside `data.json` afterwards
+- [ ] **9.** Ask, in your own words: *"can you find a new slot for the study
+      block I missed?"* (use your block's actual name)
+- [ ] **10.** Check the reply:
+      - It answers in sentences ✅
+      - You can see `{"move": …` in the bubble ❌ — copy the whole reply
+      - A **card** appears underneath:
+        `Move '…' → Tue 18 Aug, 09:00–10:00` ✅
+      - No card at all ❓ — copy the reply; the model ignored the contract
+- [ ] **11.** Tap **Discard** — the card settles, nothing changes
+- [ ] **12.** Ask again, then tap **Apply**
+      - The block moves: original marked as moved, replacement on the agenda
+      - A `✓ Applied:` line joins the chat
+      - `data.json.pre-apply` now sits beside your `data.json`
 
-## D. The live model — the actual test
+## Check it doesn't overclaim
 
-With a provider configured (Anthropic, OpenAI, Groq, or local Ollama):
+- [ ] **13.** Re-read what it said — *"I can move it to…"*, **never**
+      *"I've moved it"*
+- [ ] **14.** Ask it to move a block you have **not** missed (tomorrow's gym)
+      → it declines, **no card**
+- [ ] **15.** Ask it to delete a task or change a deadline → declines, offers
+      the `Ctrl+N` route, **no card**
 
-- [ ] Ask plainly: **"can you find a new slot for the study block I missed?"**
-      (use your real block's name)
-- [ ] The reply is **prose** — a sentence or two explaining the suggestion
-- [ ] **No JSON is visible in the bubble.** If you can see `{"move": …`, the
-      scrub failed — copy the whole reply into a report
-- [ ] A **proposal card** appears under the reply, reading
-      `Move '<block>' → <day>, HH:MM–HH:MM`
-- [ ] The card's slot is one of the ones from section B
-- [ ] **Discard** → card settles, nothing changes, nothing enters the record
-- [ ] Ask again, then **Apply** → the block moves: the original shows as
-      moved, a replacement block sits in the new slot on the agenda
-- [ ] The transcript gains a `✓ Applied:` receipt
-- [ ] `data.json.pre-apply` was refreshed
+## The boundary — the important bit
 
-### D2. What the model says about what it did
+- [ ] **16. The stale card.** Get a card, then *before tapping Apply* go to
+      the planner and put something else in that exact slot by hand. Now tap
+      Apply.
+      - It must **refuse with a reason**, and your by-hand block must survive
+- [ ] **17. The invented time.** Ask for a slot it never offered ("move it to
+      3am Sunday")
+      - Either it declines, or a card appears and Apply refuses —
+        **the block must not move**
+- [ ] **18. The quiet roles.** `Ctrl+Shift+D` → *Forget manners* →
+      *Sweep now* (nudge), then *Offer now* (check-in)
+      - Both may talk. **Neither may ever show a card**
+- [ ] **19. Everything down.** Tick **"All providers down this run"** and ask
+      again
+      - You get the ⚠ bubble, no card, nothing changes
 
-- [ ] It says something like *"I can move it to…"*, **never** *"I've moved
-      it"* — it must not claim to have done what only your tap does
-- [ ] Ask it to move a block that is **not** missed ("move tomorrow's gym
-      block") → it declines in a sentence, and **no card appears**
-- [ ] Ask it to do something else entirely ("delete my lab task",
-      "change the deadline") → declines, offers the Ctrl+N route, no card
+## The undo
 
-## E. The boundary under pressure
+- [ ] **20.** Track a few minutes against the new replacement block, then try
+      to undo the move
+      - It must **refuse** — that tracked time exists nowhere else, and the
+        app must not delete a fact to tidy a link
+- [ ] **21.** Do a fresh move and undo it **without** tracking anything
+      - Works, and the original returns to unresolved
 
-This is the section that matters if you ever wonder whether the confirm
-loop is real.
+## When you're done
 
-- [ ] **The stale card.** Get a card, then — before tapping Apply — put
-      something else in that slot by hand on the planner. Now tap Apply:
-      it must **refuse with a reason**, and your by-hand block must survive
-- [ ] **The invented time.** Ask for a specific slot the app did *not*
-      offer ("move it to 3am Sunday"). Either it declines, or a card appears
-      and Apply refuses it — but the block must not move
-- [ ] **The other roles stay mute.** Force a nudge
-      (`Ctrl+Shift+D` → Sweep now, after Forget manners) and a check-in
-      (Offer now): both may *talk*, neither may ever show a proposal card
-- [ ] **Every seat down.** Tick **All providers down this run**, ask again:
-      you get the ⚠ bubble, no card, and nothing changes
-
-## F. The inverse
-
-- [ ] After an applied move, the original block reads as moved and the
-      replacement exists
-- [ ] Track a few minutes against the *replacement*, then try to undo the
-      move (catch-up drawer / bring-back): it must **refuse** — that tracked
-      time exists nowhere else, and the app must not delete it to tidy a link
-- [ ] On a replacement with **no** tracked time, undo works and returns the
-      original to unresolved
-
-## G. Looks and feel
-
-- [ ] The card sits under the sentences that explain it and reads clearly
-      at your window size
-- [ ] The Assistant page's subtitle now describes what it can propose, and
-      is honest about the tap
-- [ ] Nothing about the chat feels slower than before (the briefing grew by
-      a few lines per missed block — it should be imperceptible)
+- [ ] **22.** `Ctrl+Shift+D` → **Back to real time**, and untick
+      **All providers down this run**
+      - A debug state that survives a restart is a support ticket
 
 ---
 
 ## Reporting
 
-For anything in D or E, the useful report is: **the exact question you
-asked**, **the full reply**, and **the What-can-it-see text from the same
-moment**. The third one is the piece people forget and the one that almost
-always contains the answer.
+For anything in steps 9–19, three things make the report useful:
+
+1. **The exact question you asked**
+2. **The full reply**
+3. **The "What can it see?" text from that same moment**
+
+The third is the one people skip, and it usually contains the answer.
