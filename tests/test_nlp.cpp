@@ -723,8 +723,22 @@ private slots:
     {
         const QString p =
             chat::systemPrompt(QStringLiteral("TODAY IS 2026-07-19"));
-        QVERIFY(p.contains(QStringLiteral("cannot change anything"),
-                           Qt::CaseInsensitive));
+
+        // v29.2: the contract is no longer "cannot change anything" — Chat
+        // holds MoveBlock now. What must survive is the SHAPE of the
+        // permission: exactly one proposable change, everything else
+        // refused, and nothing taking effect without the owner's tap.
+        // Re-pinned rather than relaxed: a test that stopped naming the
+        // boundary would stop guarding it.
+        QVERIFY(p.contains(QStringLiteral("WHAT YOU CAN PROPOSE")));
+        QVERIFY(p.contains(QStringLiteral("WHAT YOU STILL CANNOT DO")));
+        QVERIFY(p.contains(QStringLiteral("can move to:")));   // the only
+                                                               // legal source
+        QVERIFY(p.contains(QStringLiteral("\"move\""))); // the agreed shape
+        // The tap is the boundary, and the model is told so in words it
+        // must echo to the person.
+        QVERIFY(p.contains(QStringLiteral("Apply")));
+        QVERIFY(p.contains(QStringLiteral("never \"I've moved it\"")));
         QVERIFY(p.contains(QStringLiteral("Never invent")));
         QVERIFY(p.contains(QStringLiteral("Ctrl+N"))); // the redirect path
         // The briefing rides INSIDE the prompt, clearly fenced as app data.
@@ -943,8 +957,14 @@ private slots:
                                   : p.style;
             const QString prompt = chat::systemPrompt(briefing, band);
 
-            QVERIFY2(prompt.contains(QStringLiteral("cannot change anything"),
-                                     Qt::CaseInsensitive),
+            // v29.2: the permission's shape, not the old blanket refusal —
+            // no persona may widen what the assistant can propose, and none
+            // may drop the "you must be asked first" half.
+            QVERIFY2(prompt.contains(QStringLiteral("WHAT YOU CAN PROPOSE")),
+                     qPrintable(p.id));
+            QVERIFY2(prompt.contains(QStringLiteral("WHAT YOU STILL CANNOT DO")),
+                     qPrintable(p.id));
+            QVERIFY2(prompt.contains(QStringLiteral("Apply")),
                      qPrintable(p.id));
             QVERIFY2(prompt.contains(QStringLiteral("Never invent")),
                      qPrintable(p.id));

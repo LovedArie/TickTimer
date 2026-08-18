@@ -1,5 +1,7 @@
 #include "ChatPage.h"
 
+#include "ProposalScrub.h" // v29.2 — a proposal may ride inside a reply
+
 #include "IntakeClient.h"
 #include "ProposalCard.h"
 #include "Mood.h"
@@ -105,7 +107,8 @@ ChatPage::ChatPage(AppData* data, QWidget* parent)
     title->setObjectName(QStringLiteral("h1"));
     auto* sub = new QLabel(
         tr("Ask about today. It can see your plan, your tracked time and your "
-           "tasks — and it can't change any of them."),
+           "tasks. It can suggest moving a block you missed — nothing changes "
+           "until you tap Apply."),
         this);
     sub->setObjectName(QStringLiteral("sub"));
     sub->setWordWrap(true);
@@ -212,7 +215,19 @@ ChatPage::ChatPage(AppData* data, QWidget* parent)
     connect(m_client, &ChatClient::replied, this,
             [this](const QString& text, const QString& seatId,
                    bool viaFallback) {
-        m_transcript.append(ai::Role::Assistant, text);
+        // v29.2: a reply may carry a proposal. Scrub it out BEFORE the text
+        // reaches the transcript, so the machine-facing object never becomes
+        // part of the record or the bubble — the same treatment reasoning
+        // models' <think> sections get, for the same reason.
+        const scrub::MoveReply parsed = scrub::moveFromReply(text);
+
+        // An empty prose half means the model sent the object and nothing
+        // else. Say something rather than render a blank bubble; the card
+        // below still carries the actual request.
+        m_transcript.append(ai::Role::Assistant,
+                            parsed.prose.isEmpty()
+                                ? tr("Here's what I'd suggest:")
+                                : parsed.prose);
         addBubble(m_transcript.turns().last());
         // §E attribution, as a transcript notice (a per-bubble badge is a
         // recorded follow-up): a fallback answer names its author, because
@@ -222,6 +237,23 @@ ChatPage::ChatPage(AppData* data, QWidget* parent)
             m_transcript.appendLocal(
                 tr("answered by %1").arg(ai::seatName(seatId)));
             addBubble(m_transcript.turns().last());
+        }
+
+        // The card comes last, under the sentences that explain it. A
+        // proposal that arrived malformed is simply not offered: scrub::
+        // degrades to "no proposal", and the reply stands as conversation.
+        // Note what is NOT checked here — whether the move is legal. That
+        // is validate()'s job, presentProposal() asks it, and a born-broken
+        // card shows its reason with Apply disabled. The page composes; it
+        // does not judge.
+        if (parsed.complete()) {
+            verbs::Proposal p;
+            p.verb            = verbs::Verb::MoveBlock;
+            p.targetHandle    = parsed.blockHandle;
+            p.newDate         = parsed.date;
+            p.newStartMinutes = parsed.startMinutes;
+            p.newEndMinutes   = parsed.endMinutes;
+            presentProposal(p, verbs::Role::Chat);
         }
         setBusy(false);
     });
