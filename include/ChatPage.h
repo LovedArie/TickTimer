@@ -113,6 +113,14 @@ public:
     // This turn's [T1] → id world, refreshed by every currentBriefing().
     const verbs::HandleMap& handles() const { return m_handles; }
 
+    // Everything validation needs beyond AppData: the clock, the missed-block
+    // rule, and the search policy the proposer used. Built fresh on every
+    // call rather than cached, because both verdicts (§E) must judge the
+    // world as it is at THAT moment — a cached one would make the tap
+    // re-validate against the render's world, which is the bug the second
+    // verdict exists to catch.
+    verbs::World currentWorld() const;
+
     // Runs immediately before any Apply mutates (§B's cheap insurance —
     // MainWindow copies data.json aside). A std::function member, the
     // nowProvider precedent: the page knows WHEN, the composition root

@@ -16,9 +16,17 @@ QVector<Verb> verbsFor(Role role)
     case Role::Intake:
         return { Verb::SetTaskDetails };
     case Role::Chat:
+        // v29.2: Chat's first — and so far only — write verb. Widened
+        // deliberately (addendum §F): the gesture people actually have is a
+        // sentence, and a verb reachable only from a drawer they must first
+        // open is one they must first remember.
+        return { Verb::MoveBlock };
     case Role::Nudge:
     case Role::CheckIn:
-        return {}; // observe and phrase — forever, for Nudge and CheckIn
+        return {}; // observe and phrase — FOREVER. A toast that can
+                   // rearrange your afternoon is the thing this file
+                   // exists to make structurally impossible, and a
+                   // prompt-injection landing here has nothing to reach for.
     }
     return {};
 }
@@ -80,8 +88,75 @@ QString HandleMap::blockIdFor(const QString& handle) const
     return resolveHandle(blockIds, handle, QLatin1Char('B'));
 }
 
+namespace
+{
+// "09:30". Local rather than brief::clockLabel: the verb layer formatting a
+// clock is not a reason to depend on the briefing layer, and the duplication
+// is four lines against a new edge in the include graph.
+QString clockLabel(int minutesAfterMidnight)
+{
+    return QStringLiteral("%1:%2")
+        .arg(minutesAfterMidnight / 60, 2, 10, QLatin1Char('0'))
+        .arg(minutesAfterMidnight % 60, 2, 10, QLatin1Char('0'));
+}
+
+// Does this placement appear among the options the search would offer right
+// now? THE MoveBlock check, factored because validate() and apply() must ask
+// it identically — apply() re-asks at the tap, and a second hand-written
+// copy is where the two would drift.
+//
+// Split is excluded here and not merely unmatched: a multi-piece option has
+// no single placement to compare against, and the verb is fenced to
+// single-replacement kinds because those are the ones undoReschedule can
+// invert (addendum §H.2, §I).
+bool placementIsOffered(const AppData& data, const Event& block,
+                        const Proposal& p, const World& world)
+{
+    const missed::Verdict v = missed::judge(block, world.missedRule, world.now);
+
+    // The deadline is a property of THIS block, not of the caller's world, so
+    // it is derived here rather than trusted from the World. The caller
+    // supplies policy (the agenda window, the horizon — preferences, which
+    // are not domain knowledge); the domain supplies the fact. A caller that
+    // passed the wrong deadline would silently shift which options exist,
+    // and every proposal would be judged against a different search than the
+    // one that produced it.
+    reschedule::Context ctx = world.reschedule;
+    ctx.now = world.now;
+    if (const Task* t = data.taskById(block.taskId))
+        ctx.deadline = coverage::deadlineOf(*t, world.now.date());
+
+    const QVector<reschedule::Option> options =
+        reschedule::propose(block, v, data.events(), ctx);
+
+    for (const reschedule::Option& o : options) {
+        if (o.kind == reschedule::Kind::Split || o.kind == reschedule::Kind::Bump)
+            continue; // out of scope by design, not by omission
+        if (o.pieces.size() != 1)
+            continue;
+        const reschedule::Piece& piece = o.pieces.first();
+        if (piece.date == p.newDate && piece.startMinutes == p.newStartMinutes
+            && piece.endMinutes == p.newEndMinutes)
+            return true;
+    }
+    return false;
+}
+} // namespace
+
 QString Proposal::summary(const AppData& data, const HandleMap& handles) const
 {
+    if (verb == Verb::MoveBlock) {
+        const Event* e = data.eventById(handles.blockIdFor(targetHandle));
+        const QString label =
+            e ? data.eventLabel(*e)
+              : QObject::tr("(unknown block %1)").arg(targetHandle);
+        return QObject::tr("Move '%1' → %2, %3–%4")
+            .arg(label,
+                 newDate.toString(QStringLiteral("ddd d MMM")),
+                 clockLabel(newStartMinutes),
+                 clockLabel(newEndMinutes));
+    }
+
     // Composed from the STRUCTURED fields — the card never displays the
     // proposer's own prose as the description of what will happen.
     const Task* t = data.taskById(handles.taskIdFor(targetHandle));
@@ -108,8 +183,56 @@ QString Proposal::summary(const AppData& data, const HandleMap& handles) const
         .arg(title, parts.join(QObject::tr(", ")));
 }
 
+namespace
+{
+// MoveBlock's own gate. Split out rather than threaded through the task
+// checks with if-verb branches: the two verbs share only the role check,
+// and interleaving them is how a check meant for one silently starts
+// guarding the other.
+Verdict validateMove(const AppData& data, const HandleMap& handles,
+                     const Proposal& p, const World& world)
+{
+    // The handle resolves — in the BLOCK namespace, chosen by the verb.
+    const QString id = handles.blockIdFor(p.targetHandle);
+    if (id.isEmpty())
+        return { false, QObject::tr("'%1' doesn't refer to any block in "
+                                    "this conversation.")
+                            .arg(p.targetHandle) };
+
+    const Event* block = data.eventById(id);
+    if (!block)
+        return { false, QObject::tr("That block no longer exists.") };
+
+    // Already dealt with. Re-moving a block that was moved would chain
+    // replacements and leave the first link describing a world two steps
+    // back; Done and Dropped are decisions the owner already made.
+    if (block->outcome != BlockOutcome::Unset)
+        return { false, QObject::tr("That block already has a decision.") };
+
+    // THE fence (addendum §B). A block you might still do is a plan you are
+    // living inside, and an assistant that may move it is a calendar editor.
+    // Only a block the domain itself judges missed is in scope.
+    const missed::Verdict v = missed::judge(*block, world.missedRule, world.now);
+    if (v.reason == missed::Reason::None)
+        return { false, QObject::tr("That block hasn't been missed — it's "
+                                    "still yours to do.") };
+
+    if (!p.newDate.isValid() || p.newEndMinutes <= p.newStartMinutes)
+        return { false, QObject::tr("That isn't a usable time.") };
+
+    // THE check (addendum §C): the model selects, it never invents. If the
+    // search wouldn't offer this placement right now, it is refused —
+    // which is also how a stale card fails, safely, at the tap.
+    if (!placementIsOffered(data, *block, p, world))
+        return { false, QObject::tr("That slot isn't one of the options for "
+                                    "this block any more.") };
+
+    return { true, QString() };
+}
+} // namespace
+
 Verdict validate(const AppData& data, const HandleMap& handles, Role role,
-                 const Proposal& p)
+                 const Proposal& p, const World& world)
 {
     // 1. The role may use this verb at all. First check on purpose: a
     //    forbidden role must not learn, via later error texts, which
@@ -117,6 +240,9 @@ Verdict validate(const AppData& data, const HandleMap& handles, Role role,
     if (!verbsFor(role).contains(p.verb))
         return { false, QObject::tr("This assistant role is not allowed to "
                                     "make changes.") };
+
+    if (p.verb == Verb::MoveBlock)
+        return validateMove(data, handles, p, world);
 
     // 2. The handle resolves — §B.2's fail-safe firing as a sentence.
     const QString id = handles.taskIdFor(p.targetHandle);
@@ -163,15 +289,35 @@ Verdict validate(const AppData& data, const HandleMap& handles, Role role,
 }
 
 Verdict apply(AppData& data, const HandleMap& handles, Role role,
-              const Proposal& p)
+              const Proposal& p, const World& world)
 {
     // Re-validate at the tap, not just at the render: the owner may have
     // filled the estimate by hand while the card sat there, and a stale
     // Apply must refuse politely (the additive check above catches
     // exactly this) rather than trust a verdict from an older world.
-    const Verdict v = validate(data, handles, role, p);
+    //
+    // For MoveBlock the same re-run does more work than it looks: the option
+    // search happens again against live data, so a slot taken by something
+    // else since the card rendered is simply no longer offered, and the tap
+    // refuses instead of colliding.
+    const Verdict v = validate(data, handles, role, p, world);
     if (!v.ok)
         return v;
+
+    if (p.verb == Verb::MoveBlock) {
+        const QString blockId = handles.blockIdFor(p.targetHandle);
+        // The existing door, which appends a replacement and annotates the
+        // original as Moved in one change. This file grants reach, never
+        // capability — and it declines rather than forces, so even the
+        // race between validate and here ends in a refusal, not a mess.
+        const QString newId = data.rescheduleBlock(blockId, p.newDate,
+                                                   p.newStartMinutes,
+                                                   p.newEndMinutes);
+        if (newId.isEmpty())
+            return { false, QObject::tr("That slot was taken before the "
+                                        "change could be made.") };
+        return { true, QString() };
+    }
 
     const QString id = handles.taskIdFor(p.targetHandle);
     const Task*   t  = data.taskById(id);

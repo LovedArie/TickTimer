@@ -271,6 +271,25 @@ QString ChatPage::currentBriefing() const
                               &m_handles); // this turn's handle world
 }
 
+verbs::World ChatPage::currentWorld() const
+{
+    verbs::World w;
+    w.now        = nowProvider();
+    w.missedRule = prefs::missedRule();
+
+    // The same search constraints the catch-up drawer uses, from the same
+    // preferences — if the two disagreed, an option the drawer offered could
+    // be refused as "not one of the options" by the verb, and vice versa.
+    const auto window        = prefs::agendaWindow();
+    w.reschedule.now             = w.now;
+    w.reschedule.dayStartMinutes = window.first;
+    w.reschedule.dayEndMinutes   = window.second;
+    w.reschedule.horizonDays     = prefs::catchUpHorizonDays();
+    // reschedule.deadline is deliberately left unset: it belongs to the
+    // target block and validation derives it there.
+    return w;
+}
+
 ProposalCard* ChatPage::presentProposal(const verbs::Proposal& p,
                                         verbs::Role role)
 {
@@ -281,7 +300,7 @@ ProposalCard* ChatPage::presentProposal(const verbs::Proposal& p,
     // reason and never enables Apply); the tap re-validates regardless —
     // two different moments, two different worlds, checked twice.
     const verbs::Verdict atRender = verbs::validate(*m_data, m_handles,
-                                                    role, p);
+                                                    role, p, currentWorld());
     auto* card = new ProposalCard(p, p.summary(*m_data, m_handles),
                                   atRender, this);
 
@@ -299,7 +318,10 @@ ProposalCard* ChatPage::presentProposal(const verbs::Proposal& p,
             preApplyHook(); // the state BEFORE, copied aside first
 
         const verbs::Verdict v =
-            verbs::apply(*m_data, m_handles, role, card->proposal());
+            verbs::apply(*m_data, m_handles, role, card->proposal(),
+                         currentWorld()); // recomputed AT THE TAP, not
+                                          // captured at render — the whole
+                                          // point of the second verdict
         card->settle(v.ok ? tr("Applied.") : v.reason);
 
         if (v.ok) {

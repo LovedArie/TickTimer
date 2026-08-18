@@ -53,6 +53,35 @@ Segment makeSegment(SegmentKind kind, const QDateTime& start, int minutes)
 }
 
 const QDateTime kT0(QDate(2026, 7, 1), QTime(9, 0));
+
+// ---- v29.2 MoveBlock fixtures ---------------------------------------------
+// Free functions, NOT private slots: QTest runs every slot as a test, so a
+// helper parked there is either a phantom test case or a runner error. Same
+// lesson test_login_live.cpp records at its own `private:` section.
+
+// One block that never happened, plus the handle a briefing would have given
+// it. Returns the block's id.
+QString plantMissedBlock(AppData& data, verbs::HandleMap& handles,
+                         QDate day = QDate(2026, 7, 20))
+{
+    const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+    const QString act = data.addActivity("Study", cat);
+    const QString id  = data.addEvent(day, 9 * 60, 10 * 60, act, "");
+    handles.addBlock(id);
+    return id;
+}
+
+// A World whose search matches what a proposer would have used. Times stated
+// explicitly: a test that straddles a default is a test OF the default.
+verbs::World moveWorld(const QDateTime& now)
+{
+    verbs::World w;
+    w.now                        = now;
+    w.reschedule.now             = now;
+    w.reschedule.dayStartMinutes = 6 * 60;
+    w.reschedule.dayEndMinutes   = 24 * 60;
+    return w;
+}
 } // namespace
 
 class TestDomain : public QObject
@@ -2170,7 +2199,18 @@ private slots:
     {
         QCOMPARE(verbs::verbsFor(verbs::Role::Intake),
                  QVector<verbs::Verb>{ verbs::Verb::SetTaskDetails });
-        QVERIFY(verbs::verbsFor(verbs::Role::Chat).isEmpty());
+
+        // v29.2: Chat's list is no longer empty — the one deliberate
+        // widening this slice makes (addendum §F). Asserted by NAMING the
+        // verb rather than as "not empty": a loosened assertion here would
+        // stop pinning anything, and this test is the security review's
+        // tripwire, not a smoke check.
+        QCOMPARE(verbs::verbsFor(verbs::Role::Chat),
+                 QVector<verbs::Verb>{ verbs::Verb::MoveBlock });
+
+        // These two stay empty FOREVER. If either ever trips this line, the
+        // question to ask is not "update the test" — it is "why can a toast
+        // change my calendar?"
         QVERIFY(verbs::verbsFor(verbs::Role::Nudge).isEmpty());
         QVERIFY(verbs::verbsFor(verbs::Role::CheckIn).isEmpty());
     }
@@ -2293,26 +2333,26 @@ private slots:
         p.estimateMinutes = 120;
 
         // A phrasing role holding a perfectly valid proposal: still no.
-        QVERIFY(!verbs::validate(data, handles, verbs::Role::Nudge, p).ok);
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Nudge, p, verbs::World{}).ok);
 
         // Intake may — this is the one allowed (role, verb) pair.
-        QVERIFY(verbs::validate(data, handles, verbs::Role::Intake, p).ok);
+        QVERIFY(verbs::validate(data, handles, verbs::Role::Intake, p, verbs::World{}).ok);
 
         verbs::Proposal bad = p;
         bad.targetHandle = QStringLiteral("T9"); // invented handle
-        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, bad).ok);
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, bad, verbs::World{}).ok);
 
         bad = p;
         bad.targetHandle = hShut; // closed target: history, not a blank
-        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, bad).ok);
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, bad, verbs::World{}).ok);
 
         bad = p;
         bad.estimateMinutes = 0; // nothing proposed at all
-        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, bad).ok);
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, bad, verbs::World{}).ok);
 
         // The additive rule: a filled field is not a blank.
         data.setTaskSize(open, 60, true);
-        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, p).ok);
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Intake, p, verbs::World{}).ok);
     }
 
     // apply() re-validates AT THE TAP and funnels through existing doors:
@@ -2337,7 +2377,7 @@ private slots:
         // defends.)
         const bool wasChunkable = data.taskById(id)->chunkable;
 
-        QVERIFY(verbs::apply(data, handles, verbs::Role::Intake, p).ok);
+        QVERIFY(verbs::apply(data, handles, verbs::Role::Intake, p, verbs::World{}).ok);
         const Task* t = data.taskById(id);
         QCOMPARE(t->estimateMinutes, 150);
         QCOMPARE(t->dueDate, today.addDays(3));
@@ -2351,12 +2391,229 @@ private slots:
         verbs::Proposal p2;
         p2.targetHandle    = handles.addTask(id2);
         p2.estimateMinutes = 60;
-        QVERIFY(verbs::validate(data, handles, verbs::Role::Intake, p2).ok);
+        QVERIFY(verbs::validate(data, handles, verbs::Role::Intake, p2, verbs::World{}).ok);
         data.setTaskSize(id2, 45, true); // the world changes
         const verbs::Verdict late =
-            verbs::apply(data, handles, verbs::Role::Intake, p2);
+            verbs::apply(data, handles, verbs::Role::Intake, p2, verbs::World{});
         QVERIFY(!late.ok);
         QCOMPARE(data.taskById(id2)->estimateMinutes, 45); // untouched
+    }
+
+    // ---- v29.2: the MoveBlock verb (Slice 3) -------------------------------
+    // Fixture convention, same as the catch-up suite: "now" is well past the
+    // block, so the block is unambiguously missed, and every time is stated
+    // explicitly rather than leaning on a default.
+
+    // The happy path, end to end: an option the search really offers is
+    // accepted, applied through the existing door, and leaves the calendar
+    // in the state rescheduleBlock guarantees.
+    void moveBlockAcceptsAnOfferedPlacementAndMovesTheBlock()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+        const verbs::World world = moveWorld(now);
+
+        // Ask the SAME search the verb will ask, and propose its top offer —
+        // this is exactly the shape a model's selection takes.
+        const missed::Verdict v =
+            missed::judge(*data.eventById(id), world.missedRule, now);
+        reschedule::Context ctx = world.reschedule;
+        const QVector<reschedule::Option> options =
+            reschedule::propose(*data.eventById(id), v, data.events(), ctx);
+        QVERIFY(!options.isEmpty());
+        const reschedule::Option& top = options.first();
+        QCOMPARE(top.pieces.size(), 1);
+
+        verbs::Proposal p;
+        p.verb             = verbs::Verb::MoveBlock;
+        p.targetHandle     = QStringLiteral("B1");
+        p.newDate          = top.pieces.first().date;
+        p.newStartMinutes  = top.pieces.first().startMinutes;
+        p.newEndMinutes    = top.pieces.first().endMinutes;
+
+        QVERIFY(verbs::validate(data, handles, verbs::Role::Chat, p, world).ok);
+        QVERIFY(verbs::apply(data, handles, verbs::Role::Chat, p, world).ok);
+
+        const Event* old = data.eventById(id);
+        QVERIFY(old);
+        QCOMPARE(old->outcome, BlockOutcome::Moved);
+        QVERIFY(!old->movedToId.isEmpty());
+        const Event* fresh = data.eventById(old->movedToId);
+        QVERIFY(fresh);
+        QCOMPARE(fresh->date, p.newDate);
+        QCOMPARE(fresh->plannedStartMinutes, p.newStartMinutes);
+    }
+
+    // §C: the model selects, it never invents. A time the search did not
+    // offer is refused even when it is perfectly legal and free — because
+    // "free" is not the standard; "offered" is.
+    void moveBlockRefusesATimeTheSearchNeverOffered()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+        const verbs::World world = moveWorld(now);
+
+        verbs::Proposal p;
+        p.verb            = verbs::Verb::MoveBlock;
+        p.targetHandle    = QStringLiteral("B1");
+        p.newDate         = QDate(2026, 8, 30); // empty day, far out
+        p.newStartMinutes = 13 * 60 + 7;        // and off the 30-min grid
+        p.newEndMinutes   = 14 * 60 + 7;
+
+        const verbs::Verdict v =
+            verbs::validate(data, handles, verbs::Role::Chat, p, world);
+        QVERIFY(!v.ok);
+        QVERIFY(!v.reason.isEmpty());
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Unset);
+    }
+
+    // §B's fence: a block that hasn't been missed is a plan you are still
+    // living inside, and this verb may not touch it.
+    void moveBlockRefusesABlockThatHasNotBeenMissed()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        // "now" is BEFORE the block — it hasn't even started.
+        const QString id = plantMissedBlock(data, handles, QDate(2026, 7, 25));
+        const QDateTime now(QDate(2026, 7, 25), QTime(7, 0));
+        const verbs::World world = moveWorld(now);
+
+        verbs::Proposal p;
+        p.verb            = verbs::Verb::MoveBlock;
+        p.targetHandle    = QStringLiteral("B1");
+        p.newDate         = QDate(2026, 7, 26);
+        p.newStartMinutes = 9 * 60;
+        p.newEndMinutes   = 10 * 60;
+
+        QVERIFY(!verbs::validate(data, handles, verbs::Role::Chat, p, world).ok);
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Unset);
+    }
+
+    // The role gate, from the other side: the phrasing roles cannot move a
+    // block even with a perfectly valid proposal in hand. And the refusal
+    // must not leak what exists — it is the same sentence for every role.
+    void moveBlockIsRefusedForEveryPhrasingRole()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        plantMissedBlock(data, handles);
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+        const verbs::World world = moveWorld(now);
+
+        verbs::Proposal p;
+        p.verb            = verbs::Verb::MoveBlock;
+        p.targetHandle    = QStringLiteral("B1");
+        p.newDate         = QDate(2026, 7, 21);
+        p.newStartMinutes = 9 * 60;
+        p.newEndMinutes   = 10 * 60;
+
+        for (verbs::Role role : { verbs::Role::Nudge, verbs::Role::CheckIn,
+                                  verbs::Role::Intake }) {
+            const verbs::Verdict v =
+                verbs::validate(data, handles, role, p, world);
+            QVERIFY(!v.ok);
+            // Role first: the reason names the permission, never the world.
+            QVERIFY(!v.reason.contains(QStringLiteral("B1")));
+        }
+    }
+
+    // §B.2 on the block namespace, through the verb: an invented handle, or
+    // a task handle used where a block belongs, dies with a reason instead
+    // of landing on whatever happens to sit at that index.
+    void moveBlockFailsSafeOnHandlesFromNowhere()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        plantMissedBlock(data, handles);
+        handles.addTask(QStringLiteral("some-task-id"));
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+        const verbs::World world = moveWorld(now);
+
+        verbs::Proposal p;
+        p.verb            = verbs::Verb::MoveBlock;
+        p.newDate         = QDate(2026, 7, 21);
+        p.newStartMinutes = 9 * 60;
+        p.newEndMinutes   = 10 * 60;
+
+        for (const QString& handle : { QStringLiteral("B7"),   // invented
+                                       QStringLiteral("T1"),   // wrong kind
+                                       QStringLiteral("b1"),   // not fuzzy
+                                       QString() }) {          // empty
+            p.targetHandle = handle;
+            QVERIFY(!verbs::validate(data, handles,
+                                     verbs::Role::Chat, p, world).ok);
+        }
+    }
+
+    // §E's stale-card scene, on the block axis: the card renders valid, the
+    // world moves under it, and the TAP refuses rather than colliding. Here
+    // the owner fills the target slot by hand between the two moments.
+    void moveBlockRevalidatesAtTheTapAgainstTheNewWorld()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+        const verbs::World world = moveWorld(now);
+
+        const missed::Verdict v =
+            missed::judge(*data.eventById(id), world.missedRule, now);
+        const QVector<reschedule::Option> options = reschedule::propose(
+            *data.eventById(id), v, data.events(), world.reschedule);
+        QVERIFY(!options.isEmpty());
+        const reschedule::Piece piece = options.first().pieces.first();
+
+        verbs::Proposal p;
+        p.verb            = verbs::Verb::MoveBlock;
+        p.targetHandle    = QStringLiteral("B1");
+        p.newDate         = piece.date;
+        p.newStartMinutes = piece.startMinutes;
+        p.newEndMinutes   = piece.endMinutes;
+
+        QVERIFY(verbs::validate(data, handles, verbs::Role::Chat, p, world).ok);
+
+        // The owner takes that slot by hand while the card sits there.
+        const QString act2 = data.activities().first().id;
+        QVERIFY(!data.addEvent(piece.date, piece.startMinutes,
+                               piece.endMinutes, act2, "mine now").isEmpty());
+
+        const verbs::Verdict late =
+            verbs::apply(data, handles, verbs::Role::Chat, p, world);
+        QVERIFY(!late.ok);
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Unset); // untouched
+    }
+
+    // The round trip the no-undo-button promise rests on (§B.1): what the
+    // verb does, undoReschedule undoes.
+    void moveBlockIsUndoneByItsInverse()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+        const verbs::World world = moveWorld(now);
+
+        const missed::Verdict v =
+            missed::judge(*data.eventById(id), world.missedRule, now);
+        const reschedule::Piece piece =
+            reschedule::propose(*data.eventById(id), v, data.events(),
+                                world.reschedule).first().pieces.first();
+
+        verbs::Proposal p;
+        p.verb            = verbs::Verb::MoveBlock;
+        p.targetHandle    = QStringLiteral("B1");
+        p.newDate         = piece.date;
+        p.newStartMinutes = piece.startMinutes;
+        p.newEndMinutes   = piece.endMinutes;
+        QVERIFY(verbs::apply(data, handles, verbs::Role::Chat, p, world).ok);
+
+        QVERIFY(data.undoReschedule(id));
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Unset);
+        QCOMPARE(data.eventsOn(piece.date).size(), 0); // replacement gone
     }
 
     // ---- v29.1: the interview's brain (all C++) ----------------------------
