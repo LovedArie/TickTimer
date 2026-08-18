@@ -507,6 +507,49 @@ QString AppData::rescheduleBlockSplit(const QString& id,
     return firstId;
 }
 
+bool AppData::undoReschedule(const QString& id)
+{
+    const Event* old = eventById(id);
+    if (!old)
+        return false;
+
+    // Nothing to undo. Note this also rejects Done/Dropped/Unset blocks:
+    // this door reverses a MOVE, and resolveBlock already reverses the
+    // other decisions. One door per inverse, not one door that guesses.
+    if (old->outcome != BlockOutcome::Moved)
+        return false;
+
+    const QString replacementId = old->movedToId;
+
+    // Take the decision about the replacement BEFORE mutating anything, so a
+    // refusal leaves the world exactly as it found it.
+    if (const Event* replacement = eventById(replacementId)) {
+        // The one refusal that protects a fact rather than a pointer. The
+        // replacement's segments are time actually sat through — never
+        // copied from the original (rescheduleBlock is explicit about that),
+        // so they exist nowhere else. Undoing would erase them to tidy a
+        // link, which trades a fact for a pointer. An undo is safe only
+        // while the replacement is untouched.
+        if (!replacement->segments.isEmpty())
+            return false;
+    }
+
+    // Both halves under one Batch: a listener must never observe the window
+    // where the replacement is gone but the original still reads Moved, nor
+    // the reverse. Same atomicity rescheduleBlock buys with `notify`.
+    Batch batch(*this);
+
+    if (!replacementId.isEmpty())
+        removeEvent(replacementId); // no-op if already gone — see the repair
+                                    // case in the header
+    if (Event* target = mutableEventById(id)) {
+        target->outcome = BlockOutcome::Unset;
+        target->movedToId.clear();
+        notifyChanged(); // withheld by the Batch; coalesced with the remove
+    }
+    return true;
+}
+
 QString AppData::addEvent(QDate date, int startMin, int endMin,
                           const QString& activityId, const QString& title)
 {

@@ -355,6 +355,43 @@ public:
     QString rescheduleBlockSplit(const QString& id,
                                  const QVector<BlockSpan>& spans);
 
+    // The INVERSE of rescheduleBlock (v29.2) — removes the replacement and
+    // returns the original to unresolved, as one change.
+    //
+    // Why this is a door and not two calls at the call site: the nearest
+    // existing sequence (removeEvent + resolveBlock(id, Unset)) is two
+    // mutations, and a listener running between them sees the work twice —
+    // an unresolved original AND a live replacement. Same reasoning that
+    // made rescheduleBlock one door; a Batch makes both halves one changed().
+    //
+    // It also exists so the assistant's MoveBlock verb has an inverse, which
+    // is what lets the write boundary keep its promise of no undo button
+    // (assistant addendum §B.1): every verb is undoable by another verb.
+    //
+    // REFUSES, rather than forcing, in three cases:
+    //   - the block was never moved (outcome != Moved) — nothing to undo;
+    //   - the replacement has TRACKED SEGMENTS. rescheduleBlock deliberately
+    //     never copies segments ("the time you already spent belongs to the
+    //     day you spent it"), so the replacement's segments are time you
+    //     really sat through. Deleting them to tidy a link would destroy a
+    //     fact to fix a pointer. An undo is only safe while the replacement
+    //     is untouched, and after that the honest answer is no.
+    // A DANGLING movedToId (replacement already deleted by hand) is not a
+    // refusal but a repair: the original's Moved state is a lie once its
+    // target is gone, so it is cleared and true returned.
+    //
+    // SCOPE, stated because the gap is real and undetectable from here: this
+    // is the inverse of rescheduleBlock, NOT of rescheduleBlockSplit. A split
+    // sets movedToId to its FIRST piece only, and the siblings carry no back-
+    // link, so undoing one would delete that piece and orphan the rest. This
+    // door cannot tell the two apart — duration does not separate them, since
+    // a legitimate Kind::Shorten replacement is also shorter than its
+    // original. The MoveBlock verb is fenced to single-replacement kinds
+    // (addendum §I) precisely so its promise holds; a future caller that can
+    // reach split moves needs the movedFromId back-link first (§H.2), not a
+    // guess here.
+    bool undoReschedule(const QString& id);
+
     // v19.10: advance every repeating block whose date has passed — the
     // rule re-arms at the first rule-date >= today whose slots are FREE
     // (occupied dates are skipped, not fought; a year of collisions and

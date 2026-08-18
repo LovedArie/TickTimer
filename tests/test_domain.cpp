@@ -2882,6 +2882,111 @@ private slots:
         QCOMPARE(old->segments.size(), 1);         // the old day keeps its 10 min
     }
 
+    // ---- undoReschedule: the inverse §B.1 needs (v29.2) --------------------
+    // The round trip. Undo removes the replacement and returns the original
+    // to unresolved — the state before the move, with its own history intact.
+    void undoRescheduleRestoresTheOriginalAndRemovesTheReplacement()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "chapter 4");
+        data.appendSegment(oldId, makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 19), QTime(9, 0)), 10));
+
+        const QString newId =
+            data.rescheduleBlock(oldId, QDate(2026, 7, 21), 9 * 60, 10 * 60);
+        QVERIFY(!newId.isEmpty());
+
+        QVERIFY(data.undoReschedule(oldId));
+
+        QVERIFY(!data.eventById(newId));               // replacement gone
+        const Event* old = data.eventById(oldId);
+        QVERIFY(old);
+        QCOMPARE(old->outcome, BlockOutcome::Unset);   // unresolved again
+        QVERIFY(old->movedToId.isEmpty());             // no dangling link
+        QCOMPARE(old->segments.size(), 1);             // its own time survives
+    }
+
+    // THE refusal that protects a fact rather than a pointer. Once real time
+    // is tracked against the replacement, that time exists nowhere else —
+    // rescheduleBlock never copied it — so undoing would erase a fact to tidy
+    // a link. The honest answer after you have worked the new slot is no.
+    void undoRescheduleRefusesOnceTheReplacementHasTrackedTime()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+        const QString newId =
+            data.rescheduleBlock(oldId, QDate(2026, 7, 21), 9 * 60, 10 * 60);
+        data.appendSegment(newId, makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 21), QTime(9, 0)), 25));
+
+        QVERIFY(!data.undoReschedule(oldId));
+
+        // Refused means NOTHING moved — not a partial undo.
+        QVERIFY(data.eventById(newId));
+        QCOMPARE(data.eventById(newId)->segments.size(), 1);
+        QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Moved);
+        QCOMPARE(data.eventById(oldId)->movedToId, newId);
+    }
+
+    // This door reverses a MOVE and only a move; resolveBlock already
+    // reverses Done/Dropped. One door per inverse, never one that guesses.
+    void undoRescheduleRefusesBlocksThatWereNeverMoved()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString id =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+
+        QVERIFY(!data.undoReschedule(id));             // Unset
+        data.resolveBlock(id, BlockOutcome::Dropped);
+        QVERIFY(!data.undoReschedule(id));             // Dropped
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Dropped);
+        QVERIFY(!data.undoReschedule("no-such-id"));   // and no such block
+    }
+
+    // A movedToId whose target is already gone is a LIE, not an error: the
+    // block reads Moved while nothing was moved. Clearing it is a repair, so
+    // this succeeds rather than refusing.
+    void undoRescheduleRepairsADanglingLink()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+        const QString newId =
+            data.rescheduleBlock(oldId, QDate(2026, 7, 21), 9 * 60, 10 * 60);
+        data.removeEvent(newId);                       // by hand, behind its back
+
+        QVERIFY(data.undoReschedule(oldId));
+        QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Unset);
+        QVERIFY(data.eventById(oldId)->movedToId.isEmpty());
+    }
+
+    // Both halves must look like one change. A listener that sees the middle
+    // sees the work twice — an unresolved original AND a live replacement —
+    // which is the state the door exists to make unobservable.
+    void undoRescheduleEmitsExactlyOneChange()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+        data.rescheduleBlock(oldId, QDate(2026, 7, 21), 9 * 60, 10 * 60);
+
+        QSignalSpy spy(&data, &AppData::changed);
+        QVERIFY(data.undoReschedule(oldId));
+        QCOMPARE(spy.count(), 1);
+    }
+
     // The slot has to be free. Declining beats forcing — the same contract
     // as the three addEvent doors.
     void rescheduleBlockDeclinesAnOccupiedSlot()
