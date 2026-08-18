@@ -21,8 +21,12 @@ out; a task comes back.
 **The Assistant (✦ in the left rail).** A chat page that can *see* your day —
 today's plan, tracked time, tasks due — and answer questions about it: "How
 is my day going?", "What should I work on next?", "What's overdue?".
-It is **read-only**: it cannot add, move, complete, or delete anything. If
-you ask it to, it will say so and hand you a quick-add line to paste instead.
+It can **propose one kind of change**: moving a block you already missed,
+into one of the slots the app worked out for it — you see a card and tap
+Apply or Discard, and nothing happens until you do. Everything else it
+cannot do: it cannot add, complete, or delete anything, cannot touch a
+deadline or an estimate, and cannot move a block you might still get to. If
+you ask, it will say so and hand you a quick-add line to paste instead.
 
 Both features use the **same provider and the same key**, set once in
 Settings → AI quick-add.
@@ -202,8 +206,10 @@ can debug your setup without leaving the dialog.
   whole history.
 - Conversations are **not saved**: closing the app (or "New conversation")
   clears the chat. Your planner data is untouched either way.
-- It **cannot change anything**. That is a design guarantee, not a current
-  limitation of the model — writing will arrive later, behind confirmations.
+- It can change **one** thing — where a missed block sits — and only via a
+  card you tap. It cannot invent a time: the choices come from the app's own
+  search, and a placement that is not on that list is refused. Everything
+  else remains a design guarantee, not a limitation of the model.
 - One conversation turn costs roughly 1,000–2,500 "tokens" round-trip; at
   current provider prices that is a fraction of a cent, and zero on
   Ollama/Groq-free.
