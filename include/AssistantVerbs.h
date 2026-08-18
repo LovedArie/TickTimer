@@ -65,20 +65,39 @@ enum class Verb
 // role → allowed verbs. The whole allow-list, readable in one screen.
 QVector<Verb> verbsFor(Role role);
 
-// Per-turn handle registry: index i ↔ "T{i+1}", built in briefing print
-// order, deduplicated (a task printed in two sections keeps one handle).
+// Per-turn handle registry, built in briefing print order and deduplicated
+// (a thing printed in two sections keeps one handle).
+//
+// TWO NAMESPACES, not one counter (v29.2). Tasks are "T{i+1}", blocks are
+// "B{i+1}", and they are separate vectors because a handle that could name
+// either kind is precisely the ambiguity §B.2 exists to prevent: the model
+// would see [T4] with no way to know whether it named a task or a planned
+// block, and resolution would have to guess. Which namespace a proposal
+// resolves in is decided by its VERB, never by parsing — so the two can
+// never be confused at a call site either.
 struct HandleMap
 {
-    QVector<QString> ids;
+    QVector<QString> taskIds;
+    QVector<QString> blockIds;
 
-    // Registers (or finds) an id; returns its handle ("T3").
-    QString add(const QString& id);
+    // Register (or find) an id; returns its handle — "T3", "B2".
+    QString addTask(const QString& id);
+    QString addBlock(const QString& id);
 
-    // "" for anything unknown — the fail-safe §B.2 exists for. Accepts
-    // exactly the shape we print: 'T' + 1-based index.
-    QString idFor(const QString& handle) const;
+    // "" for anything unknown — the fail-safe §B.2 exists for. Each accepts
+    // exactly the shape it prints and nothing else, so an invented handle,
+    // a handle from the other namespace, or a malformed one all resolve to
+    // "" and die in validate() with a readable reason.
+    QString taskIdFor(const QString& handle) const;
+    QString blockIdFor(const QString& handle) const;
 
-    bool isEmpty() const { return ids.isEmpty(); }
+    bool isEmpty() const { return taskIds.isEmpty() && blockIds.isEmpty(); }
+
+    // Forget everything. A door rather than a field poke because the map is
+    // rebuilt per turn and MUST NOT leak the last one's world — with two
+    // vectors, clearing "the ids" by hand is one namespace away from a
+    // handle that resolves to a block nobody mentioned this turn.
+    void clear() { taskIds.clear(); blockIds.clear(); }
 };
 
 // One proposed change. Absent fields use the domain's own absence idioms

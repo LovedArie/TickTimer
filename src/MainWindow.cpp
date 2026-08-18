@@ -514,7 +514,7 @@ MainWindow::MainWindow(const QString& username)
                     for (const Task& t : m_data.tasks()) {
                         if (t.done || t.archived || t.estimateMinutes != 0)
                             continue;
-                        const int at = handles.ids.indexOf(t.id);
+                        const int at = handles.taskIds.indexOf(t.id);
                         if (at < 0)
                             continue; // beyond the briefing's cap this turn
                         verbs::Proposal p;

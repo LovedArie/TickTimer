@@ -3327,7 +3327,7 @@ private slots:
         const QString id  = data.addTask("Lab 4", cat);
         verbs::HandleMap handles;
         verbs::Proposal p;
-        p.targetHandle    = handles.add(id);
+        p.targetHandle    = handles.addTask(id);
         p.estimateMinutes = 90;
 
         ProposalCard ok(p, p.summary(data, handles),
@@ -3369,7 +3369,7 @@ private slots:
         page.preApplyHook = [&] { ++copiedAside; };
 
         page.currentBriefing(); // this turn's names
-        const int at = page.handles().ids.indexOf(id);
+        const int at = page.handles().taskIds.indexOf(id);
         QVERIFY(at >= 0);
 
         verbs::Proposal p;
@@ -3388,7 +3388,7 @@ private slots:
         // Discard: a second proposal for a fresh task dies untouched.
         const QString id2 = data.addTask("Essay", cat);
         page.currentBriefing();
-        const int at2 = page.handles().ids.indexOf(id2);
+        const int at2 = page.handles().taskIds.indexOf(id2);
         QVERIFY(at2 >= 0);
         verbs::Proposal p2;
         p2.targetHandle    = QStringLiteral("T%1").arg(at2 + 1);

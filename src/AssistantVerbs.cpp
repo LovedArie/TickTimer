@@ -23,26 +23,34 @@ QVector<Verb> verbsFor(Role role)
     return {};
 }
 
-QString HandleMap::add(const QString& id)
+namespace
 {
-    // Dedup first: a task printed in two briefing sections keeps ONE
+// The two namespaces share ONE implementation on purpose: the fail-safe
+// properties (§B.2) must hold identically for blocks and tasks, and two
+// hand-written copies are two chances for them to drift apart. The prefix
+// and the vector are the only things that vary.
+QString registerHandle(QVector<QString>& ids, const QString& id, QChar prefix)
+{
+    // Dedup first: a thing printed in two briefing sections keeps ONE
     // handle, or the model would see [T2] and [T9] naming the same task
     // and reasonably treat them as two.
     const int existing = ids.indexOf(id);
     if (existing >= 0)
-        return QStringLiteral("T%1").arg(existing + 1);
+        return QStringLiteral("%1%2").arg(prefix).arg(existing + 1);
     ids.append(id);
-    return QStringLiteral("T%1").arg(ids.size());
+    return QStringLiteral("%1%2").arg(prefix).arg(ids.size());
 }
 
-QString HandleMap::idFor(const QString& handle) const
+QString resolveHandle(const QVector<QString>& ids, const QString& handle,
+                      QChar prefix)
 {
-    // Accept exactly what we print — 'T' + 1-based index — and nothing
-    // else. Anything malformed, out of range, or inventive resolves to ""
-    // and dies in validate() with a readable reason. Fail safe, not fuzzy:
-    // guessing "t 3 " probably means T3 would reintroduce the exact class
-    // of wrong-target bug handles exist to prevent.
-    if (handle.size() < 2 || !handle.startsWith(QLatin1Char('T')))
+    // Accept exactly what we print — the prefix + a 1-based index — and
+    // nothing else. Anything malformed, out of range, inventive, or from
+    // the OTHER namespace resolves to "" and dies in validate() with a
+    // readable reason. Fail safe, not fuzzy: guessing "t 3 " probably means
+    // T3 would reintroduce the exact class of wrong-target bug handles
+    // exist to prevent.
+    if (handle.size() < 2 || !handle.startsWith(prefix))
         return QString();
     bool numeric = false;
     const int n = handle.mid(1).toInt(&numeric);
@@ -50,12 +58,33 @@ QString HandleMap::idFor(const QString& handle) const
         return QString();
     return ids.at(n - 1);
 }
+} // namespace
+
+QString HandleMap::addTask(const QString& id)
+{
+    return registerHandle(taskIds, id, QLatin1Char('T'));
+}
+
+QString HandleMap::addBlock(const QString& id)
+{
+    return registerHandle(blockIds, id, QLatin1Char('B'));
+}
+
+QString HandleMap::taskIdFor(const QString& handle) const
+{
+    return resolveHandle(taskIds, handle, QLatin1Char('T'));
+}
+
+QString HandleMap::blockIdFor(const QString& handle) const
+{
+    return resolveHandle(blockIds, handle, QLatin1Char('B'));
+}
 
 QString Proposal::summary(const AppData& data, const HandleMap& handles) const
 {
     // Composed from the STRUCTURED fields — the card never displays the
     // proposer's own prose as the description of what will happen.
-    const Task* t = data.taskById(handles.idFor(targetHandle));
+    const Task* t = data.taskById(handles.taskIdFor(targetHandle));
     const QString title =
         t ? t->title : QObject::tr("(unknown task %1)").arg(targetHandle);
 
@@ -90,7 +119,7 @@ Verdict validate(const AppData& data, const HandleMap& handles, Role role,
                                     "make changes.") };
 
     // 2. The handle resolves — §B.2's fail-safe firing as a sentence.
-    const QString id = handles.idFor(p.targetHandle);
+    const QString id = handles.taskIdFor(p.targetHandle);
     if (id.isEmpty())
         return { false, QObject::tr("'%1' doesn't refer to anything in "
                                     "this conversation.")
@@ -144,7 +173,7 @@ Verdict apply(AppData& data, const HandleMap& handles, Role role,
     if (!v.ok)
         return v;
 
-    const QString id = handles.idFor(p.targetHandle);
+    const QString id = handles.taskIdFor(p.targetHandle);
     const Task*   t  = data.taskById(id);
 
     // Existing doors only — this file grants reach, never capability.

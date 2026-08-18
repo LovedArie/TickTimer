@@ -2181,17 +2181,51 @@ private slots:
     void handleMapRoundTripsAndFailsSafe()
     {
         verbs::HandleMap map;
-        QCOMPARE(map.add(QStringLiteral("id-a")), QStringLiteral("T1"));
-        QCOMPARE(map.add(QStringLiteral("id-b")), QStringLiteral("T2"));
-        QCOMPARE(map.add(QStringLiteral("id-a")),
+        QCOMPARE(map.addTask(QStringLiteral("id-a")), QStringLiteral("T1"));
+        QCOMPARE(map.addTask(QStringLiteral("id-b")), QStringLiteral("T2"));
+        QCOMPARE(map.addTask(QStringLiteral("id-a")),
                  QStringLiteral("T1")); // dedup: one task, one name
 
-        QCOMPARE(map.idFor(QStringLiteral("T2")), QStringLiteral("id-b"));
-        QVERIFY(map.idFor(QStringLiteral("T7")).isEmpty());  // invented
-        QVERIFY(map.idFor(QStringLiteral("T0")).isEmpty());  // off by one
-        QVERIFY(map.idFor(QStringLiteral("B1")).isEmpty());  // wrong kind
-        QVERIFY(map.idFor(QStringLiteral("T")).isEmpty());   // malformed
-        QVERIFY(map.idFor(QString()).isEmpty());             // empty
+        QCOMPARE(map.taskIdFor(QStringLiteral("T2")), QStringLiteral("id-b"));
+        QVERIFY(map.taskIdFor(QStringLiteral("T7")).isEmpty());  // invented
+        QVERIFY(map.taskIdFor(QStringLiteral("T0")).isEmpty());  // off by one
+        QVERIFY(map.taskIdFor(QStringLiteral("B1")).isEmpty());  // wrong kind
+        QVERIFY(map.taskIdFor(QStringLiteral("T")).isEmpty());   // malformed
+        QVERIFY(map.taskIdFor(QString()).isEmpty());             // empty
+    }
+
+    // The block namespace (v29.2) carries every §B.2 property the task one
+    // does — and the two must not be able to answer for each other, which is
+    // the whole reason they are separate vectors rather than one counter.
+    void blockHandlesAreTheirOwnNamespaceAndFailSafe()
+    {
+        verbs::HandleMap map;
+        QCOMPARE(map.addTask(QStringLiteral("task-1")), QStringLiteral("T1"));
+        QCOMPARE(map.addBlock(QStringLiteral("block-1")), QStringLiteral("B1"));
+        QCOMPARE(map.addBlock(QStringLiteral("block-2")), QStringLiteral("B2"));
+        QCOMPARE(map.addBlock(QStringLiteral("block-1")),
+                 QStringLiteral("B1")); // dedup holds here too
+
+        QCOMPARE(map.blockIdFor(QStringLiteral("B2")),
+                 QStringLiteral("block-2"));
+
+        // The counters are independent: T1 and B1 coexist and name different
+        // things. One shared counter would have made B1 into B2 here.
+        QCOMPARE(map.taskIdFor(QStringLiteral("T1")), QStringLiteral("task-1"));
+        QCOMPARE(map.blockIdFor(QStringLiteral("B1")),
+                 QStringLiteral("block-1"));
+
+        // Neither namespace answers for the other — the ambiguity §B.2 exists
+        // to prevent, pinned in both directions.
+        QVERIFY(map.blockIdFor(QStringLiteral("T1")).isEmpty());
+        QVERIFY(map.taskIdFor(QStringLiteral("B1")).isEmpty());
+
+        // Same fail-safe ladder as tasks.
+        QVERIFY(map.blockIdFor(QStringLiteral("B9")).isEmpty());  // invented
+        QVERIFY(map.blockIdFor(QStringLiteral("B0")).isEmpty());  // off by one
+        QVERIFY(map.blockIdFor(QStringLiteral("b1")).isEmpty());  // not fuzzy
+        QVERIFY(map.blockIdFor(QStringLiteral("B")).isEmpty());   // malformed
+        QVERIFY(map.blockIdFor(QString()).isEmpty());             // empty
     }
 
     // The briefing prints what it registers: [T1] appears in the text, the
@@ -2228,8 +2262,8 @@ private slots:
         QVERIFY(!queue.contains(QStringLiteral("Quiz prep")));
         QVERIFY(!handles.isEmpty());
         bool resolved = false;
-        for (int i = 1; i <= handles.ids.size(); ++i)
-            if (handles.idFor(QStringLiteral("T%1").arg(i)) == unsized)
+        for (int i = 1; i <= handles.taskIds.size(); ++i)
+            if (handles.taskIdFor(QStringLiteral("T%1").arg(i)) == unsized)
                 resolved = true;
         QVERIFY(resolved);
 
@@ -2251,8 +2285,8 @@ private slots:
         data.setTaskDone(shut, true);
 
         verbs::HandleMap handles;
-        const QString hOpen = handles.add(open);
-        const QString hShut = handles.add(shut);
+        const QString hOpen = handles.addTask(open);
+        const QString hShut = handles.addTask(shut);
 
         verbs::Proposal p;
         p.targetHandle    = hOpen;
@@ -2293,7 +2327,7 @@ private slots:
 
         verbs::HandleMap handles;
         verbs::Proposal p;
-        p.targetHandle    = handles.add(id);
+        p.targetHandle    = handles.addTask(id);
         p.estimateMinutes = 150;
         p.dueDate         = today.addDays(3);
 
@@ -2315,7 +2349,7 @@ private slots:
         // the by-hand edit lands first.)
         const QString id2 = data.addTask("Essay", cat);
         verbs::Proposal p2;
-        p2.targetHandle    = handles.add(id2);
+        p2.targetHandle    = handles.addTask(id2);
         p2.estimateMinutes = 60;
         QVERIFY(verbs::validate(data, handles, verbs::Role::Intake, p2).ok);
         data.setTaskSize(id2, 45, true); // the world changes
@@ -3140,9 +3174,21 @@ private slots:
             data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
 
         const QDateTime now(QDate(2026, 7, 20), QTime(8, 0));
-        const QString before = brief::dayBriefing(data, now.date(), now);
+        verbs::HandleMap handles;
+        const QString before =
+            brief::dayBriefing(data, now.date(), now, brief::Options(), &handles);
         QVERIFY(before.contains(QStringLiteral("UNRESOLVED BLOCKS (1)")));
         QVERIFY(before.contains(QStringLiteral("never started")));
+
+        // v29.2: the section the MoveBlock verb targets prints a block
+        // handle, and that handle resolves back to this exact block. The
+        // briefing prints what it registers — the §B.2 contract, now on the
+        // block namespace too.
+        QVERIFY(before.contains(QStringLiteral("[B1]")));
+        QCOMPARE(handles.blockIdFor(QStringLiteral("B1")), id);
+
+        // And still no UUID anywhere in the text — the whole point of handles.
+        QVERIFY(!before.contains(id));
 
         QVERIFY(data.resolveBlock(id, BlockOutcome::Dropped));
         const QString after = brief::dayBriefing(data, now.date(), now);

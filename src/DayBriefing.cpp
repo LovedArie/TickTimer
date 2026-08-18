@@ -36,7 +36,7 @@ QString taskLine(const AppData& data, const Task& t, QDate today,
     // v29.0 (§B.2): the handle FIRST — "[T3] Lab 4 (due …)". The briefing
     // still never contains a UUID; the map that turns T3 back into an id
     // lives with the turn, on this side of the trust boundary.
-    QString line = QStringLiteral("- [") + handles.add(t.id)
+    QString line = QStringLiteral("- [") + handles.addTask(t.id)
                    + QStringLiteral("] ") + t.title;
 
     QStringList facts;
@@ -107,7 +107,7 @@ QString dayBriefing(const AppData& data, QDate today, const QDateTime& now,
     // against this turn. A local map serves callers who don't.
     verbs::HandleMap localHandles;
     verbs::HandleMap& handles = handlesOut ? *handlesOut : localHandles;
-    handles.ids.clear(); // a reused map must not leak last turn's world
+    handles.clear(); // a reused map must not leak last turn's world
 
     QString out;
 
@@ -241,8 +241,18 @@ QString dayBriefing(const AppData& data, QDate today, const QDateTime& now,
                         : QStringLiteral("only %1 of %2 tracked")
                               .arg(spanLabel(v.focusSeconds),
                                    spanLabel(v.plannedSeconds));
-                out += QStringLiteral("- %1 %2-%3 %4 (%5)\n")
-                           .arg(e.date.toString(Qt::ISODate),
+                // Block handles are registered HERE and nowhere else
+                // (v29.2). The MoveBlock verb accepts only blocks the
+                // domain already judges missed, so making the namespace
+                // exactly this list keeps two promises at once: the
+                // briefing never advertises a target the verb would
+                // refuse, and a block named from outside this section
+                // resolves to "" and fails safe. The namespace IS the set
+                // of legal targets, rather than a superset the validator
+                // has to whittle down.
+                out += QStringLiteral("- [%1] %2 %3-%4 %5 (%6)\n")
+                           .arg(handles.addBlock(e.id),
+                                e.date.toString(Qt::ISODate),
                                 clockLabel(e.plannedStartMinutes),
                                 clockLabel(e.plannedEndMinutes),
                                 data.eventLabel(e), why);

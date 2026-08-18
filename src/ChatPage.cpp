@@ -324,7 +324,7 @@ bool ChatPage::beginIntake()
     currentBriefing(); // refresh the handle world — proposals speak ITS names
     const QDateTime now = nowProvider();
 
-    for (const QString& id : m_handles.ids) {
+    for (const QString& id : m_handles.taskIds) {
         const Task* t = m_data->taskById(id);
         if (!t || m_intake.askedThisSession.contains(id))
             continue;
@@ -334,7 +334,7 @@ bool ChatPage::beginIntake()
         m_intake.active = true;
         m_intake.taskId = id;
         m_intake.handle =
-            QStringLiteral("T%1").arg(m_handles.ids.indexOf(id) + 1);
+            QStringLiteral("T%1").arg(m_handles.taskIds.indexOf(id) + 1);
         m_intake.askedThisSession.insert(id); // asked is asked — a later
                                               // discard must not re-loop
         intakeAskCurrent();
