@@ -1,0 +1,241 @@
+<!doctype html>
+<!--
+  TickTimer — the WebAssembly shell (v30.4).
+
+  WHAT THIS FILE IS: the page that hosts the real app. Qt's build already emits
+  a working `ticktimer.html`, and this replaces it for three reasons it does
+  not cover:
+
+    1. It is INSTALLABLE — a web app manifest and the Apple meta tags, so
+       "Add to Home Screen" produces something that opens without browser
+       chrome. On iOS that is not cosmetic: Web Push is only available to
+       installed web apps, so Phase 5's notifications depend on this page
+       being installable.
+    2. It says something USEFUL while a 20-40MB download happens, and says
+       something honest when it fails. Qt's default shows a Qt logo and the
+       word "Loading".
+    3. It is where the SERVICE WORKER will be registered in Phase 5. A worker
+       has to be a real file at a real scope; a generated page is the wrong
+       place to grow one.
+
+  DELIBERATELY NOT A SECOND APP. There is no application logic here — no
+  planner, no parsing, no state. Everything this page knows how to do is show
+  a progress line and hand off to the same C++ that runs on the desktop. The
+  moment it starts making decisions, the project has two implementations of
+  something, which is the failure its whole architecture exists to prevent.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <!-- A 1:1 mapping between CSS pixels and Qt's device-independent pixels,
+         and no pinch-zoom: the app draws its own UI and a zoomed canvas is
+         just a blurry one. viewport-fit=cover lets it use the area behind an
+         iPhone's rounded corners once installed. -->
+    <meta name="viewport"
+          content="width=device-width, height=device-height, initial-scale=1, user-scalable=no, viewport-fit=cover">
+
+    <title>TickTimer</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#2F7E6E">
+
+    <!-- iOS ignores the manifest's display mode and icons; it wants these.
+         Without apple-mobile-web-app-capable, Add to Home Screen produces a
+         bookmark that opens Safari with its chrome, which is not an installed
+         web app and does not get Web Push. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="TickTimer">
+    <link rel="apple-touch-icon" href="icons/ticktimer-180.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/ticktimer-192.png">
+
+    <style>
+      /* The canvas covers the viewport with no scrollbars — the app scrolls
+         its own content. overscroll-behavior stops the pull-to-refresh
+         gesture from reloading a 30MB app mid-sentence. */
+      html, body {
+        padding: 0; margin: 0; height: 100%; overflow: hidden;
+        overscroll-behavior: none;
+        background: #F4F6F3;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                     "Helvetica Neue", Arial, sans-serif;
+        color: #272C33;
+      }
+      #screen { width: 100%; height: 100%; }
+
+      #boot {
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        height: 100%; padding: 0 28px; box-sizing: border-box;
+        text-align: center;
+      }
+      #boot img { width: 96px; height: 96px; margin-bottom: 18px; }
+      #boot h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+      #boot p  { font-size: 14px; margin: 0; color: #616974; line-height: 1.5;
+                 max-width: 34ch; }
+      #bootbar {
+        width: min(260px, 70vw); height: 4px; margin: 20px 0 10px;
+        background: #E2E6E0; border-radius: 2px; overflow: hidden;
+      }
+      #bootbar > div {
+        height: 100%; width: 0%; background: #2F7E6E;
+        transition: width .25s ease;
+      }
+      #bootnote { font-size: 12px; color: #8A9199; margin-top: 4px; }
+      .failed h1 { color: #8A3F3A; }
+    </style>
+  </head>
+
+  <body>
+    <!-- The boot screen. It is replaced by the app's own canvas on load, and
+         reused to explain a failure — a blank page is the worst possible
+         answer to "did it work?" -->
+    <div id="boot">
+      <img src="icons/ticktimer-192.png" alt="">
+      <h1>TickTimer</h1>
+      <p id="bootmsg">Loading the app…</p>
+      <div id="bootbar"><div id="bootfill"></div></div>
+      <div id="bootnote">The first load downloads the whole app.
+        After that it is cached.</div>
+      <noscript>
+        <p>This needs JavaScript, because the app itself is compiled to
+           WebAssembly and JavaScript is what starts it.</p>
+      </noscript>
+    </div>
+
+    <div id="screen" style="display:none"></div>
+
+    <script src="ticktimer.js"></script>
+    <script src="qtloader.js"></script>
+    <script>
+      (async function () {
+        const boot   = document.querySelector('#boot');
+        const screen = document.querySelector('#screen');
+        const msg    = document.querySelector('#bootmsg');
+        const fill   = document.querySelector('#bootfill');
+        const note   = document.querySelector('#bootnote');
+
+        const fail = (headline, detail) => {
+          boot.classList.add('failed');
+          boot.querySelector('h1').textContent = headline;
+          msg.textContent = detail;
+          document.querySelector('#bootbar').style.display = 'none';
+          note.textContent = '';
+          boot.style.display = 'flex';
+          screen.style.display = 'none';
+        };
+
+        // A browser without WebAssembly cannot run ANY of this, and should be
+        // told that rather than shown a stuck progress bar.
+        if (typeof WebAssembly !== 'object') {
+          fail('This browser can’t run TickTimer',
+               'It has no WebAssembly support. A current Safari, Chrome or '
+               + 'Firefox will work.');
+          return;
+        }
+
+        // ---- persistent storage -------------------------------------------
+        //
+        // THE MOST IMPORTANT TWENTY LINES ON THIS PAGE. Qt points
+        // QStandardPaths at /home/web_user, but Emscripten mounts MEMFS there
+        // by default — memory, which dies with the tab. Without this the app
+        // looks perfectly fine and forgets your entire planner on every
+        // reload.
+        //
+        // IDBFS backs that directory with IndexedDB. Two halves:
+        //   populate  read IndexedDB into the filesystem BEFORE main() runs,
+        //             or Qt loads an empty planner and then saves it over the
+        //             real one. addRunDependency is what makes an async
+        //             populate block startup.
+        //   persist   write it back. Nothing in Emscripten does this on its
+        //             own, and the app cannot ask (it is C++ writing to what
+        //             it believes is an ordinary file), so the page does it
+        //             on a timer and whenever the tab is hidden.
+        const IDB_ROOT = '/home/web_user';
+        let syncing = false;
+        const persist = () => {
+          if (syncing || typeof FS === 'undefined') return;
+          syncing = true;
+          // false = filesystem -> IndexedDB.
+          FS.syncfs(false, (err) => {
+            syncing = false;
+            if (err) console.error('TickTimer: could not persist storage', err);
+          });
+        };
+
+        try {
+          const instance = await qtLoad({
+            preRun: [function (Module) {
+              try {
+                FS.mkdirTree(IDB_ROOT);
+                FS.mount(IDBFS, {}, IDB_ROOT);
+                // Hold startup open until IndexedDB has been read in.
+                Module.addRunDependency('ticktimer-idbfs');
+                FS.syncfs(true, (err) => {
+                  if (err) console.error('TickTimer: could not read stored data',
+                                         err);
+                  Module.removeRunDependency('ticktimer-idbfs');
+                });
+              } catch (e) {
+                // Private browsing and some locked-down iOS configurations
+                // refuse IndexedDB. Better a working session that forgets than
+                // an app that refuses to start — but say so, loudly, in the
+                // console, because "it forgot everything" needs an explanation
+                // somebody can find.
+                console.error('TickTimer: persistent storage unavailable — '
+                              + 'this session will not be remembered.', e);
+              }
+            }],
+
+            qt: {
+              entryFunction: window.ticktimer_entry,
+              containerElements: [screen],
+              onLoaded: () => {
+                boot.style.display = 'none';
+                screen.style.display = 'block';
+
+                // Every few seconds, and — more importantly — the moment the
+                // tab is hidden, which on a phone is what "switched apps" and
+                // "locked the screen" both look like. pagehide is best-effort:
+                // syncfs is async and a closing tab may not wait for it, which
+                // is exactly why the timer exists as well rather than instead.
+                setInterval(persist, 5000);
+                document.addEventListener('visibilitychange', () => {
+                  if (document.visibilityState === 'hidden') persist();
+                });
+                window.addEventListener('pagehide', persist);
+              },
+              onExit: (exit) => {
+                // The app called quit(). In a tab that means a blank canvas,
+                // so say what happened instead of leaving one.
+                fail('TickTimer closed',
+                     exit && exit.code
+                       ? `It exited with code ${exit.code}. Reload to start again.`
+                       : 'Reload the page to start again.');
+              },
+            },
+            // Emscripten's own progress hook. Qt does not surface download
+            // progress, and on a phone this is the difference between "it is
+            // working" and "it is broken".
+            setStatus: (text) => {
+              const m = /([\d.]+)\s*\/\s*([\d.]+)/.exec(text || '');
+              if (m) {
+                const pct = Math.min(100, (parseFloat(m[1]) / parseFloat(m[2])) * 100);
+                fill.style.width = pct.toFixed(0) + '%';
+                msg.textContent = 'Downloading the app…';
+              } else if (text) {
+                msg.textContent = text;
+              }
+            },
+          });
+          void instance;
+        } catch (e) {
+          console.error(e);
+          fail('TickTimer didn’t start',
+               'The app failed to load. A reload usually fixes it; if it '
+               + 'keeps happening, the server may be serving an incomplete '
+               + 'build.');
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -155,4 +155,6 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
 `docs/READING_GUIDE.md` (reading order + landmarks) · `docs/design-doc.md`
 (decisions + the addendum index) · `docs/TESTING.md` (manual force recipes) ·
 `docs/TROUBLESHOOTING.md` (symptom-indexed) · `docs/AI.md` (providers, keys,
-what leaves the machine) · `docs/SERVER.md` · `docs/SETUP.md`.
+what leaves the machine) · `docs/SERVER.md` · `docs/SETUP.md` ·
+`docs/ANDROID.md` and `docs/WEB.md` (the two phone builds — sideloaded APK,
+and the WebAssembly app for iPhones).

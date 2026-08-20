@@ -25,6 +25,49 @@ ticktimer.example.com {
 		file_server browse
 	}
 
+	# ---- the web app (v30.4) ---------------------------------------------
+	#
+	# The WebAssembly build, served from the SAME ORIGIN as the API below.
+	# That is not a convenience: same-origin means the app's calls to /login
+	# and /planner are not cross-origin at all, so the whole CORS question
+	# mostly evaporates. (The preflight support added in v30.2.1 still earns
+	# its keep — a browser preflights on the HEADERS, and every call here
+	# sends Content-Type: application/json or an Authorization token.)
+	#
+	# Copy the contents of build-wasm/serve/ into /var/www/ticktimer-app/.
+	handle /app* {
+		root * /var/www/ticktimer-app
+		uri strip_prefix /app
+
+		# The .wasm is ~16 MB raw and ~6 MB gzipped, so compression is the
+		# difference between a pleasant first load on a phone and an
+		# abandoned one. Caddy picks zstd or gzip per request.
+		encode zstd gzip
+
+		# CACHED BUT REVALIDATED, deliberately not "immutable".
+		#
+		# These filenames never change between builds. Marking a fixed name
+		# immutable for a year means a new build is never fetched, and no
+		# amount of reloading fixes it — the phone would keep running last
+		# month's app while its owner insisted they had updated. "no-cache"
+		# is a misleading name: it does not mean don't store, it means ask
+		# first. The browser keeps the 6 MB and gets a 304 when nothing
+		# changed, which costs one small round trip and is always correct.
+		#
+		# Content-addressed filenames would let us use immutable properly.
+		# That is a build-pipeline change, and not one to make before anyone
+		# has felt the round trip.
+		header /ticktimer.wasm       Cache-Control "no-cache"
+		header /ticktimer.js         Cache-Control "no-cache"
+		header /index.html           Cache-Control "no-cache"
+		header /manifest.webmanifest Cache-Control "no-cache"
+		# Icons genuinely do not change, and are small enough that being
+		# wrong about one for a month costs nothing.
+		header /icons/*              Cache-Control "public, max-age=2592000"
+
+		file_server
+	}
+
 	# TLS is automatic: Caddy obtains and renews a Let's Encrypt certificate
 	# for the name above. Nothing to configure and nothing to remember —
 	# which matters, because the WebAssembly client will REQUIRE https (a

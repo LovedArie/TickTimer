@@ -4076,3 +4076,75 @@ stamps followed on their own.
 
 **Next: Phase 4, the WASM build** — and before that, still, the VPS itself and
 the field run that five slices are now owed.
+
+---
+
+## v30.4 — the WebAssembly build (cross-platform, Phase 4)
+
+**The toolchain turned out to be already installed**, which changed this slice
+from "write a build config blind" into real work: `Qt/6.11.1/wasm_singlethread`
+was there, and `/c/emsdk` held Emscripten **4.0.7** — exactly the version Qt
+6.11.1's `__qt_internal_get_emcc_recommended_version()` demands. Checked before
+writing anything, because a build config nobody can run is a wish.
+
+**It builds.** 75 targets, no warnings, `ticktimer.wasm` at 15.6 MB raw and
+**5.8 MB gzipped** — well under the 20–40 MB the plan estimated, and the figure
+the docs now use instead of the guess.
+
+**The fence got a name.** `if(NOT ANDROID)` had stopped meaning "desktop" the
+moment a second non-desktop target existed, so it became `TICKTIMER_DESKTOP`
+(`NOT ANDROID AND NOT EMSCRIPTEN`). On Android every executable is its own app;
+on WebAssembly every executable is its own web *page*; and the server is worse
+than pointless in a browser, which cannot listen on a TCP port. Verified by
+reading the generated `build.ninja`: the WASM tree builds exactly one target,
+`ticktimer.js`, and no test or server target at all.
+
+**THE FINDING THAT MATTERED: it would have forgotten everything.** Qt points
+`QStandardPaths` at `/home/web_user` but mounts nothing there — Emscripten's
+default is MEMFS, which lives in RAM and dies with the tab. Found by grepping
+the linked output for `IDBFS` and getting nothing back, then confirming that
+`libQt6Core.a` knows the path but never mounts it.
+
+Built without noticing, the app would have looked perfectly fine and lost the
+entire planner on every reload — the worst kind of working. The fix is two
+halves: `-lidbfs.js` at link time so IndexedDB-backed storage *exists*, and the
+shell page mounting it, because the mount must happen before `main()` and the
+populate is asynchronous (`addRunDependency` is what holds startup open until
+IndexedDB has been read in). Persisting back is a 5-second timer plus
+`visibilitychange` — on a phone, "switched apps" and "locked the screen" are
+the same event, and `pagehide` alone is best-effort because a closing tab need
+not wait for an async sync.
+
+**The shell page is deliberately not a second app.** Qt emits a working
+`ticktimer.html`; `web/index.html` replaces it for three things Qt's does not
+do — it is installable (manifest plus the Apple meta tags, and on iOS **Web
+Push only reaches installed web apps**, so Phase 5 depends on it), it says
+something useful during a 6 MB download and something honest when that fails,
+and it is where Phase 5's service worker will live. It contains no application
+logic whatsoever; the moment it makes a decision the project has two
+implementations of something.
+
+**A cache bug caught before it shipped.** The first Caddy block marked
+`ticktimer.wasm` `immutable` for a year. The filename never changes between
+builds, so a new deploy would never be fetched and no amount of reloading would
+fix it — the phone running last month's app while its owner insists they
+updated. Changed to `no-cache`, which does not mean "don't store" but "ask
+first": the browser keeps the 6 MB and takes a 304 when nothing changed.
+
+**Icons are real**, resized from `installer/ticktimer_icon_preview.png` rather
+than invented: 180 for Apple, 192 and 512 for the manifest.
+
+**What is NOT verified, and is written at the top of `docs/WEB.md` rather than
+buried:** nobody has opened it in a browser. The build machine had none. It
+configures, compiles, links and serves — the served files were fetched over
+HTTP and checked — but "it runs" is unproven, and the persistence layer in
+particular is untested code guarding against data loss. `WEB.md`'s checklist is
+ordered so the riskiest question is step 2: write something, reload, is it
+still there.
+
+**Close-out:** six suites, **448 measured**, unchanged — the desktop build is
+untouched and this slice adds no test slots, because everything it adds lives
+on a platform the suites cannot run. Versions ×2 → 30.4.0.
+
+**Next: Phase 5, push** — and it now has a page to live on. Still owed: the VPS
+itself, and a field run that six slices have gone without.

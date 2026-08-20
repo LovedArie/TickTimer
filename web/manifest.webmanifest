@@ -1,0 +1,20 @@
+{
+  "name": "TickTimer",
+  "short_name": "TickTimer",
+  "description": "Plan vs. actual — see where your time goes.",
+
+  "start_url": "./",
+  "scope": "./",
+
+  "display": "standalone",
+
+  "background_color": "#F4F6F3",
+  "theme_color": "#2F7E6E",
+
+  "icons": [
+    { "src": "icons/ticktimer-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/ticktimer-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/ticktimer-512.png", "sizes": "512x512", "type": "image/png",
+      "purpose": "maskable" }
+  ]
+}

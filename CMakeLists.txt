@@ -306,6 +306,20 @@ set(_ticktimer_version_name "${_v_MAJOR}.${_v_MINOR}.${_v_PATCH}")
 message(STATUS "TickTimer version ${_ticktimer_version_name} "
                "(Android versionCode ${_ticktimer_version_code})")
 
+
+# ---- WebAssembly: persistent storage (v30.4) ---------------------------------
+# Qt points QStandardPaths at /home/web_user in a browser, but mounts NOTHING
+# there — Emscripten's default filesystem is MEMFS, which lives in RAM and dies
+# with the tab. Built without this flag the app looks perfectly fine and forgets
+# your entire planner on every reload, which is the worst kind of working.
+#
+# -lidbfs.js links Emscripten's IndexedDB-backed filesystem. Mounting it and
+# syncing it is the shell page's job (web/index.html) because the mount has to
+# happen before main() runs and the populate is asynchronous; this flag only
+# makes IDBFS exist to be mounted.
+if(EMSCRIPTEN)
+    target_link_options(ticktimer PRIVATE -lidbfs.js)
+endif()
 # ---- Android packaging ---------------------------------------------------------
 # qt_add_executable above is what makes this possible at all: on an Android
 # kit it builds the app as a shared library and hands it to Qt's
@@ -334,11 +348,26 @@ endif()
 # links only QtCore/Gui/Test — no Widgets. That this even builds is the
 # architecture test nobody has to write: the day a domain file #includes a
 # widget header, this target breaks and the layering violation is caught.
-# Tests and dev tools are DESKTOP-ONLY: an Android configure would otherwise
-# try to package each of these as its own APK (on Android every executable
-# is an app). The domain they test is identical on every platform, so
-# desktop-green is the proof — nothing is lost by fencing them off.
-if(NOT ANDROID)
+#
+# Tests, dev tools and THE SERVER are DESKTOP-ONLY. On Android every
+# executable is its own app, so a phone configure would try to package each
+# test as an APK. On WebAssembly (v30.3.1) every executable is its own web
+# PAGE, and the server is worse than pointless there — a browser tab cannot
+# listen on a TCP port, and QTcpServer does not exist in that build at all.
+#
+# The domain they test is identical on every platform, so desktop-green is the
+# proof — nothing is lost by fencing them off.
+#
+# Named rather than repeated: three platforms now, and "not Android" had
+# already stopped meaning "desktop" the moment a second non-desktop target
+# existed.
+if(NOT ANDROID AND NOT EMSCRIPTEN)
+    set(TICKTIMER_DESKTOP TRUE)
+else()
+    set(TICKTIMER_DESKTOP FALSE)
+endif()
+
+if(TICKTIMER_DESKTOP)
 
 enable_testing()
 
@@ -523,4 +552,4 @@ target_link_libraries(test_login_live PRIVATE Qt6::Widgets Qt6::Network Qt6::Tes
 add_test(NAME login_live COMMAND test_login_live)
 set_tests_properties(login_live PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-endif() # NOT ANDROID
+endif() # TICKTIMER_DESKTOP
