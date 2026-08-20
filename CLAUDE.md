@@ -157,4 +157,5 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
 `docs/TROUBLESHOOTING.md` (symptom-indexed) · `docs/AI.md` (providers, keys,
 what leaves the machine) · `docs/SERVER.md` · `docs/SETUP.md` ·
 `docs/ANDROID.md` and `docs/WEB.md` (the two phone builds — sideloaded APK,
-and the WebAssembly app for iPhones).
+and the WebAssembly app for iPhones) · `docs/ROLLOUT.md` (the ordered path
+from a clean checkout to two phones and a friend).
