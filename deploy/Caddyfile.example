@@ -9,10 +9,27 @@
 #   systemctl reload caddy
 
 ticktimer.example.com {
+	# ---- downloads: the APK, and later the WebAssembly build --------------
+	#
+	# Handled BEFORE the proxy, and deliberately NOT by ticktimer-server.
+	# Serving files means parsing paths, and a hand-rolled parser that
+	# mishandles "../" hands out the whole disk. Caddy has solved static
+	# files properly for years; the right move is to not write that code at
+	# all. The server never sees these requests.
+	#
+	# Put the signed APK in /var/www/ticktimer/ and handing the app to a
+	# friend becomes a URL:
+	#     https://ticktimer.example.com/download/ticktimer.apk
+	handle_path /download/* {
+		root * /var/www/ticktimer
+		file_server browse
+	}
+
 	# TLS is automatic: Caddy obtains and renews a Let's Encrypt certificate
 	# for the name above. Nothing to configure and nothing to remember —
 	# which matters, because the WebAssembly client will REQUIRE https (a
-	# page served over TLS cannot call a plain-http backend).
+	# page served over TLS cannot call a plain-http backend), and because
+	# Android refuses plain-http downloads from a browser by default.
 	reverse_proxy 127.0.0.1:8080
 
 	# reverse_proxy sets X-Forwarded-For for you. The server honours it only

@@ -126,10 +126,15 @@ WantedBy=multi-user.target
 
 Then `systemctl enable --now ticktimer`.
 
-**4. Firewall to 80 and 443 only.** Nothing should be able to reach 8080 from
+**4. Make the downloads folder** if you want to hand people the Android APK
+by URL: `mkdir -p /var/www/ticktimer`. The Caddy config above serves it at
+`/download/`, and Caddy — not TickTimer — does the file serving, because a
+hand-rolled parser that mishandles `../` hands out the whole disk.
+
+**5. Firewall to 80 and 443 only.** Nothing should be able to reach 8080 from
 outside; the proxy reaches it over loopback.
 
-**5. Point the app at `https://ticktimer.example.com`** — the Server field on
+**6. Point the app at `https://ticktimer.example.com`** — the Server field on
 the login screen, no port.
 
 ### What the hardening actually is

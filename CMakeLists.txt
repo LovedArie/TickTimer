@@ -265,6 +265,47 @@ qt_add_resources(ticktimer "sounds" PREFIX "/sounds" BASE resources FILES
 # On Windows this hides the console window behind the GUI; harmless elsewhere.
 set_target_properties(ticktimer PROPERTIES WIN32_EXECUTABLE ON)
 
+# ---- the app version, read ONCE from the header that owns it (v30.3) --------
+#
+# Android's two version properties used to be hand-typed literals down in the
+# if(ANDROID) block, and they had drifted to "14" while the app said 30.2.1 — a
+# THIRD version seam, unpinned by any test, sixteen major versions stale.
+#
+# installerVersionMatchesTheHeader() pins the Inno one because Inno genuinely
+# cannot read a C header. CMake can, so the better fix here is not a test but
+# NO SEAM: nothing to keep in sync means nothing that can drift. Bump
+# include/Version.h and Android follows, silently and always.
+#
+# Parsed HERE, outside any platform branch, on purpose: a regex that stopped
+# matching would otherwise lie in wait until whoever next built for a phone.
+# Out here it fails on the very next configure, on any machine.
+file(READ "${CMAKE_SOURCE_DIR}/include/Version.h" _ticktimer_version_h)
+foreach(_part MAJOR MINOR PATCH)
+    string(REGEX MATCH
+           "#define[ \t]+TICKTIMER_VERSION_${_part}[ \t]+([0-9]+)"
+           _matched "${_ticktimer_version_h}")
+    if(NOT _matched)
+        # Fail LOUDLY. A regex that quietly matched nothing would ship an APK
+        # versioned 0.0.0 — which Android installs happily over a real one and
+        # then refuses to upgrade, because versionCode may never go backwards.
+        message(FATAL_ERROR
+                "Could not read TICKTIMER_VERSION_${_part} from "
+                "include/Version.h — every version stamped by this build "
+                "would be wrong.")
+    endif()
+    set(_v_${_part} "${CMAKE_MATCH_1}")
+endforeach()
+
+# versionCode is Android's monotonic "is this an upgrade?" INTEGER. Nobody sees
+# it; it only has to increase. major*10000 + minor*100 + patch keeps that true
+# for any minor/patch under 100, and still reads back as the real version when
+# somebody squints at it: 30.2.1 -> 300201.
+math(EXPR _ticktimer_version_code
+     "${_v_MAJOR} * 10000 + ${_v_MINOR} * 100 + ${_v_PATCH}")
+set(_ticktimer_version_name "${_v_MAJOR}.${_v_MINOR}.${_v_PATCH}")
+message(STATUS "TickTimer version ${_ticktimer_version_name} "
+               "(Android versionCode ${_ticktimer_version_code})")
+
 # ---- Android packaging ---------------------------------------------------------
 # qt_add_executable above is what makes this possible at all: on an Android
 # kit it builds the app as a shared library and hands it to Qt's
@@ -277,10 +318,11 @@ if(ANDROID)
         # with a DIFFERENT package name creates a second app (and a second,
         # empty data folder) instead of updating the first. Pick once, keep.
         QT_ANDROID_PACKAGE_NAME    "org.ticktimer.app"
-        # versionCode is Android's monotonic "is this an upgrade?" integer;
-        # versionName is the human-readable one shown in app info.
-        QT_ANDROID_VERSION_CODE    14
-        QT_ANDROID_VERSION_NAME    "14.0"
+        # Both DERIVED from include/Version.h above (v30.3) — never typed
+        # here, so they cannot drift from the app's own idea of its version
+        # the way they had by sixteen major versions.
+        QT_ANDROID_VERSION_CODE    ${_ticktimer_version_code}
+        QT_ANDROID_VERSION_NAME    "${_ticktimer_version_name}"
         # Android 9 (API 28) and newer — old enough for any phone you own,
         # new enough that Qt 6 doesn't have to carry compatibility shims.
         QT_ANDROID_MIN_SDK_VERSION "28"

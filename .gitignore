@@ -32,3 +32,13 @@ test-results.txt
 # Personal working notes for Claude Code. CLAUDE.md IS shared (it documents
 # the project); CLAUDE.local.md is the private half and stays out.
 CLAUDE.local.md
+
+# Android release SIGNING KEYS (v30.3). A keystore is the one secret that can
+# never be rotated cheaply: Android identifies "the same app" by package name
+# + signing key, so losing it means every phone must UNINSTALL (taking its
+# local data with it) before the next build will install. Committing one is
+# worse — anyone with the repo could sign something that upgrades your app in
+# place. Keep it backed up somewhere private; never here.
+*.keystore
+*.jks
+android-release-key*

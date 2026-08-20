@@ -120,6 +120,88 @@ For your own phone, staying on debug APKs forever is completely fine.
 
 ---
 
+## Giving it to someone else (v30.3)
+
+Debug APKs are fine forever on your own phone. The moment a *second* person
+installs it, you want a **release build signed with your own key** — and you
+want that key created once and kept forever.
+
+### Why the key matters more than the build
+
+Android identifies "the same app" by **package name + signing key**. Change
+the key and every phone must **uninstall first**, taking its local planner
+with it. There is no recovery and no rotation: a lost keystore means everyone
+starts over.
+
+So: make it once, back it up somewhere private, never commit it. `.gitignore`
+already refuses `*.keystore`, `*.jks` and `android-release-key*`, but the rule
+that actually protects you is the backup.
+
+### 1. Create the keystore (once, ever)
+
+```sh
+keytool -genkey -v -keystore android-release-key.jks \
+        -keyalg RSA -keysize 2048 -validity 10000 -alias ticktimer
+```
+
+Ten thousand days is about 27 years — long enough that it never becomes a
+problem you have to remember. Keep the passwords with the file.
+
+### 2. Point Qt Creator at it
+
+**Projects → Build (Android kit) → Build Steps → Build Android APK →
+Application Signature** → browse to the `.jks`, enter the passwords, tick
+**Sign package**. Switch the build to **Release** while you are there.
+
+Build, and the APK lands under `android-build/build/outputs/apk/release/`.
+
+### 3. The version stamps itself
+
+Nothing to type. Since v30.3 CMake reads `include/Version.h` and derives both
+Android version fields from it, so `versionName` is the app's real version and
+`versionCode` is `major*10000 + minor*100 + patch` (30.2.1 → `300201`). The
+configure step prints what it derived:
+
+```
+-- TickTimer version 30.2.1 (Android versionCode 300201)
+```
+
+`versionCode` must never go **backwards** — Android refuses to install an
+older code over a newer one. Since it is derived from a version number that
+only goes up, that takes care of itself.
+
+*(These two used to be hand-typed and had drifted to "14" while the app said
+30.2.1. The fix was not a test but removing the seam.)*
+
+### 4. Put it where people can reach it
+
+If you are running the server on a VPS (`docs/SERVER.md`), the Caddy config in
+`deploy/Caddyfile.example` already serves a downloads folder. Copy the APK to
+`/var/www/ticktimer/` and the install instruction becomes one line:
+
+> Open **https://ticktimer.example.com/download/ticktimer.apk** on your phone,
+> tap the file when it finishes, and allow "install unknown apps" for your
+> browser when Android asks.
+
+That prompt is Android's normal gate for anything outside the Play Store. It
+is generic, not a warning about this app.
+
+**Tell them the invite code too**, if you started the server with `--invite` —
+they will need it on the "Create account" screen, once.
+
+### 5. Updating someone else's phone
+
+Same URL, new file. Because the release build is signed with the same key and
+carries a higher `versionCode`, tapping the new APK **upgrades in place** and
+keeps their data. That is the whole payoff for making the key once.
+
+The app can also *tell* them an update exists: put `version.json` in the
+server's data folder with `latest` set to the new version and `url` pointing at
+the APK (see `server/version.example.json`). The app shows a banner; it never
+downloads or installs anything by itself.
+
+---
+
 ## What to expect on the phone
 
 - **Compact layout, automatically**: the nav rail starts collapsed (☰ opens

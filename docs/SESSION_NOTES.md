@@ -4009,3 +4009,70 @@ counter is per client address and every test here arrives from 127.0.0.1.
 and pinning `QT_ANDROID_VERSION_CODE` against `Version.h` — a third seam still
 reading 14 while the app says 30), then the WASM build, then push. And the
 field run that four slices are still owed.
+
+---
+
+## v30.3 — Android distribution (cross-platform, Phase 3)
+
+**No addendum for this one, deliberately.** Nothing here touches the domain:
+it is a build recipe, a `.gitignore` rule, a Caddy block and three documents.
+The house rule asks for an addendum when a feature enters the domain, and
+writing one anyway to look thorough is the habit that makes addenda stop
+meaning anything.
+
+**The third version seam is gone rather than pinned.** `CMakeLists.txt` had
+`QT_ANDROID_VERSION_CODE 14` and `VERSION_NAME "14.0"` hand-typed, drifted
+sixteen major versions behind an app calling itself 30.2.1, and covered by no
+test at all.
+
+The obvious fix was a test, matching `installerVersionMatchesTheHeader()`. The
+better fix was to notice **why** that test exists: Inno Setup genuinely cannot
+read a C header, so its seam has to be hand-synced and therefore has to be
+pinned. **CMake can read the header.** So the Android values are now derived
+— `file(READ)` plus a regex over `include/Version.h` — and there is nothing
+left to keep in sync, which is strictly better than something that can drift
+under a watchful test.
+
+`versionCode` is `major*10000 + minor*100 + patch`, which stays monotonic for
+any minor/patch under 100 and still reads back as the real version: 30.2.1 →
+300201, and this slice's own bump moved it to 300300 with nothing typed.
+
+**Two details worth keeping.** The parse lives OUTSIDE `if(ANDROID)`, so a
+regex that stopped matching fails on the very next desktop configure instead
+of waiting for whoever next builds for a phone — and it fails with
+`FATAL_ERROR`, because a silent miss would stamp an APK 0.0.0, which Android
+installs happily over a real one and then refuses to upgrade.
+
+**Keystores can no longer be committed.** `.gitignore` refuses `*.keystore`,
+`*.jks` and `android-release-key*`. The signing key is the one secret with no
+cheap rotation: Android identifies "the same app" by package name + key, so
+losing it means every phone must uninstall — taking its local planner with it
+— and committing it means anyone with the repo can sign something that
+upgrades the app in place.
+
+**Distribution is a URL, and Caddy serves it — not us.** `deploy/Caddyfile`
+gains a `handle_path /download/*` block over `/var/www/ticktimer`. The
+temptation was to add a file route to `ticktimer-server`; the reason not to is
+that serving files means parsing paths, and a hand-rolled parser that
+mishandles `../` hands out the whole disk. Caddy solved static files years
+ago. The right move was to not write that code — which is the same doctrine
+Phase 2 set when it put the proxy in front of the parser.
+
+Handing the app to someone is now: open the URL on the phone, tap the file,
+allow "install unknown apps" once. Plus the invite code, if the server was
+started with one.
+
+**`ANDROID.md` gained the release path it never had** — create the keystore
+once (`keytool`, 10000 days), point Qt Creator at it, and understand that a
+higher `versionCode` signed with the SAME key is what upgrades a friend's
+phone in place instead of demanding an uninstall. Also the update-notice hook:
+`version.json` with `latest` and a `url` at the APK, which shows a banner and
+never downloads or installs anything by itself.
+
+**Close-out:** six suites, **448 measured**, unchanged — this slice adds no
+test slots, because what it changed is either derived (and therefore verified
+by every configure) or documentation. Versions ×2 → 30.3.0, and the Android
+stamps followed on their own.
+
+**Next: Phase 4, the WASM build** — and before that, still, the VPS itself and
+the field run that five slices are now owed.
