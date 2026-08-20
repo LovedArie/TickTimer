@@ -1,7 +1,10 @@
 #include "LoginDialog.h"
 
+#include "SessionStore.h"
+
 #include <QLabel>
 #include <QLineEdit>
+#include <QCheckBox>
 #include <QSettings>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -52,11 +55,29 @@ LoginDialog::LoginDialog(const QString& serverUrl, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(28, 24, 28, 24);
+    // v30.2 — "remember this device". Default ON: the phone this exists for
+    // has one owner, and asking her for a password at every launch is how an
+    // app stops being opened. A shared desktop is the case where it should be
+    // unticked, which is exactly the case where someone is present to untick
+    // it. (See SessionStore.h for what is actually stored, and what is not.)
+    m_remember = new QCheckBox(tr("Remember this device"), this);
+    m_remember->setObjectName("loginRemember");
+    m_remember->setChecked(true);
+
+    // The offline door. Built hidden and shown only when the server proves
+    // unreachable AND this machine has data for the account in question —
+    // an offer to open a planner that does not exist is worse than no offer.
+    m_offlineBtn = new QPushButton(this);
+    m_offlineBtn->setObjectName("loginOffline");
+    m_offlineBtn->hide();
+
     layout->setSpacing(10);
     layout->addWidget(m_title);
     layout->addWidget(m_username);
     layout->addWidget(m_password);
+    layout->addWidget(m_remember);
     layout->addWidget(m_submit);
+    layout->addWidget(m_offlineBtn);
     layout->addWidget(m_toggle);
     layout->addWidget(serverLabel);
     layout->addWidget(m_server);
@@ -74,8 +95,10 @@ LoginDialog::LoginDialog(const QString& serverUrl, QWidget* parent)
     // these three lines. Set the opposite, flip once: ends on login.)
     m_registerMode = true;
     toggleMode(); // -> false == login mode, all labels written
-}
 
+    // LAST: a remembered device may open the gate before anyone sees it.
+    tryResume();
+}
 void LoginDialog::toggleMode()
 {
     m_registerMode = !m_registerMode;
@@ -108,11 +131,17 @@ void LoginDialog::submit()
     }
 
     setBusy(true);
+    m_offlineBtn->hide(); // a fresh attempt supersedes the last failure's offer
     m_status->setText(tr("Contacting server…"));
+
+    // v30.2 — the opt-in travels with the attempt. A device label goes too,
+    // so the row in a future revoke list says "Arie's laptop" rather than a
+    // hex string nobody can identify.
+    const bool remember = m_remember->isChecked();
     if (m_registerMode)
-        m_client->registerUser(user, pass);
+        m_client->registerUser(user, pass, remember, session::deviceLabel());
     else
-        m_client->login(user, pass);
+        m_client->login(user, pass, remember, session::deviceLabel());
 }
 
 QString LoginDialog::serverUrl() const
@@ -133,20 +162,76 @@ QString LoginDialog::serverUrl() const
     return AuthClient::normalizeServerUrl(url);
 }
 
+void LoginDialog::tryResume()
+{
+    const QString user  = session::lastUser();
+    const QString token = session::deviceToken(user);
+    if (user.isEmpty() || token.isEmpty())
+        return; // nobody remembered here — the form stands as it always did
+
+    m_resumingUser = user;
+    setBusy(true);
+    m_status->setText(tr("Signing you in as %1…").arg(user));
+    m_client->resumeSession(token);
+}
+
+void LoginDialog::offerOffline(const QString& username)
+{
+    const QString name = username.trimmed().toLower();
+    // Only offer what exists. Opening a planner this machine has never seen
+    // would greet someone with an empty week and call it their data.
+    if (name.isEmpty() || !session::localAccounts().contains(name)) {
+        m_offlineBtn->hide();
+        return;
+    }
+
+    m_offlineBtn->setText(tr("Work offline as %1").arg(name));
+    m_offlineBtn->show();
+    // Rebuilt each time rather than connected once: the button's meaning
+    // changes with the name, and a stale capture would open the wrong
+    // account's planner — the one bug this feature must not have.
+    disconnect(m_offlineBtn, &QPushButton::clicked, nullptr, nullptr);
+    connect(m_offlineBtn, &QPushButton::clicked, this, [this, name]() {
+        m_user    = name;
+        m_token.clear();       // there is no session; saying so is the point
+        m_offline = true;
+        accept();
+    });
+}
+
 void LoginDialog::onResult(AuthClient::Outcome outcome,
-                           const QString& username, const QString& token)
+                           const QString& username, const QString& token,
+                           const QString& deviceToken)
 {
     setBusy(false);
+    const bool wasResume = !m_resumingUser.isEmpty();
+    const QString resumingUser = m_resumingUser;
+    m_resumingUser.clear(); // one attempt; anything after this is a real login
+
     switch (outcome) {
     case AuthClient::Outcome::Success:
-        m_user  = username;
-        m_token = token;
+        m_user        = username;
+        m_token       = token;
+        m_deviceToken = deviceToken; // empty on a resume, by design
         accept(); // the gate opens — main() shows the app
         return;
     case AuthClient::Outcome::UsernameTaken:
         m_status->setText(tr("That username is taken. Try another."));
         return;
     case AuthClient::Outcome::BadCredentials:
+        if (wasResume) {
+            // The server ANSWERED and refused: this device was revoked, or
+            // the account is gone. Forget the dead credential immediately —
+            // retrying it every launch would be a permanent slow failure —
+            // and fall back to the form. Deliberately NOT an offline offer:
+            // a refused credential is not an invitation to work offline.
+            session::clearDeviceToken(resumingUser);
+            m_username->setText(resumingUser);
+            m_status->setText(tr("This device isn't remembered any more. "
+                                 "Please log in again."));
+            m_password->setFocus();
+            return;
+        }
         m_status->setText(tr("Wrong username or password."));
         return;
     case AuthClient::Outcome::InvalidInput:
@@ -159,14 +244,22 @@ void LoginDialog::onResult(AuthClient::Outcome outcome,
                              "and that app and server versions match."));
         return;
     case AuthClient::Outcome::NetworkError:
-        // The most likely dev-time failure gets the most actionable message:
-        // it points straight at the usual cause.
-        m_status->setText(tr("Can't reach the server. Is it running, and is "
-                             "the address correct?"));
+        // The one outcome that means "we never got an answer", and therefore
+        // the only one where working offline is honest. Whose planner we
+        // offer depends on which attempt failed: a resume already knows the
+        // name, a manual login knows only what was typed.
+        offerOffline(wasResume ? resumingUser : m_username->text());
+        if (m_offlineBtn->isVisible()) {
+            m_status->setText(tr("Can't reach the server. You can work "
+                                 "offline on this device — your changes will "
+                                 "sync when it's back."));
+        } else {
+            m_status->setText(tr("Can't reach the server. Is it running, and "
+                                 "is the address correct?"));
+        }
         return;
     }
 }
-
 void LoginDialog::setBusy(bool busy)
 {
     // Disable inputs while a request is in flight so the user can't fire a
@@ -177,4 +270,8 @@ void LoginDialog::setBusy(bool busy)
     m_username->setEnabled(!busy);
     m_password->setEnabled(!busy);
     m_server->setEnabled(!busy);
+    if (m_remember)
+        m_remember->setEnabled(!busy);
+    if (m_offlineBtn)
+        m_offlineBtn->setEnabled(!busy);
 }

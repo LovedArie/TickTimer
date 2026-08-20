@@ -3850,3 +3850,84 @@ real-data exercise between them. `docs/QA_CHECKLIST_v30.0.md` covers the first
 two; the undo needs a step of its own (move a block, tap Apply, say "undo
 that", and confirm asking twice refuses politely rather than reversing
 something else).
+
+---
+
+## v30.2 — offline start and remembered devices (cross-platform, Phase 1)
+
+**The session that started as "put it on our phones" and found a hard gate.**
+The owner wants TickTimer on his phone, his girlfriend's, and a few friends'
+— sideloaded or web, never a store. Scoping that produced a five-phase plan
+(offline start → the server hosted responsibly on a VPS → Android
+distribution → the WASM build → push) and four findings, of which one had to
+be fixed before any of the rest mattered.
+
+**`main.cpp` made login a hard gate.** No reachable server meant no app — not
+even to read your own local `data.json`. Invisible on a desktop next to the
+server; fatal on the device most often away from it.
+
+**Two problems, deliberately separated.** Offline start needs only a NAME
+(enough to open `data-<user>.json` — no credential, no server change).
+Staying signed in needs a CREDENTIAL. Doing only the first would have shipped
+an app that opens offline and still demands a password on every online launch,
+which on a phone is most of the misery unfixed. The owner chose both.
+
+**The offline door gives away nothing, and that is the argument.**
+`data-<user>.json` was always plain JSON in the account's own folder: login
+proved identity TO THE SERVER and was never a lock on the file. So opening on
+a remembered name hands over nothing that was not already lying there — it
+stops the app pretending otherwise. Fenced anyway: offered only when the
+server could not be REACHED (a refusal is not an invitation to work offline),
+and only for an account with local data. The honest gap, stated rather than
+hidden: a device that has never synced has nothing local to open, so the first
+login must happen online.
+
+**Device tokens are a second, different credential — not a persisted session
+token.** `AuthServer`'s "tokens are session state, not records… persisting
+tokens would be persisting open doors" is still right about the session tokens
+it was written about, and those are untouched. What stopped being true is the
+sentence it leaned on — *"logging in again mints fresh ones, which the app
+already does on every launch"* — which described a desktop on its own LAN, not
+a phone. So: the ordinary access/refresh split. The persisted door opens
+exactly one thing, a fresh session for one account, and closes on request
+without touching any other device.
+
+Stored **SHA-256-hashed, not PBKDF2**, and the difference is the lesson: you
+stretch what a HUMAN chose, because humans choose guessable things. Nobody
+guesses 128 bits of CSPRNG output, and 200,000 iterations per resume would buy
+no security while handing anyone a cheap way to make the server work.
+
+**Coming back online is silent.** An offline session retries its remembered
+device once a minute and calls `enableSync` mid-session on the first
+acceptance — the phone that spent the morning on mobile data catches up when
+it gets home. A refusal stops the timer and says so once; anything else stays
+quiet, because an app that nags about every failed poll is worse than one that
+waits. `enableSync` gained a guard: one window, one sync stack, or two
+services would race to push the same planner.
+
+**Remember-me defaults ON.** The phone this exists for has one owner; a shared
+desktop is the case where it should be unticked, and is exactly the case where
+somebody is standing there to untick it.
+
+**Also corrected:** `docs/ANDROID.md` had claimed "there is **no sync**
+between them" for fourteen versions after sync shipped. The correction says so
+in the paragraph, rather than quietly editing the past.
+
+**Close-out:** six suites, **445 measured** (205+22+76+98+25+19; was 435).
+Format v14 unchanged. Versions ×2 → 30.2.0.
+
+**Recorded for the phases ahead.** Push on iOS IS possible — Safari has done
+Web Push for Home-Screen web apps since 16.4. The obstacle is ours: the server
+keeps the planner an opaque blob (`design-addendum-sync` §D) and cannot
+compute what to say. The agreed shape is a narrow uploaded schedule of
+`{when, title}` the server fires blindly, which keeps the fence and happens to
+fix Android's background reminders too — `BlockAlarmService` is an in-process
+timer and equally dead there when the app is not running.
+
+**Still owed, and named so it is a decision rather than a drift:** the server
+is still the one `docs/SERVER.md` says not to expose (Phase 2 — bind
+localhost, Caddy for TLS, rate-limit `/login`, close registration); there is
+no revoke UI though `DeviceStore` can already list and forget; and device
+tokens have no expiry, because guessing a duration before anyone has lived
+with one would be inventing a number to look thorough. Three slices — v29.3,
+v30.0, v30.1 — and now a fourth still have zero real-data exercise.

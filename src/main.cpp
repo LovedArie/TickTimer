@@ -9,6 +9,7 @@
 
 #include "LlmProvider.h"
 #include "LoginDialog.h"
+#include "SessionStore.h"
 #include "MainWindow.h"
 #include "Theme.h"
 
@@ -76,13 +77,29 @@ int main(int argc, char* argv[])
     if (login.exec() != QDialog::Accepted)
         return 0; // user closed the dialog without logging in — clean exit
 
+    // v30.2 — remember who got in, and (only if they asked) what proves it.
+    // Written HERE rather than inside the dialog because this is the moment
+    // the gate is known to have opened: a dialog that stored on success would
+    // also store on a success the user then cancelled out of.
+    session::setLastUser(login.loggedInUser());
+    if (!login.deviceToken().isEmpty())
+        session::setDeviceToken(login.loggedInUser(), login.deviceToken());
+
     MainWindow window(login.loggedInUser());
     // Sync needs two things login just produced: where the server is, and
     // the session token proving who we are. Handed over once, here — the
     // window never sees a password. Note we ask the DIALOG for the URL, not
     // the settings value read earlier: the person may have edited the
     // address on the login screen, and the dialog owns that decision now.
-    window.enableSync(login.serverUrl(), login.authToken());
+    if (login.offline()) {
+        // No session, so nothing to sync WITH yet. The window runs on this
+        // machine's planner and keeps trying to reach the server in the
+        // background; the moment it answers, sync switches itself on without
+        // anyone being asked to do anything.
+        window.beginOffline(login.serverUrl());
+    } else {
+        window.enableSync(login.serverUrl(), login.authToken());
+    }
     window.show();
 
     return app.exec(); // the Qt event loop — everything after is reactions

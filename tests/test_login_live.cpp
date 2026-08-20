@@ -158,6 +158,110 @@ private slots:
     QTRY_COMPARE_WITH_TIMEOUT(got, AuthClient::Outcome::NetworkError, 15000);
   }
 
+
+  // ---- v30.2: remembered devices, end to end -----------------------------
+  //
+  // The unit tests prove DeviceStore's properties; these prove the whole
+  // loop — client asks to be remembered, real HTTP, real server, real file,
+  // and a later launch trading that credential for a session with no
+  // password anywhere in the exchange.
+
+  void rememberedDeviceResumesWithoutAPassword()
+  {
+    AuthClient client("http://localhost:8091");
+
+    // Register, asking to be remembered. The device token rides back in the
+    // same reply as the session token — one round trip, not two.
+    auto first = awaitAuth(client, [&] {
+      client.registerUser("marie", "pw123", /*remember=*/true, "Marie's phone");
+    });
+    QCOMPARE(first.outcome, AuthClient::Outcome::Success);
+    QVERIFY(!first.token.isEmpty());
+    QVERIFY(!first.deviceToken.isEmpty());
+
+    // A LATER LAUNCH: nothing but the stored device token. No username is
+    // sent — the server tells us whose it is.
+    auto resumed = awaitAuth(client, [&] {
+      client.resumeSession(first.deviceToken);
+    });
+    QCOMPARE(resumed.outcome, AuthClient::Outcome::Success);
+    QCOMPARE(resumed.username, QStringLiteral("marie")); // canonical, from
+                                                         // the server
+    QVERIFY(!resumed.token.isEmpty());
+    QVERIFY(resumed.token != first.token);   // a FRESH session, not the old one
+    QVERIFY(resumed.deviceToken.isEmpty());  // a resume spends one, never
+                                             // mints another
+
+    // And the session it minted is a real one: it can reach the planner.
+    SyncClient sync("http://localhost:8091", resumed.token);
+    QCOMPARE(awaitPull(sync).outcome, SyncClient::Outcome::Success);
+  }
+
+  // Not asking means not remembered. A login on someone else's machine must
+  // not quietly leave a durable credential behind.
+  void loggingInWithoutRememberLeavesNoDeviceToken()
+  {
+    AuthClient client("http://localhost:8091");
+    auto r = awaitAuth(client, [&] {
+      client.registerUser("noel", "pw123"); // remember defaults to false
+    });
+    QCOMPARE(r.outcome, AuthClient::Outcome::Success);
+    QVERIFY(!r.token.isEmpty());
+    QVERIFY(r.deviceToken.isEmpty());
+  }
+
+  // A revoked device is refused, and refused as BAD CREDENTIALS rather than
+  // as a puzzling reply — because the advice differs: one says "log in
+  // again", the other would send someone to check their server address.
+  void aRevokedDeviceIsRefusedAsBadCredentials()
+  {
+    AuthClient client("http://localhost:8091");
+    auto first = awaitAuth(client, [&] {
+      client.registerUser("olive", "pw123", true, "Olive's laptop");
+    });
+    QVERIFY(!first.deviceToken.isEmpty());
+
+    // Hang up.
+    awaitAuth(client, [&] { client.revokeDevice(first.deviceToken); });
+
+    auto after = awaitAuth(client, [&] {
+      client.resumeSession(first.deviceToken);
+    });
+    QCOMPARE(after.outcome, AuthClient::Outcome::BadCredentials);
+    QVERIFY(after.token.isEmpty());
+
+    // Garbage gets the same answer — unknown and revoked are one reply, so
+    // nobody can probe which tokens once existed.
+    auto junk = awaitAuth(client, [&] {
+      client.resumeSession("00000000000000000000000000000000");
+    });
+    QCOMPARE(junk.outcome, AuthClient::Outcome::BadCredentials);
+  }
+
+  // Two devices for one account are independent: revoking the phone must not
+  // sign out the laptop.
+  void revokingOneDeviceLeavesTheOtherSignedIn()
+  {
+    AuthClient client("http://localhost:8091");
+    auto phone = awaitAuth(client, [&] {
+      client.registerUser("pia", "pw123", true, "phone");
+    });
+    auto laptop = awaitAuth(client, [&] {
+      client.login("pia", "pw123", true, "laptop");
+    });
+    QVERIFY(!phone.deviceToken.isEmpty());
+    QVERIFY(!laptop.deviceToken.isEmpty());
+    QVERIFY(phone.deviceToken != laptop.deviceToken);
+
+    awaitAuth(client, [&] { client.revokeDevice(phone.deviceToken); });
+
+    QCOMPARE(awaitAuth(client, [&] {
+               client.resumeSession(phone.deviceToken);
+             }).outcome, AuthClient::Outcome::BadCredentials);
+    QCOMPARE(awaitAuth(client, [&] {
+               client.resumeSession(laptop.deviceToken);
+             }).outcome, AuthClient::Outcome::Success);
+  }
 private:
   // ---- sync helpers: same one-shot QEventLoop idiom as await() ----------
   // In a plain `private:` section, NOT `private slots:` — moc tolerates
@@ -178,6 +282,33 @@ private:
     return token;
   }
 
+
+  // v30.2 — the general form of loginForToken: run any AuthClient call and
+  // hand back the WHOLE result, not just the token. Takes the call as a
+  // lambda so the connect happens before it fires — a request issued first
+  // can finish before anyone is listening, and this suite has paid for that
+  // race once already.
+  struct AuthResult {
+    AuthClient::Outcome outcome = AuthClient::Outcome::NetworkError;
+    QString username;
+    QString token;
+    QString deviceToken;
+  };
+  template <typename Fn>
+  AuthResult awaitAuth(AuthClient& client, Fn call) {
+    AuthResult r;
+    QEventLoop loop;
+    auto conn = connect(&client, &AuthClient::resultReady,
+        [&](AuthClient::Outcome o, const QString& u, const QString& t,
+            const QString& d) {
+            r = {o, u, t, d}; loop.quit();
+        });
+    call();
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+    disconnect(conn); // this suite reuses one client across calls
+    return r;
+  }
   struct PullResult { SyncClient::Outcome outcome; int revision; QJsonObject data; };
   PullResult awaitPull(SyncClient& c) {
     PullResult r{SyncClient::Outcome::NetworkError, 0, {}};

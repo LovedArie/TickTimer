@@ -61,6 +61,8 @@
 #include "SettingsDialog.h"
 #include "ShareClient.h"
 #include "SharingDialog.h"
+#include "AuthClient.h"
+#include "SessionStore.h"
 #include "SyncClient.h"
 #include "UpdateBanner.h"
 #include "UpdateClient.h"
@@ -911,8 +913,64 @@ void MainWindow::showPage(int index)
         m_navButtons[index]->setChecked(true); // autoExclusive unchecks the rest
 }
 
+void MainWindow::beginOffline(const QString& serverUrl)
+{
+    m_offlineServerUrl = serverUrl;
+    statusBar()->showMessage(
+        tr("Working offline — your changes are saved here and will sync when "
+           "the server is back."));
+
+    // Nothing to retry WITH: this machine was never remembered, so the only
+    // way back online is a real login, which means a restart. Say nothing
+    // further — a timer that can never succeed is just heat.
+    const QString token = session::deviceToken(m_username);
+    if (token.isEmpty())
+        return;
+
+    m_reconnectClient = new AuthClient(serverUrl, this);
+    connect(m_reconnectClient, &AuthClient::resultReady, this,
+            [this](AuthClient::Outcome outcome, const QString&,
+                   const QString& sessionToken, const QString&) {
+        if (outcome == AuthClient::Outcome::Success) {
+            m_reconnect->stop();
+            statusBar()->showMessage(tr("Back online — syncing."), 5000);
+            enableSync(m_offlineServerUrl, sessionToken);
+            return;
+        }
+        if (outcome == AuthClient::Outcome::BadCredentials) {
+            // The server answered and refused us. Retrying a revoked device
+            // every minute forever is a slow failure nobody can see, so stop
+            // and forget it — the next launch will ask for a password, which
+            // is the honest thing to ask for.
+            m_reconnect->stop();
+            session::clearDeviceToken(m_username);
+            statusBar()->showMessage(
+                tr("This device is no longer signed in. Log in again to "
+                   "sync."));
+        }
+        // Anything else (still unreachable, a puzzling reply) — say nothing
+        // and let the timer come round again. An offline app that nags about
+        // every failed poll is worse than one that waits quietly.
+    });
+
+    m_reconnect = new QTimer(this);
+    // A minute: long enough that a phone in a pocket is not paying for it,
+    // short enough that walking back into Wi-Fi feels like it just worked.
+    m_reconnect->setInterval(60 * 1000);
+    connect(m_reconnect, &QTimer::timeout, this, [this]() {
+        m_reconnectClient->resumeSession(session::deviceToken(m_username));
+    });
+    m_reconnect->start();
+}
+
 void MainWindow::enableSync(const QString& serverUrl, const QString& token)
 {
+    // v30.2 — beginOffline()'s retry can reach this mid-session, and the
+    // window may only have one sync stack: a second would mean two services
+    // racing to push the same planner, and two Sync buttons in the rail.
+    if (m_sync)
+        return;
+
     m_syncClient = new SyncClient(serverUrl, token, this);
     m_sync       = new SyncService(&m_data, m_syncClient, m_username, this);
 

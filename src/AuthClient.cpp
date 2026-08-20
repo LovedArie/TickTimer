@@ -25,18 +25,61 @@ AuthClient::AuthClient(const QString& serverUrl, QObject* parent)
 {
 }
 
-void AuthClient::registerUser(const QString& username, const QString& password)
+namespace
 {
-    post(QStringLiteral("/register"), username, password);
+// The credential half of a login/register body, built in one place so the
+// two routes cannot disagree about the opt-in's spelling.
+QJsonObject credentials(const QString& username, const QString& password,
+                        bool remember, const QString& deviceLabel)
+{
+    QJsonObject body;
+    body[QStringLiteral("username")] = username;
+    body[QStringLiteral("password")] = password;
+    // Only SAY "remember" when we mean it. An always-present `false` would
+    // work identically, but this keeps a request from a client that never
+    // heard of devices byte-identical to what it always sent.
+    if (remember) {
+        body[QStringLiteral("remember")] = true;
+        body[QStringLiteral("device")]   = deviceLabel;
+    }
+    return body;
+}
+} // namespace
+
+void AuthClient::registerUser(const QString& username, const QString& password,
+                              bool remember, const QString& deviceLabel)
+{
+    post(QStringLiteral("/register"),
+         credentials(username, password, remember, deviceLabel), username);
 }
 
-void AuthClient::login(const QString& username, const QString& password)
+void AuthClient::login(const QString& username, const QString& password,
+                       bool remember, const QString& deviceLabel)
 {
-    post(QStringLiteral("/login"), username, password);
+    post(QStringLiteral("/login"),
+         credentials(username, password, remember, deviceLabel), username);
 }
 
-void AuthClient::post(const QString& path, const QString& username,
-                      const QString& password)
+void AuthClient::resumeSession(const QString& deviceToken)
+{
+    QJsonObject body;
+    body[QStringLiteral("deviceToken")] = deviceToken;
+    // No username hint: we genuinely do not know whose token this is until
+    // the server says so, and guessing would only create a way to be wrong.
+    post(QStringLiteral("/session"), body, QString());
+}
+
+void AuthClient::revokeDevice(const QString& deviceToken)
+{
+    if (deviceToken.isEmpty())
+        return;
+    QJsonObject body;
+    body[QStringLiteral("deviceToken")] = deviceToken;
+    post(QStringLiteral("/session/revoke"), body, QString());
+}
+
+void AuthClient::post(const QString& path, const QJsonObject& body,
+                      const QString& usernameHint)
 {
     // Drop any pooled connections before every request. Our server is
     // one-request-per-connection (it closes the socket after responding), but
@@ -53,9 +96,6 @@ void AuthClient::post(const QString& path, const QString& username,
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
 
-    QJsonObject body;
-    body[QStringLiteral("username")] = username;
-    body[QStringLiteral("password")] = password;
     const QByteArray payload =
         QJsonDocument(body).toJson(QJsonDocument::Compact);
 
@@ -65,7 +105,8 @@ void AuthClient::post(const QString& path, const QString& username,
     // it back with the result; capturing `reply` lets us read + delete it. The
     // lambda fires whenever the server answers (or the attempt fails), on the
     // UI thread, so it can safely drive the dialog.
-    connect(reply, &QNetworkReply::finished, this, [this, reply, username]() {
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, usernameHint]() {
         // Read everything we need, THEN schedule the reply for deletion, THEN
         // emit on a fresh trip through the event loop. Emitting synchronously
         // here lets a caller fire the NEXT request from inside this handler —
@@ -87,20 +128,38 @@ void AuthClient::post(const QString& path, const QString& username,
             QNetworkRequest::HttpStatusCodeAttribute);
         Outcome outcome;
         QString token;
+        QString deviceToken;
+        QString username = usernameHint;
         if (!statusVar.isValid()) {
             outcome = Outcome::NetworkError; // no HTTP reply → real failure
         } else {
             const QJsonObject obj =
                 QJsonDocument::fromJson(reply->readAll()).object();
             if (obj.value(QStringLiteral("ok")).toBool()) {
-                outcome = Outcome::Success;
-                token   = obj.value(QStringLiteral("token")).toString();
+                outcome     = Outcome::Success;
+                token       = obj.value(QStringLiteral("token")).toString();
+                deviceToken =
+                    obj.value(QStringLiteral("deviceToken")).toString();
+                // A resume knows the account only because the server said so.
+                // Absent on login/register, where the hint is already right.
+                const QString said =
+                    obj.value(QStringLiteral("username")).toString();
+                if (!said.isEmpty())
+                    username = said;
             } else {
                 const QString error =
                     obj.value(QStringLiteral("error")).toString();
                 if (error == QLatin1String("username_taken"))
                     outcome = Outcome::UsernameTaken;
-                else if (error == QLatin1String("bad_credentials"))
+                else if (error == QLatin1String("bad_credentials")
+                         // v30.2: a refused device token. The server says
+                         // "auth" here, the same word /planner uses for a
+                         // dead session. Mapped to BadCredentials because
+                         // the honest advice is identical — the credential
+                         // did not work, log in properly — and routing it to
+                         // UnknownServerReply would tell someone to check
+                         // their server address over a revoked phone.
+                         || error == QLatin1String("auth"))
                     outcome = Outcome::BadCredentials;
                 else if (error == QLatin1String("invalid_input"))
                     outcome = Outcome::InvalidInput;
@@ -113,6 +172,6 @@ void AuthClient::post(const QString& path, const QString& username,
             }
         }
         reply->deleteLater();
-        emit resultReady(outcome, username, token);
+        emit resultReady(outcome, username, token, deviceToken);
     });
 }

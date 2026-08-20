@@ -7,6 +7,7 @@
 class QLineEdit;
 class QLabel;
 class QPushButton;
+class QCheckBox;
 
 // ---------------------------------------------------------------------------
 // LoginDialog — the app's front door. Two modes in one dialog (log in / create
@@ -41,19 +42,43 @@ public:
     // the owner of that decision.
     QString serverUrl() const;
 
+    // v30.2 — the gate opened WITHOUT the server. The app should run on this
+    // machine's local planner and leave sync switched off until the server
+    // answers again. authToken() is empty in this case, which is the reason
+    // main() must ask this rather than infer it from an empty token.
+    bool offline() const { return m_offline; }
+
+    // The durable credential the server minted, if the person asked to be
+    // remembered. Empty otherwise, and empty on every resume — a resume
+    // spends one of these, it never mints another.
+    QString deviceToken() const { return m_deviceToken; }
+
 private slots:
     void submit();
     void toggleMode();
     void onResult(AuthClient::Outcome outcome, const QString& username,
-                  const QString& token);
+                  const QString& token, const QString& deviceToken);
 
 private:
     void setBusy(bool busy);
 
+    // Try the remembered device before showing anyone a form. Called once,
+    // from the constructor: on success the dialog accepts before it is ever
+    // seen, which is the whole point of remembering a device.
+    void tryResume();
+
+    // Offer to open <username>'s local planner with no server. Shown only
+    // when the server could not be REACHED — never when it answered and said
+    // no, because a refused credential is not an invitation to work offline.
+    void offerOffline(const QString& username);
+
     AuthClient*  m_client;
     bool         m_registerMode = false; // false = login, true = create account
+    bool         m_offline      = false; // accepted without a server
     QString      m_user;
     QString      m_token;
+    QString      m_deviceToken;
+    QString      m_resumingUser;         // whose token tryResume() is spending
 
     QLineEdit*   m_username = nullptr;
     QLineEdit*   m_password = nullptr;
@@ -62,4 +87,7 @@ private:
     QLabel*      m_status   = nullptr;
     QPushButton* m_submit   = nullptr;
     QPushButton* m_toggle   = nullptr;
+    QCheckBox*   m_remember = nullptr; // ask the server for a device token
+    QPushButton* m_offlineBtn = nullptr; // appears only when the server is
+                                         // unreachable and local data exists
 };

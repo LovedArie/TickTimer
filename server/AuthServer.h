@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AccountStore.h"
+#include "DeviceStore.h"
 #include "PlannerStore.h"
 #include "ShareStore.h"
 
@@ -59,9 +60,21 @@ private:
     void sendJson(class QTcpSocket* socket, int status,
                   const QJsonObject& body);
 
+    // v30.2 — add a freshly minted device token to a login/register reply,
+    // but only if the client asked to be remembered. Takes `out` by value and
+    // returns it: the caller writes `sendJson(..., withDeviceToken(in, user,
+    // {...}))`, so the opt-in cannot be forgotten at one of the two call
+    // sites while being honoured at the other.
+    QJsonObject withDeviceToken(const QJsonObject& in, const QString& username,
+                                QJsonObject out);
+
     AccountStore m_accounts;
     PlannerStore m_planners;
     ShareStore   m_shares;   // who may READ whose planner (share & compare)
+    // v30.2 — remembered devices. NOT a persisted session token: a separate,
+    // revocable credential that buys exactly one thing, a fresh session
+    // token. See DeviceStore.h for why that does not contradict m_tokens.
+    DeviceStore  m_devices;
     QString      m_dataDir;  // where version.json is looked up per request
     // token -> canonical username. IN MEMORY on purpose: tokens are session
     // state, not records. A server restart forgets them all, every client

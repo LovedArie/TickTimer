@@ -73,8 +73,10 @@ networks** only. Expected, not a warning sign.
 
 | Call | Body | Answer |
 |---|---|---|
-| `POST /register` | `{username, password}` | `{ok, token}` — registering IS logging in |
-| `POST /login` | `{username, password}` | `{ok, token}` |
+| `POST /register` | `{username, password, remember?, device?}` | `{ok, token}` — registering IS logging in — plus `deviceToken` if `remember` was true |
+| `POST /login` | `{username, password, remember?, device?}` | `{ok, token}`, plus `deviceToken` if `remember` was true |
+| `POST /session` | `{deviceToken}` | `{ok, token, username}` — a fresh session for a remembered device, no password. **401** `{error: "auth"}` if unknown or revoked |
+| `POST /session/revoke` | `{deviceToken}` | `{ok}` — always; forgetting a token that was already gone is a success |
 | `GET /planner` | — (token in `Authorization`) | `{ok, revision, data}` |
 | `PUT /planner` | `{baseRevision, force, data}` | `{ok, revision}` — or **409** `{error: "conflict", revision}` if the server moved past `baseRevision` |
 | `POST /share` | `{with: "name"}` | `{ok}` — or **404** `{error: "no_such_user"}` for a typo'd name |
@@ -89,9 +91,15 @@ exactly who you are and the owner hasn't shared with you.
 
 The `token` is a session pass: sync calls carry it in an
 `Authorization: Bearer …` header instead of re-sending your password. Tokens
-live in the server's memory only — restarting the server logs everyone out,
-and logging in again (which the app does every launch) mints a new one.
+live in the server's memory only — restarting the server logs everyone out.
 
+**v30.2 — remembered devices.** A client may ask to be remembered, and gets a
+second, different credential: a `deviceToken`, stored in `devices.json` (hashed
+— the raw value exists only in that one reply). It survives restarts and buys
+exactly one thing, a fresh session token, so a phone stops asking for a
+password at every launch. Session tokens are unchanged and still die with the
+process. Revoke a device with `/session/revoke`; the reasoning is in
+`design-addendum-offline-and-devices.md`.
 ## Where the data lives
 
 *(Since v19.1 the server prints this data folder on startup — no more

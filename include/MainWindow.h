@@ -58,6 +58,19 @@ public:
     // test that constructs a MainWindow working untouched.
     void enableSync(const QString& serverUrl, const QString& token);
 
+    // v30.2 — start with NO session, on this machine's local planner.
+    //
+    // The window is fully usable: everything except sync is local anyway.
+    // What this adds is a quiet retry — a remembered device is offered to the
+    // server on a timer, and the first time it is accepted, enableSync() runs
+    // and the Sync button appears mid-session. Nobody is asked to do anything;
+    // the phone that spent the morning on mobile data simply catches up when
+    // it gets home.
+    //
+    // Safe to have never been called: a window that was never offline has no
+    // timer and no retry, and enableSync() guards against running twice.
+    void beginOffline(const QString& serverUrl);
+
     // The logged-in username scopes local storage to this account
     // (data-<username>.json) and the sync-state keys. Defaults to empty so
     // the every existing caller — and every test that builds a bare
@@ -143,6 +156,13 @@ private:
                                           // remembered across launches (v23)
     QVBoxLayout*  m_navLayout  = nullptr; // kept so enableSync can add to it
     SyncClient*   m_syncClient  = nullptr;
+    // v30.2 — the offline retry. Non-null only between beginOffline() and
+    // the first successful resume, after which it stops and is never armed
+    // again: once sync exists, keeping a login timer alive would be a second
+    // thing racing to create it.
+    class QTimer*      m_reconnect       = nullptr;
+    class AuthClient*  m_reconnectClient = nullptr;
+    QString            m_offlineServerUrl;
     SyncService*  m_sync        = nullptr;
     ShareClient*  m_shareClient = nullptr; // share & compare (needs the token)
     QuickCaptureOverlay* m_capture = nullptr; // Ctrl+N global quick-add (v21.1)

@@ -127,10 +127,17 @@ For your own phone, staying on debug APKs forever is completely fine.
   by *screen size*, not by platform — a tablet gets the desktop layout.
 - **Finger scrolling** everywhere there's a list or the agenda
   (kinetic/flick, via `QScroller`).
-- **Your data is separate**: Android gives the app its own private data
-  folder (`QStandardPaths` resolves it automatically). Desktop and phone
-  each keep their own `data.json` — there is **no sync** between them (a
-  future project if you want one).
+- **Your data is local, and it syncs**: Android gives the app its own private
+  data folder (`QStandardPaths` resolves it automatically), so the phone keeps
+  its own `data-<you>.json`. Since v16 those copies **do** sync through the
+  server — log in as the same account on both and the planner follows you.
+  (This paragraph claimed "no sync between them" for fourteen versions after
+  sync shipped. Corrected in v30.2.)
+- **It opens without the server** (v30.2): tick *Remember this device* at
+  login and the phone signs itself in on later launches with no password. With
+  no server in reach it offers to work offline on the data already there, and
+  syncs by itself once the server answers again. A phone that has NEVER
+  synced has nothing local to open, so the first login must happen online.
 - **Known limitation — edge-resize**: on a touchscreen, dragging on the
   agenda scrolls (the far more common gesture). Resize/move blocks through
   the block dialog's nudge buttons instead.

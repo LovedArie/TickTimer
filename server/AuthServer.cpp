@@ -16,6 +16,7 @@ AuthServer::AuthServer(const QString& dataDir, QObject* parent)
     , m_accounts(QDir(dataDir).filePath(QStringLiteral("accounts.json")))
     , m_planners(QDir(dataDir).filePath(QStringLiteral("planners")))
     , m_shares(QDir(dataDir).filePath(QStringLiteral("shares.json")))
+    , m_devices(QDir(dataDir).filePath(QStringLiteral("devices.json")))
     , m_dataDir(dataDir)
 {
     connect(&m_server, &QTcpServer::newConnection,
@@ -130,6 +131,27 @@ static QString newToken()
     return QString::fromLatin1(raw.toHex());
 }
 
+QJsonObject AuthServer::withDeviceToken(const QJsonObject& in,
+                                        const QString& username,
+                                        QJsonObject out)
+{
+    // OPT-IN, and asked for by the CLIENT rather than decided here. A device
+    // token is a durable credential; minting one for every login — including
+    // a one-off login on someone else's machine — would leave credentials
+    // lying around that nobody asked to create. Absent key reads as false,
+    // which makes "don't remember me" the behaviour of every client written
+    // before this existed.
+    if (!in.value(QStringLiteral("remember")).toBool())
+        return out;
+
+    const QString raw =
+        m_devices.remember(username,
+                           in.value(QStringLiteral("device")).toString());
+    if (!raw.isEmpty())
+        out[QStringLiteral("deviceToken")] = raw;
+    return out;
+}
+
 void AuthServer::handle(QTcpSocket* socket, const Request& req)
 {
     // Parse the JSON body once; both routes need username + password.
@@ -149,7 +171,9 @@ void AuthServer::handle(QTcpSocket* socket, const Request& req)
             // a new user isn't asked to type the same password twice.
             const QString token = newToken();
             m_tokens.insert(token, username.trimmed().toLower());
-            sendJson(socket, 200, {{"ok", true}, {"token", token}});
+            sendJson(socket, 200, withDeviceToken(in, username,
+                                                  {{"ok", true},
+                                                   {"token", token}}));
         }
         else if (r == AccountStore::Result::UsernameTaken)
             sendJson(socket, 409, {{"ok", false}, {"error", "username_taken"}});
@@ -164,7 +188,9 @@ void AuthServer::handle(QTcpSocket* socket, const Request& req)
         if (r == AccountStore::Result::Ok) {
             const QString token = newToken();
             m_tokens.insert(token, username.trimmed().toLower());
-            sendJson(socket, 200, {{"ok", true}, {"token", token}});
+            sendJson(socket, 200, withDeviceToken(in, username,
+                                                  {{"ok", true},
+                                                   {"token", token}}));
         }
         else
             // Deliberately ONE message for both "no such user" and "wrong
@@ -172,6 +198,45 @@ void AuthServer::handle(QTcpSocket* socket, const Request& req)
             // (small) information leak. The store distinguishes them; the
             // wire does not. A real security decision, made on purpose.
             sendJson(socket, 401, {{"ok", false}, {"error", "bad_credentials"}});
+        return;
+    }
+
+    // v30.2 — exchange a remembered device for a fresh session. The ONE
+    // thing a device token can buy, which is what keeps the persisted
+    // credential from being an open door (DeviceStore.h).
+    //
+    // No password, and deliberately no username either: the token IS the
+    // identity, exactly as the bearer token is on /planner below. A client
+    // that had to say who it was could get that wrong; this one cannot.
+    if (req.method == QLatin1String("POST")
+        && req.path == QLatin1String("/session")) {
+        const QString deviceToken =
+            in.value(QStringLiteral("deviceToken")).toString();
+        const QString user = m_devices.userFor(deviceToken);
+        if (user.isEmpty()) {
+            // Same shape as a bad password: unknown, revoked and malformed
+            // are one answer. A client that can tell them apart learns which
+            // tokens once existed.
+            sendJson(socket, 401, {{"ok", false}, {"error", "auth"}});
+            return;
+        }
+        const QString token = newToken();
+        m_tokens.insert(token, user);
+        sendJson(socket, 200,
+                 {{"ok", true}, {"token", token}, {"username", user}});
+        return;
+    }
+
+    // Revoke one remembered device — what "log out" means once a device can
+    // be remembered. IDEMPOTENT: forgetting a token that was already gone is
+    // a success, because the caller wanted it not to work and it does not.
+    //
+    // Authenticated by the device token itself rather than a session, so a
+    // client whose session already expired can still hang up properly.
+    if (req.method == QLatin1String("POST")
+        && req.path == QLatin1String("/session/revoke")) {
+        m_devices.forget(in.value(QStringLiteral("deviceToken")).toString());
+        sendJson(socket, 200, {{"ok", true}});
         return;
     }
 

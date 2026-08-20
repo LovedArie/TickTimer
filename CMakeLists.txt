@@ -202,6 +202,8 @@ set(UI_SOURCES
     src/TaskCardDelegate.cpp
     src/UpcomingPage.cpp
     src/WeekAgendaView.cpp
+    include/SessionStore.h
+    src/SessionStore.cpp
     src/AuthClient.cpp
     src/LoginDialog.cpp
     src/SyncClient.cpp
@@ -423,8 +425,12 @@ add_library(ticktimer_auth STATIC
     src/AccountStore.cpp
     src/PlannerStore.cpp
     src/ShareStore.cpp
+    # v30.2 — remembered devices. Lives in server/ because only the server
+    # has one, but joins the LIBRARY so test_auth links the same build the
+    # server runs, which is this library's whole reason to exist.
+    server/DeviceStore.cpp
 )
-target_include_directories(ticktimer_auth PUBLIC include)
+target_include_directories(ticktimer_auth PUBLIC include server)
 target_link_libraries(ticktimer_auth PUBLIC Qt6::Core)
 
 qt_add_executable(ticktimer-server
@@ -461,6 +467,8 @@ qt_add_executable(test_login_live
     include/SyncService.h
     include/ShareClient.h
     include/UpdateClient.h
+    include/SessionStore.h
+    src/SessionStore.cpp
     src/AuthClient.cpp
     src/SyncClient.cpp
     src/SyncService.cpp

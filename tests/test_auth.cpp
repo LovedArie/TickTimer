@@ -9,6 +9,7 @@
 #include "AccountStore.h"
 #include "PlannerStore.h"
 #include "ShareStore.h"
+#include "DeviceStore.h"
 #include "SyncPlan.h"
 #include "PasswordHash.h"
 
@@ -18,6 +19,8 @@
 #include <QDir>
 #include <qscopeguard.h>
 #include <QTemporaryDir>
+#include <QFile>
+#include <QSet>
 #include <QtTest>
 
 class TestAuth : public QObject
@@ -325,6 +328,142 @@ private slots:
                  (QStringList{"bob", "carol"}));
         QVERIFY(reloaded.canRead("alice", "dave"));
         QVERIFY(!reloaded.canRead("carol", "dave"));
+    }
+
+    // ---- v30.2: remembered devices -----------------------------------------
+    //
+    // The credential that lets a phone stop asking for a password, without
+    // making the persisted thing an open door. DeviceStore.h has the full
+    // argument; these are the properties it rests on.
+
+    // The raw token exists exactly once, in the reply to the client. What
+    // lands on disk is a hash, so a stolen devices.json is a list of dead
+    // strings rather than a stack of working credentials.
+    void deviceFileNeverContainsTheTokenItIssued()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("devices.json");
+
+        DeviceStore store(path);
+        const QString raw = store.remember(QStringLiteral("alice"),
+                                           QStringLiteral("Arie's phone"));
+        QVERIFY(!raw.isEmpty());
+        QCOMPARE(raw.size(), 32); // 128 bits, hex
+
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QString onDisk = QString::fromUtf8(f.readAll());
+        QVERIFY(!onDisk.contains(raw));                  // never the token
+        QVERIFY(onDisk.contains(QStringLiteral("alice"))); // but we know whose
+        QVERIFY(onDisk.contains(QStringLiteral("Arie's phone")));
+    }
+
+    // The one thing a device token buys: a name to mint a session for. It
+    // survives a restart of the process, which is the entire point — session
+    // tokens deliberately do not.
+    void aRememberedDeviceResolvesAcrossRestarts()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("devices.json");
+
+        QString raw;
+        {
+            DeviceStore store(path);
+            raw = store.remember(QStringLiteral("Alice"), QString());
+        }
+
+        DeviceStore reopened(path); // a fresh "server process"
+        QCOMPARE(reopened.userFor(raw), QStringLiteral("alice")); // canonical
+        QCOMPARE(reopened.count(), 1);
+    }
+
+    // Fail-safe, like every other lookup here: unknown, revoked, malformed
+    // and empty are ONE answer — nobody. A credential that resolved to
+    // somebody on a near miss is the bug this shape prevents.
+    void unknownDeviceTokensResolveToNobody()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        DeviceStore store(dir.filePath("devices.json"));
+
+        const QString raw = store.remember(QStringLiteral("alice"), QString());
+
+        QVERIFY(store.userFor(QString()).isEmpty());
+        QVERIFY(store.userFor(QStringLiteral("   ")).isEmpty());
+        QVERIFY(store.userFor(QStringLiteral("not-a-token")).isEmpty());
+        QVERIFY(store.userFor(raw + QStringLiteral("00")).isEmpty());
+        QVERIFY(store.userFor(raw.left(raw.size() - 1)).isEmpty());
+        QVERIFY(!store.userFor(raw).isEmpty()); // the real one still works
+
+        // An account with no name cannot own a device.
+        QVERIFY(store.remember(QStringLiteral("  "), QString()).isEmpty());
+        QCOMPARE(store.count(), 1);
+    }
+
+    // Revoking is what "log out" means once a device can be remembered, and
+    // it is IDEMPOTENT: forgetting a token that was already gone is a success,
+    // because the caller wanted it not to work and it does not.
+    void revokingADeviceIsIdempotentAndTouchesNoOtherDevice()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        DeviceStore store(dir.filePath("devices.json"));
+
+        const QString phone  = store.remember(QStringLiteral("alice"),
+                                              QStringLiteral("phone"));
+        const QString laptop = store.remember(QStringLiteral("alice"),
+                                              QStringLiteral("laptop"));
+        const QString hers   = store.remember(QStringLiteral("bob"),
+                                              QStringLiteral("phone"));
+        QCOMPARE(store.count(), 3);
+
+        QVERIFY(store.forget(phone));
+        QVERIFY(!store.forget(phone));            // already gone, still fine
+        QVERIFY(store.userFor(phone).isEmpty());  // and it stays dead
+        QCOMPARE(store.userFor(laptop), QStringLiteral("alice"));
+        QCOMPARE(store.userFor(hers), QStringLiteral("bob"));
+        QCOMPARE(store.count(), 2);
+    }
+
+    // The "I lost my phone" door — and what a password change should call.
+    // One account's devices, never anyone else's.
+    void forgettingAnAccountsDevicesLeavesOtherAccountsAlone()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        DeviceStore store(dir.filePath("devices.json"));
+
+        const QString a1 = store.remember(QStringLiteral("alice"), QString());
+        const QString a2 = store.remember(QStringLiteral("ALICE"), QString());
+        const QString b1 = store.remember(QStringLiteral("bob"), QString());
+
+        QCOMPARE(store.forgetAllFor(QStringLiteral("Alice")), 2); // case-blind
+        QVERIFY(store.userFor(a1).isEmpty());
+        QVERIFY(store.userFor(a2).isEmpty());
+        QCOMPARE(store.userFor(b1), QStringLiteral("bob"));
+        QCOMPARE(store.forgetAllFor(QStringLiteral("nobody")), 0);
+    }
+
+    // Two devices never collide, and each resolves to its own owner. The
+    // token is 128 bits from the system CSPRNG; this pins that we are not
+    // accidentally handing out the same one twice.
+    void everyDeviceTokenIsDistinct()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        DeviceStore store(dir.filePath("devices.json"));
+
+        QSet<QString> seen;
+        for (int i = 0; i < 50; ++i) {
+            const QString raw =
+                store.remember(QStringLiteral("alice"), QString());
+            QVERIFY(!raw.isEmpty());
+            QVERIFY(!seen.contains(raw));
+            seen.insert(raw);
+        }
+        QCOMPARE(store.count(), 50);
     }
 
 private:
