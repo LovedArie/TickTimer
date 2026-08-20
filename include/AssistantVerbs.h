@@ -75,6 +75,22 @@ enum class Verb
                     // Not additive, and it doesn't need to be: the door it
                     // uses APPENDS a replacement and annotates the original,
                     // so nothing is overwritten (addendum §E).
+
+    UndoMove,       // v30.1 — MoveBlock's inverse, and the reason §B.1 can
+                    // promise no undo button: "every verb has an inverse it
+                    // can ALSO call". AppData::undoReschedule existed from
+                    // v29.2 and had no caller until now, which made that
+                    // promise false for two versions.
+                    //
+                    // IT CARRIES NO TARGET. The model asks for the undo; C++
+                    // decides which move, from World::undoableMoveId. That is
+                    // not convenience — a moved block is no longer missed, so
+                    // it has no handle at all (the block namespace is exactly
+                    // the set of legal MoveBlock targets, DayBriefing.cpp),
+                    // and inventing a way to name one would have widened that
+                    // namespace to make an undo expressible. The narrower
+                    // reading is also the safer one: the model cannot aim
+                    // this verb, by construction rather than by rule.
 };
 
 // role → allowed verbs. The whole allow-list, readable in one screen.
@@ -115,6 +131,8 @@ struct HandleMap
     void clear() { taskIds.clear(); blockIds.clear(); }
 };
 
+struct World; // defined below; summary() and validate() both need it
+
 // One proposed change. Absent fields use the domain's own absence idioms
 // (0-estimate, invalid QDate) — the same convention Task itself follows,
 // so "not proposed" and "not set" read identically everywhere.
@@ -144,7 +162,14 @@ struct Proposal
     // The card's text, composed HERE from the structured fields — never
     // from the proposer's prose. What you approve is what will run, not
     // what the proposer claims will run.
-    QString summary(const AppData& data, const HandleMap& handles) const;
+    //
+    // Takes the World (v30.1) because UndoMove's target is not in the
+    // Proposal at all — it is the caller's, so naming the block the card
+    // will put back requires the same value validate() judges against. A
+    // card that could not name its target would be asking for a blank
+    // cheque.
+    QString summary(const AppData& data, const HandleMap& handles,
+                    const World& world) const;
 };
 
 // What validation needs to know beyond AppData (v29.2).
@@ -169,6 +194,22 @@ struct World
     QDateTime           now;
     missed::Rule        missedRule;
     reschedule::Context reschedule;
+
+    // v30.1 — which move UndoMove would take back: the original block's id,
+    // or empty for "there is nothing to undo".
+    //
+    // IT LIVES HERE, and not on Proposal, deliberately. Proposal is built
+    // from the model's own reply by scrub::, so an id field on it would sit
+    // one careless edit away from being model-aimable. World is assembled by
+    // the CALLER, every time, out of what the caller itself did — so no
+    // reply, however constructed, can influence this. The model asks for an
+    // undo; it never says of what.
+    //
+    // The caller also owns the SCOPE (ChatPage: the last MoveBlock this
+    // conversation applied, cleared when used). Kept out of the domain on
+    // purpose — "what the assistant just did" is a fact about a
+    // conversation, not about a planner.
+    QString             undoableMoveId;
 };
 
 // Validation verdict, reason in the owner's language (it goes on the card).

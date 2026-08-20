@@ -3332,7 +3332,7 @@ private slots:
         p.targetHandle    = handles.addTask(id);
         p.estimateMinutes = 90;
 
-        ProposalCard ok(p, p.summary(data, handles),
+        ProposalCard ok(p, p.summary(data, handles, verbs::World{}),
                         verbs::Verdict{ true, QString() });
         auto* apply =
             ok.findChild<QPushButton*>(QStringLiteral("proposalApply"));
@@ -3347,7 +3347,7 @@ private slots:
         QVERIFY(!apply->isEnabled());
         QVERIFY(!discard->isEnabled());
 
-        ProposalCard broken(p, p.summary(data, handles),
+        ProposalCard broken(p, p.summary(data, handles, verbs::World{}),
                             verbs::Verdict{ false,
                                             QStringLiteral("No.") });
         auto* brokenApply =
@@ -3402,6 +3402,70 @@ private slots:
         discards.last()->click(); // the newest card
         QCOMPARE(data.taskById(id2)->estimateMinutes, 0); // untouched
         QCOMPARE(copiedAside, 1); // no aside for a discard
+    }
+
+    // v30.1 — the page remembers exactly one thing: the move IT applied, so
+    // the assistant can be asked to take it back. Nobody tells it which
+    // block; that is the whole point, because a target the reply could name
+    // is a target the reply could get wrong.
+    void chatRemembersItsOwnMoveSoTheUndoCanTakeItBack()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString id =
+            data.addEvent(QDate(2026, 7, 20), 9 * 60, 10 * 60, act, "");
+
+        ChatPage page(&data);
+        page.nowProvider = [] {
+            return QDateTime(QDate(2026, 7, 21), QTime(8, 0));
+        };
+
+        // Nothing of its own yet — the honest default.
+        QVERIFY(page.currentWorld().undoableMoveId.isEmpty());
+
+        page.currentBriefing(); // this turn's block names
+        const int at = page.handles().blockIds.indexOf(id);
+        QVERIFY(at >= 0);
+
+        const verbs::World w = page.currentWorld();
+        const missed::Verdict v =
+            missed::judge(*data.eventById(id), w.missedRule, w.now);
+        const reschedule::Piece piece =
+            reschedule::propose(*data.eventById(id), v, data.events(),
+                                w.reschedule).first().pieces.first();
+
+        verbs::Proposal move;
+        move.verb            = verbs::Verb::MoveBlock;
+        move.targetHandle    = QStringLiteral("B%1").arg(at + 1);
+        move.newDate         = piece.date;
+        move.newStartMinutes = piece.startMinutes;
+        move.newEndMinutes   = piece.endMinutes;
+        page.presentProposal(move, verbs::Role::Chat);
+
+        auto* apply =
+            page.findChild<QPushButton*>(QStringLiteral("proposalApply"));
+        QVERIFY(apply);
+        apply->click();
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Moved);
+
+        // Remembered at the TAP, not at the render — a proposal that was
+        // never applied is not a move that happened.
+        QCOMPARE(page.currentWorld().undoableMoveId, id);
+
+        verbs::Proposal undo;
+        undo.verb = verbs::Verb::UndoMove;
+        page.presentProposal(undo, verbs::Role::Chat);
+        const auto applies =
+            page.findChildren<QPushButton*>(QStringLiteral("proposalApply"));
+        QVERIFY(applies.size() >= 2);
+        applies.last()->click(); // the newest card
+
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Unset);
+        QCOMPARE(data.eventsOn(piece.date).size(), 0); // replacement gone
+
+        // And forgotten, so asking twice reverses nothing else.
+        QVERIFY(page.currentWorld().undoableMoveId.isEmpty());
     }
 
     // ---- v29.1: the interview in the room ---------------------------------

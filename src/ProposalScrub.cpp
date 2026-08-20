@@ -85,6 +85,7 @@ MoveReply moveFromReply(const QString& reply)
     // wrong about a title containing one.
     int found = -1, foundEnd = -1;
     QJsonObject move;
+    bool        foundUndo = false;
 
     for (int i = reply.indexOf(QLatin1Char('{')); i >= 0;
          i = reply.indexOf(QLatin1Char('{'), i + 1)) {
@@ -98,11 +99,22 @@ MoveReply moveFromReply(const QString& reply)
         if (err.error != QJsonParseError::NoError || !doc.isObject())
             continue;
 
-        const QJsonValue v = doc.object().value(QStringLiteral("move"));
-        if (!v.isObject())
-            continue; // valid JSON about something else — not ours
+        // v30.1: two shapes now. Both must be OBJECTS — strict beats fuzzy
+        // at a boundary, and accepting `"undo_move": true` as well would be
+        // inventing a dialect nobody was told to speak.
+        const QJsonValue mv = doc.object().value(QStringLiteral("move"));
+        const QJsonValue uv = doc.object().value(QStringLiteral("undo_move"));
 
-        move     = v.toObject();
+        if (mv.isObject()) {
+            move      = mv.toObject();
+            foundUndo = false;
+        } else if (uv.isObject()) {
+            move      = {};
+            foundUndo = true;
+        } else {
+            continue; // valid JSON about something else — not ours
+        }
+
         found    = i;
         foundEnd = end;
     }
@@ -115,7 +127,16 @@ MoveReply moveFromReply(const QString& reply)
     // payload is worse than showing them nothing.
     QString prose = reply;
     prose.remove(found, foundEnd - found + 1);
-    out.prose   = tidy(prose);
+    out.prose = tidy(prose);
+
+    if (foundUndo) {
+        // Nothing else is read, and there is nothing else to read. Returning
+        // here rather than falling through is the point: no code path exists
+        // by which a reply could put a target on an undo.
+        out.hasUndo = true;
+        return out;
+    }
+
     out.hasMove = true;
 
     out.blockHandle = move.value(QStringLiteral("block")).toString().trimmed();

@@ -2249,13 +2249,19 @@ private slots:
         QCOMPARE(verbs::verbsFor(verbs::Role::Intake),
                  QVector<verbs::Verb>{ verbs::Verb::SetTaskDetails });
 
-        // v29.2: Chat's list is no longer empty — the one deliberate
-        // widening this slice makes (addendum §F). Asserted by NAMING the
-        // verb rather than as "not empty": a loosened assertion here would
-        // stop pinning anything, and this test is the security review's
-        // tripwire, not a smoke check.
+        // v29.2 widened Chat from empty to MoveBlock (addendum §F); v30.1
+        // added its inverse, UndoMove, which is what makes §B.1's "no undo
+        // button, because every verb has an inverse it can also call" true
+        // rather than aspirational.
+        //
+        // Asserted by NAMING both verbs, in order, rather than as "not
+        // empty" or "contains": a loosened assertion here would stop pinning
+        // anything, and this test is the security review's tripwire, not a
+        // smoke check. A third verb appearing on this line should be a
+        // deliberate act somebody defended in an addendum.
         QCOMPARE(verbs::verbsFor(verbs::Role::Chat),
-                 QVector<verbs::Verb>{ verbs::Verb::MoveBlock });
+                 (QVector<verbs::Verb>{ verbs::Verb::MoveBlock,
+                                        verbs::Verb::UndoMove }));
 
         // These two stay empty FOREVER. If either ever trips this line, the
         // question to ask is not "update the test" — it is "why can a toast
@@ -2665,6 +2671,222 @@ private slots:
         QCOMPARE(data.eventsOn(piece.date).size(), 0); // replacement gone
     }
 
+    // ---- v30.1: UndoMove — the inverse §B.1 always claimed existed --------
+    //
+    // AppData::undoReschedule shipped in v29.2 and had NO caller until this
+    // verb, which made "no undo button, because every verb has an inverse it
+    // can also call" false for two versions. These tests are that sentence.
+
+    // The target lives in the World, never in the Proposal — so a reply
+    // cannot aim this verb even if it tries. This is the security property
+    // of the whole design, asserted directly: a Proposal carrying a handle
+    // and a placement is ignored, and the World alone decides.
+    void undoMoveCannotBeAimedByTheProposal()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString mine   = plantMissedBlock(data, handles);
+        const QString theirs =
+            plantMissedBlock(data, handles, QDate(2026, 7, 19));
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+
+        verbs::World world = moveWorld(now);
+        QVERIFY(!data.rescheduleBlock(mine, QDate(2026, 7, 22),
+                                      9 * 60, 10 * 60).isEmpty());
+        QVERIFY(!data.rescheduleBlock(theirs, QDate(2026, 7, 23),
+                                      9 * 60, 10 * 60).isEmpty());
+        world.undoableMoveId = mine;
+
+        // A proposal that names the OTHER block, in every field it has.
+        verbs::Proposal p;
+        p.verb            = verbs::Verb::UndoMove;
+        p.targetHandle    = QStringLiteral("B2"); // theirs
+        p.newDate         = QDate(2026, 7, 23);
+        p.newStartMinutes = 9 * 60;
+        p.newEndMinutes   = 10 * 60;
+
+        QVERIFY(verbs::apply(data, handles, verbs::Role::Chat, p, world).ok);
+
+        // The World's block was undone; the one the proposal named was not
+        // touched at all.
+        QCOMPARE(data.eventById(mine)->outcome, BlockOutcome::Unset);
+        QCOMPARE(data.eventById(theirs)->outcome, BlockOutcome::Moved);
+    }
+
+    // Nothing to undo is a sentence, not a crash — and it must not leak
+    // anything about the world either.
+    void undoMoveRefusesWhenThereIsNoMoveOfMine()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        plantMissedBlock(data, handles);
+        const verbs::World world = moveWorld(QDateTime(QDate(2026, 7, 21),
+                                                       QTime(8, 0)));
+        QVERIFY(world.undoableMoveId.isEmpty()); // the honest default
+
+        verbs::Proposal p;
+        p.verb = verbs::Verb::UndoMove;
+        const verbs::Verdict v =
+            verbs::validate(data, handles, verbs::Role::Chat, p, world);
+        QVERIFY(!v.ok);
+        QVERIFY(v.reason.contains(QStringLiteral("no move")));
+    }
+
+    // Phrasing roles hold empty verb lists FOREVER. The refusal must name
+    // PERMISSION and never the world — a forbidden role must not learn what
+    // exists by reading an error.
+    void undoMoveIsRefusedForEveryPhrasingRole()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        verbs::World world = moveWorld(QDateTime(QDate(2026, 7, 21),
+                                                 QTime(8, 0)));
+        QVERIFY(!data.rescheduleBlock(id, QDate(2026, 7, 22),
+                                      9 * 60, 10 * 60).isEmpty());
+        world.undoableMoveId = id; // a perfectly valid undo, for the wrong role
+
+        verbs::Proposal p;
+        p.verb = verbs::Verb::UndoMove;
+
+        for (verbs::Role role : {verbs::Role::Nudge, verbs::Role::CheckIn,
+                                 verbs::Role::Intake}) {
+            const verbs::Verdict v =
+                verbs::validate(data, handles, role, p, world);
+            QVERIFY(!v.ok);
+            QVERIFY(v.reason.contains(QStringLiteral("not allowed")));
+            QVERIFY(!v.reason.contains(QStringLiteral("no move")));
+        }
+
+        // And refusal means refusal: the move is still standing.
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Moved);
+    }
+
+    // Already undone, or re-decided by hand meanwhile. Saying so beats
+    // acting on a stale belief — and this is also the stale-card path, since
+    // apply() re-validates before touching anything.
+    void undoMoveRefusesTheSecondTime()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        verbs::World world = moveWorld(QDateTime(QDate(2026, 7, 21),
+                                                 QTime(8, 0)));
+        QVERIFY(!data.rescheduleBlock(id, QDate(2026, 7, 22),
+                                      9 * 60, 10 * 60).isEmpty());
+        world.undoableMoveId = id;
+
+        verbs::Proposal p;
+        p.verb = verbs::Verb::UndoMove;
+
+        QVERIFY(verbs::apply(data, handles, verbs::Role::Chat, p, world).ok);
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Unset);
+
+        // The World still names it — ChatPage clears its own copy, but the
+        // verb must not depend on the caller remembering to.
+        const verbs::Verdict again =
+            verbs::apply(data, handles, verbs::Role::Chat, p, world);
+        QVERIFY(!again.ok);
+        QVERIFY(again.reason.contains(QStringLiteral("already been taken back")));
+    }
+
+    // The refusal that protects a FACT rather than a pointer, raised at
+    // validate() so the card can say so BEFORE the tap. The piece chosen is
+    // deliberately not the first: under the pre-v29.3 single link that block
+    // could not even be asked about.
+    void undoMoveRefusesWhenAnySplitPieceHasTrackedTime()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        verbs::World world = moveWorld(QDateTime(QDate(2026, 7, 21),
+                                                 QTime(8, 0)));
+
+        QVector<AppData::BlockSpan> spans{
+            {QDate(2026, 7, 22), 9 * 60, 9 * 60 + 30},
+            {QDate(2026, 7, 23), 9 * 60, 9 * 60 + 30},
+        };
+        QVERIFY(!data.rescheduleBlockSplit(id, spans).isEmpty());
+        const QStringList pieces = data.eventById(id)->movedToIds;
+        QCOMPARE(pieces.size(), 2);
+        data.appendSegment(pieces.value(1), makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 23), QTime(9, 0)), 20));
+        world.undoableMoveId = id;
+
+        verbs::Proposal p;
+        p.verb = verbs::Verb::UndoMove;
+
+        const verbs::Verdict v =
+            verbs::validate(data, handles, verbs::Role::Chat, p, world);
+        QVERIFY(!v.ok);
+        QVERIFY(v.reason.contains(QStringLiteral("tracked time")));
+
+        // And the tap refuses too, changing nothing.
+        QVERIFY(!verbs::apply(data, handles, verbs::Role::Chat, p, world).ok);
+        QVERIFY(data.eventById(pieces.value(0)));
+        QVERIFY(data.eventById(pieces.value(1)));
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Moved);
+    }
+
+    // The whole §B.1 sentence, end to end: the assistant moves a block, then
+    // the assistant takes it back — both through the verb, neither touching
+    // the domain directly.
+    void movingAndUndoingBothGoThroughTheVerb()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        const QDateTime now(QDate(2026, 7, 21), QTime(8, 0));
+        verbs::World world = moveWorld(now);
+
+        const missed::Verdict mv =
+            missed::judge(*data.eventById(id), world.missedRule, now);
+        const reschedule::Piece piece =
+            reschedule::propose(*data.eventById(id), mv, data.events(),
+                                world.reschedule).first().pieces.first();
+
+        verbs::Proposal move;
+        move.verb            = verbs::Verb::MoveBlock;
+        move.targetHandle    = QStringLiteral("B1");
+        move.newDate         = piece.date;
+        move.newStartMinutes = piece.startMinutes;
+        move.newEndMinutes   = piece.endMinutes;
+        QVERIFY(verbs::apply(data, handles, verbs::Role::Chat, move, world).ok);
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Moved);
+        QCOMPARE(data.eventsOn(piece.date).size(), 1);
+
+        // What ChatPage records at the tap.
+        world.undoableMoveId = id;
+
+        verbs::Proposal undo;
+        undo.verb = verbs::Verb::UndoMove;
+        QVERIFY(verbs::apply(data, handles, verbs::Role::Chat, undo, world).ok);
+
+        QCOMPARE(data.eventById(id)->outcome, BlockOutcome::Unset);
+        QCOMPARE(data.eventsOn(piece.date).size(), 0); // replacement gone
+    }
+
+    // The card must NAME what it will put back. A card that said only "undo
+    // the move" would be asking for a blank cheque, and the whole point of
+    // the confirmation stage is that what you approve is what will run.
+    void undoMoveCardNamesTheBlockItWillRestore()
+    {
+        AppData data;
+        verbs::HandleMap handles;
+        const QString id = plantMissedBlock(data, handles);
+        verbs::World world = moveWorld(QDateTime(QDate(2026, 7, 21),
+                                                 QTime(8, 0)));
+        QVERIFY(!data.rescheduleBlock(id, QDate(2026, 7, 22),
+                                      9 * 60, 10 * 60).isEmpty());
+        world.undoableMoveId = id;
+
+        verbs::Proposal p;
+        p.verb = verbs::Verb::UndoMove;
+        const QString text = p.summary(data, handles, world);
+        QVERIFY(text.contains(QStringLiteral("Study")));   // which block
+        QVERIFY(text.contains(QStringLiteral("09:00")));   // and back to when
+    }
+
     // The briefing carries each missed block's LEGAL MOVES, so the model can
     // select without inventing — and every line it can copy back is one the
     // verb will accept. That round trip is the test: read an offer out of the
@@ -2849,6 +3071,72 @@ private slots:
         QVERIFY(r.complete());
         QCOMPARE(r.prose, QStringLiteral("Here you go."));
     }
+
+    // ---- v30.1: the undo shape ---------------------------------------------
+
+    void scrubReadsTheUndoShapeAndKeepsThePros()
+    {
+        const scrub::MoveReply r = scrub::moveFromReply(QStringLiteral(
+            "Of course — I'll put that back where it was.\n"
+            "{\"undo_move\": {}}"));
+
+        QVERIFY(r.hasUndo);
+        QVERIFY(!r.hasMove);
+        QVERIFY(r.complete());        // an undo needs nothing, so presence is
+                                      // completeness
+        QCOMPARE(r.prose, QStringLiteral("Of course — I'll put that back "
+                                         "where it was."));
+    }
+
+    // THE tripwire for this verb. There is no field on the reply an undo can
+    // aim, and there must never be one: the target lives in verbs::World,
+    // which the caller builds. If this ever fails, a reply has gained the
+    // ability to choose what gets reversed.
+    void scrubNeverLetsAnUndoCarryATarget()
+    {
+        const scrub::MoveReply r = scrub::moveFromReply(QStringLiteral(
+            "Sure.\n"
+            "{\"undo_move\": {\"block\": \"B2\", \"date\": \"2026-07-21\", "
+            "\"start\": \"09:00\", \"end\": \"10:00\"}}"));
+
+        QVERIFY(r.hasUndo);
+        QVERIFY(r.blockHandle.isEmpty());   // the handle is ignored, always
+        QVERIFY(!r.date.isValid());
+        QCOMPARE(r.startMinutes, 0);
+        QCOMPARE(r.endMinutes, 0);
+    }
+
+    // Same degradation rules as the move shape: anything that is not the
+    // agreed object is conversation, and nothing here can fail INTO a write.
+    void scrubRefusesUndoShapesItWasNotPromised()
+    {
+        // Not an object.
+        QVERIFY(!scrub::moveFromReply(
+                     QStringLiteral("ok {\"undo_move\": true}")).hasUndo);
+        // An object about something else entirely.
+        QVERIFY(!scrub::moveFromReply(
+                     QStringLiteral("ok {\"undo\": {}}")).hasUndo);
+        // Plain conversation that merely mentions undoing.
+        const scrub::MoveReply plain = scrub::moveFromReply(
+            QStringLiteral("I can undo that move if you like."));
+        QVERIFY(!plain.hasUndo);
+        QVERIFY(!plain.complete());
+    }
+
+    // Models restate; the final word is the one they meant. That rule has to
+    // hold ACROSS the two shapes, not just within one.
+    void scrubTakesTheLastShapeWhenAModelSwitchesItsMind()
+    {
+        const scrub::MoveReply r = scrub::moveFromReply(QStringLiteral(
+            "Actually, scratch that.\n"
+            "{\"move\": {\"block\": \"B1\", \"date\": \"2026-07-21\", "
+            "\"start\": \"09:00\", \"end\": \"10:00\"}}\n"
+            "{\"undo_move\": {}}"));
+
+        QVERIFY(r.hasUndo);
+        QVERIFY(!r.hasMove);
+    }
+
 
     // ---- v29.1: the interview's brain (all C++) ----------------------------
 

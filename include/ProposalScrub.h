@@ -57,11 +57,20 @@ struct MoveReply
     int     startMinutes = 0; // minutes after midnight, Event's convention
     int     endMinutes   = 0; // exclusive
 
+    // v30.1 — `{"undo_move": {}}`. Note what is NOT beside it: no handle, no
+    // date, no fields of any kind, because UndoMove has no target the model
+    // may name. C++ decides which move from verbs::World, so there is
+    // deliberately nowhere here for a reply to put one. This struct keeps
+    // its name: an undo is still a statement about a move.
+    bool    hasUndo = false;
+
     // True only if every field a Proposal needs actually arrived. A partial
     // object is not half a proposal; it is prose that happened to contain
-    // braces.
+    // braces. An undo needs nothing, so its presence IS its completeness.
     bool complete() const
     {
+        if (hasUndo)
+            return true;
         return hasMove && !blockHandle.isEmpty() && date.isValid()
                && endMinutes > startMinutes;
     }

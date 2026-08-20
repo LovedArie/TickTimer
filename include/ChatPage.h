@@ -190,6 +190,21 @@ private:
     // world, not logical state — refreshing it inside a const render is
     // exactly what mutable exists to say out loud.
     mutable verbs::HandleMap m_handles;
+
+    // v30.1 — the single move UndoMove may take back: the ORIGINAL block's
+    // id of the last MoveBlock this conversation actually applied. Empty
+    // means "nothing of mine to undo", which is the honest default.
+    //
+    // Here rather than in AppData because it is a fact about a CONVERSATION,
+    // not about a planner: the domain has no opinion about who moved a block
+    // or how recently. Deliberately not persisted either — the undo is for
+    // immediate regret, which is what §B.1's "ask it for something else"
+    // actually describes.
+    //
+    // Two moves in a row: the last one wins. Cleared once used, so asking
+    // twice is refused rather than reversing something else.
+    QString m_undoableMoveId;
+
     ChatClient*      m_client   = nullptr;
     chat::Transcript m_transcript;
 

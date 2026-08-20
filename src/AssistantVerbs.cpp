@@ -16,11 +16,17 @@ QVector<Verb> verbsFor(Role role)
     case Role::Intake:
         return { Verb::SetTaskDetails };
     case Role::Chat:
-        // v29.2: Chat's first — and so far only — write verb. Widened
-        // deliberately (addendum §F): the gesture people actually have is a
-        // sentence, and a verb reachable only from a drawer they must first
-        // open is one they must first remember.
-        return { Verb::MoveBlock };
+        // v29.2: Chat's first write verb. Widened deliberately (addendum
+        // §F): the gesture people actually have is a sentence, and a verb
+        // reachable only from a drawer they must first open is one they must
+        // first remember.
+        //
+        // v30.1 adds UndoMove — which is not a second capability so much as
+        // the first one's inverse. §B.1 promised no undo button on the
+        // grounds that every verb has an inverse the assistant can also
+        // call; MoveBlock's had no caller for two versions, so this pair is
+        // what makes that sentence true rather than aspirational.
+        return { Verb::MoveBlock, Verb::UndoMove };
     case Role::Nudge:
     case Role::CheckIn:
         return {}; // observe and phrase — FOREVER. A toast that can
@@ -143,8 +149,25 @@ bool placementIsOffered(const AppData& data, const Event& block,
 }
 } // namespace
 
-QString Proposal::summary(const AppData& data, const HandleMap& handles) const
+QString Proposal::summary(const AppData& data, const HandleMap& handles,
+                          const World& world) const
 {
+    if (verb == Verb::UndoMove) {
+        // Named from the WORLD, because that is where this verb's target
+        // lives. The card must say which block goes back and where to — an
+        // undo card that said only "undo the move" would be asking for a
+        // blank cheque, and the whole point of the card is that what you
+        // approve is what will run.
+        const Event* e = data.eventById(world.undoableMoveId);
+        if (!e)
+            return QObject::tr("Take back the last move");
+        return QObject::tr("Put '%1' back on %2, %3–%4")
+            .arg(data.eventLabel(*e),
+                 e->date.toString(QStringLiteral("ddd d MMM")),
+                 clockLabel(e->plannedStartMinutes),
+                 clockLabel(e->plannedEndMinutes));
+    }
+
     if (verb == Verb::MoveBlock) {
         const Event* e = data.eventById(handles.blockIdFor(targetHandle));
         const QString label =
@@ -229,6 +252,47 @@ Verdict validateMove(const AppData& data, const HandleMap& handles,
 
     return { true, QString() };
 }
+
+// UndoMove's gate. Its own function for the reason validateMove is: the
+// checks share only the role test, and interleaving them is how a check
+// meant for one silently starts guarding the other.
+//
+// Note what it does NOT read: the Proposal. This verb has no target, no
+// placement and no fields — everything it needs is in the World, which the
+// caller built. There is nothing here a reply could steer.
+Verdict validateUndo(const AppData& data, const World& world)
+{
+    if (world.undoableMoveId.isEmpty())
+        return { false, QObject::tr("There's no move of mine to take back in "
+                                    "this conversation.") };
+
+    const Event* block = data.eventById(world.undoableMoveId);
+    if (!block)
+        return { false, QObject::tr("That block no longer exists.") };
+
+    // Already undone, or re-decided by hand since. Either way there is
+    // nothing to reverse, and saying so beats acting on a stale belief.
+    if (block->outcome != BlockOutcome::Moved)
+        return { false, QObject::tr("That move has already been taken back.") };
+
+    // The refusal that protects a FACT rather than a pointer, checked here
+    // so the card can say so before the tap rather than failing at it.
+    // undoReschedule refuses the same case; this is the first of the two
+    // verdicts, not a substitute for the second.
+    //
+    // Every replacement, not just the first — a split's later piece holding
+    // real time is exactly the case the pre-v29.3 single link could not even
+    // ask about.
+    for (const QString& replacementId : block->movedToIds) {
+        const Event* replacement = data.eventById(replacementId);
+        if (replacement && !replacement->segments.isEmpty())
+            return { false, QObject::tr("You've already tracked time against "
+                                        "the new block, so putting it back "
+                                        "would throw that away.") };
+    }
+
+    return { true, QString() };
+}
 } // namespace
 
 Verdict validate(const AppData& data, const HandleMap& handles, Role role,
@@ -240,6 +304,9 @@ Verdict validate(const AppData& data, const HandleMap& handles, Role role,
     if (!verbsFor(role).contains(p.verb))
         return { false, QObject::tr("This assistant role is not allowed to "
                                     "make changes.") };
+
+    if (p.verb == Verb::UndoMove)
+        return validateUndo(data, world);
 
     if (p.verb == Verb::MoveBlock)
         return validateMove(data, handles, p, world);
@@ -303,6 +370,17 @@ Verdict apply(AppData& data, const HandleMap& handles, Role role,
     const Verdict v = validate(data, handles, role, p, world);
     if (!v.ok)
         return v;
+
+    if (p.verb == Verb::UndoMove) {
+        // The door built in v29.2 and generalized in v29.3 — which until
+        // this line had no caller anywhere in the app. It removes every
+        // replacement and returns the original to unresolved as ONE change,
+        // and refuses rather than forcing, so the race between the verdict
+        // above and this call still ends in a refusal.
+        if (!data.undoReschedule(world.undoableMoveId))
+            return { false, QObject::tr("That move couldn't be taken back.") };
+        return { true, QString() };
+    }
 
     if (p.verb == Verb::MoveBlock) {
         const QString blockId = handles.blockIdFor(p.targetHandle);

@@ -3782,3 +3782,71 @@ Versions ×2 → 30.0.0.
 exercise, and per house tradition the findings are the punch list. After that,
 the candidates are §L.4's write verb (v30.1) or opening §I's fence for Split,
 which v29.3 unblocked.
+
+---
+
+## v30.1 — the undo verb (closing a promise the code never kept)
+
+**Found by asking what was next.** §N's table was exhausted at v30, so "what's
+on the roadmap" turned into an audit of what the shipped record actually
+claims — and §B.1's *"no undo button, because every verb the assistant can
+call has an inverse **it can also call**"* turned out to be false, and to have
+been false since v29.2.
+
+`AppData::undoReschedule` was built in v29.2 *specifically* as `MoveBlock`'s
+inverse, generalized in v29.3 to cover splits, and **had no caller anywhere in
+the app**. There is no Undo verb; catch-up's "Undo" and "Bring back" reverse a
+*decision*, never a move; `missed::` excludes `Moved` from both lists on
+purpose. So a move the assistant made could not be reversed by the assistant,
+the drawer, or the owner. §M withholds an undo button only *"as long as §B.1's
+verb discipline holds"* — the condition had quietly stopped holding.
+
+**The obvious design didn't work, and wasn't forced.** A handle-targeted
+`UndoMove` is not expressible: block handles are registered only in the
+briefing's UNRESOLVED BLOCKS section, and `DayBriefing.cpp` says why — *"the
+namespace IS the set of legal targets, rather than a superset the validator has
+to whittle down."* A moved block is no longer missed, so it has no handle.
+Giving it one means listing moved blocks in the briefing, which turns the
+namespace into a superset for `MoveBlock` and leaves `validate()` as the only
+thing keeping moved blocks out of it. That property was bought deliberately in
+v29.2 and is not worth spending to make a sentence sayable.
+
+**So the verb carries nothing.** `{"undo_move": {}}` — no handle, no date, no
+times — and C++ decides which move. The target rides in `verbs::World`, which
+the CALLER builds fresh per call, and never in `Proposal`, which `scrub::`
+builds from the model's own reply: an id field there would sit one careless
+edit away from being model-aimable. Enforced twice rather than asserted once —
+`validateUndo()` never reads the Proposal, and `scrub::` returns before reading
+any field on the undo shape. Both pinned: a proposal naming a *different* block
+is applied, and the World's block is the one restored.
+
+**Scope is the last move this conversation applied**, recorded at the tap (a
+proposal never applied is not a move that happened), cleared on use and on a
+new conversation, never persisted. It lives in `ChatPage` because it is a fact
+about a *conversation* — the domain has no opinion about who moved a block or
+how recently. Not covered, and said out loud so it reads as a decision: a move
+the OWNER made in the drawer. §B.1 promised undoing what the assistant did.
+
+**§B.1 amended, not patched — and the honest half of this slice.** The promise
+was false for `SetTaskDetails` too: it is additive-only (§K.5), so it cannot
+clear an estimate it set. Making §B.1 literally true would need a clearing
+verb, which re-opens the rule that exists precisely so the assistant can never
+overwrite or destroy a value — a far larger security decision than the gap
+being closed. So that half is **withdrawn rather than built**, the original
+sentence stays visible with a dated amendment under it, and the guarantee is
+restated as what the code actually keeps: verbs that REARRANGE get an inverse;
+verbs that only FILL AN EMPTY FIELD do not need one.
+
+**The tripwire did its job again.** `verbsAreScopedPerRole` failed on the first
+build, because it names Chat's list explicitly rather than asserting "not
+empty". Re-pinned to `{ MoveBlock, UndoMove }` in order — a third verb
+appearing on that line should cost somebody an addendum.
+
+**Close-out:** six suites, **435 measured** (205+22+76+98+19+15; was 422).
+Format v14 unchanged — no persisted fields. Versions ×2 → 30.1.0.
+
+**Still owed: the field run.** v29.3, v30.0 and now v30.1 have had zero
+real-data exercise between them. `docs/QA_CHECKLIST_v30.0.md` covers the first
+two; the undo needs a step of its own (move a block, tap Apply, say "undo
+that", and confirm asking twice refuses politely rather than reversing
+something else).

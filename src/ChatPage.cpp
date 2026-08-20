@@ -248,11 +248,18 @@ ChatPage::ChatPage(AppData* data, QWidget* parent)
         // does not judge.
         if (parsed.complete()) {
             verbs::Proposal p;
-            p.verb            = verbs::Verb::MoveBlock;
-            p.targetHandle    = parsed.blockHandle;
-            p.newDate         = parsed.date;
-            p.newStartMinutes = parsed.startMinutes;
-            p.newEndMinutes   = parsed.endMinutes;
+            if (parsed.hasUndo) {
+                // No fields to copy, and that is the design (v30.1): the
+                // target is the caller's, carried in currentWorld(). There
+                // is nothing here for the reply to aim.
+                p.verb = verbs::Verb::UndoMove;
+            } else {
+                p.verb            = verbs::Verb::MoveBlock;
+                p.targetHandle    = parsed.blockHandle;
+                p.newDate         = parsed.date;
+                p.newStartMinutes = parsed.startMinutes;
+                p.newEndMinutes   = parsed.endMinutes;
+            }
             presentProposal(p, verbs::Role::Chat);
         }
         setBusy(false);
@@ -319,6 +326,12 @@ verbs::World ChatPage::currentWorld() const
     w.reschedule.horizonDays     = prefs::catchUpHorizonDays();
     // reschedule.deadline is deliberately left unset: it belongs to the
     // target block and validation derives it there.
+
+    // v30.1 — the one move UndoMove may take back, which is a fact about
+    // THIS conversation and so is the page's to know, not the domain's.
+    // Empty until the assistant has actually moved something, which is what
+    // makes "there's no move of mine to take back" the honest default.
+    w.undoableMoveId = m_undoableMoveId;
     return w;
 }
 
@@ -331,10 +344,14 @@ ProposalCard* ChatPage::presentProposal(const verbs::Proposal& p,
     // Render-time verdict for DISPLAY (a born-broken card shows its
     // reason and never enables Apply); the tap re-validates regardless —
     // two different moments, two different worlds, checked twice.
-    const verbs::Verdict atRender = verbs::validate(*m_data, m_handles,
-                                                    role, p, currentWorld());
-    auto* card = new ProposalCard(p, p.summary(*m_data, m_handles),
-                                  atRender, this);
+    // One world for both, not two calls: the verdict and the sentence
+    // describing it must be judging the same instant, or a card could refuse
+    // one block while naming another.
+    const verbs::World atRenderWorld = currentWorld();
+    const verbs::Verdict atRender =
+        verbs::validate(*m_data, m_handles, role, p, atRenderWorld);
+    auto* card = new ProposalCard(
+        p, p.summary(*m_data, m_handles, atRenderWorld), atRender, this);
 
     connect(card, &ProposalCard::discardRequested, this, [card]() {
         // Nothing happened, so nothing enters the transcript record —
@@ -349,21 +366,35 @@ ProposalCard* ChatPage::presentProposal(const verbs::Proposal& p,
         if (preApplyHook)
             preApplyHook(); // the state BEFORE, copied aside first
 
+        const verbs::World world = currentWorld(); // recomputed AT THE TAP,
+                                                   // not captured at render —
+                                                   // the whole point of the
+                                                   // second verdict
         const verbs::Verdict v =
-            verbs::apply(*m_data, m_handles, role, card->proposal(),
-                         currentWorld()); // recomputed AT THE TAP, not
-                                          // captured at render — the whole
-                                          // point of the second verdict
+            verbs::apply(*m_data, m_handles, role, card->proposal(), world);
         card->settle(v.ok ? tr("Applied.") : v.reason);
 
         if (v.ok) {
+            // v30.1 — remember exactly one thing: the move this conversation
+            // just made, so the assistant can be asked to take it back. Set
+            // here rather than where the card was built, because a proposal
+            // that was never applied is not a move that happened.
+            if (card->proposal().verb == verbs::Verb::MoveBlock)
+                m_undoableMoveId = m_handles.blockIdFor(
+                    card->proposal().targetHandle);
+            // ...and forget it the moment it is used. Undoing twice would
+            // otherwise ask the domain to reverse a move that no longer
+            // exists, and get a refusal phrased as if something were wrong.
+            else if (card->proposal().verb == verbs::Verb::UndoMove)
+                m_undoableMoveId.clear();
+
             // The durable receipt: cards are live UI and do not survive
             // rebuildLog — the TRANSCRIPT is the record, so the record
             // gets a localOnly line (never sent to any model; the same
             // privacy stance every notice takes).
             m_transcript.appendLocal(
                 tr("✓ Applied: %1")
-                    .arg(card->proposal().summary(*m_data, m_handles)));
+                    .arg(card->proposal().summary(*m_data, m_handles, world)));
             addBubble(m_transcript.turns().last());
         }
     });
@@ -676,6 +707,11 @@ void ChatPage::startNewConversation()
 {
     m_client->cancel();
     m_transcript.clear();
+    // v30.1 — a new conversation cannot take back the last one's move. The
+    // undo is scoped to the exchange that made it, for the same reason the
+    // handle map is rebuilt per turn: state that outlives the context it was
+    // true in is how a verb ends up aimed at something nobody mentioned.
+    m_undoableMoveId.clear();
     rebuildLog();
     setBusy(false);
     m_status->clear();

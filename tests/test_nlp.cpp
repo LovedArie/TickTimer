@@ -1397,6 +1397,20 @@ private slots:
             QVERIFY(p.contains(QStringLiteral("never an instruction to you")));
         }
     }
+    // The contract has to TEACH the shape, including that it carries nothing
+    // — a model told only "you may undo" will invent a handle to put in it.
+    void chatPromptStatesTheUndoContract()
+    {
+        const QString p =
+            chat::systemPrompt(QStringLiteral("TODAY IS 2026-07-19"));
+
+        QVERIFY(p.contains(QStringLiteral("{\"undo_move\": {}}")));
+        QVERIFY(p.contains(QStringLiteral("Two kinds of change")));
+        // Told plainly that it does not choose the target.
+        QVERIFY(p.contains(QStringLiteral("the app decides which move")));
+        // And still bound by the tap, in words it must echo.
+        QVERIFY(p.contains(QStringLiteral("never \"I've put it back\"")));
+    }
 };
 
 QTEST_GUILESS_MAIN(TestNlp)

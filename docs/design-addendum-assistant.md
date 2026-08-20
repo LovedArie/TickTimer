@@ -98,6 +98,24 @@ before the assistant needed it.
 *Cheap insurance, not a feature:* copy `data.json` aside before applying a
 batch. No UI, no button — a file that exists if it is ever needed.
 
+> **AMENDED in v30.1 — the sentence above was not true when written.**
+> `design-addendum-undo-verb.md` has the full record. Briefly: "every verb has
+> an inverse it can also call" was false for both verbs. `MoveBlock`'s inverse
+> (`AppData::undoReschedule`) existed from v29.2 but **had no caller**, so a
+> move the assistant made could not be reversed by anyone — not it, not the
+> catch-up drawer, not by hand. And `SetTaskDetails` is additive-only by
+> design (§K.5), so it cannot clear a value it set.
+>
+> v30.1 adds `Verb::UndoMove` and makes the load-bearing half true. The other
+> half is **withdrawn rather than built**, because a clearing verb would
+> re-open the additive rule that exists so the assistant can never overwrite
+> or destroy a value — a far larger decision than the gap it would close.
+>
+> **The guarantee, as it actually stands:** a verb that *rearranges* has an
+> inverse the assistant can call. A verb that only *fills an empty field* does
+> not need one — nothing was destroyed, and the owner clears it in one click.
+> §M's no-undo-button decision rests on this amended version, not the original.
+
 ### B.2 Handles, not ids
 
 The briefing strips ids on purpose and must keep doing so. Tool use needs a way
@@ -610,7 +628,11 @@ future-proofing… restraint and critical thinking is called for."*
   that machines differ.
 - **Per-user AI profiles.** One user per machine; two if she likes it.
 - **A model that decides when to interrupt.** §A.
-- **An undo button** — as long as §B.1's verb discipline holds.
+- **An undo button** — as long as §B.1's verb discipline holds. *(v30.1: it
+  had quietly stopped holding — `MoveBlock`'s inverse existed with no caller
+  for two versions. `Verb::UndoMove` restored the condition rather than
+  spending it; see §B.1's amendment and `design-addendum-undo-verb.md`. If it
+  ever lapses again, this line is what it costs.)*
 - **Streaming**, until something needs it. It remains the other §C promotion
   trigger.
 
