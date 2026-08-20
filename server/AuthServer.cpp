@@ -7,6 +7,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkInterface>
+#include <QDateTime>
 #include <QRandomGenerator>
 #include <QTcpSocket>
 #include <QTextStream>
@@ -23,13 +24,19 @@ AuthServer::AuthServer(const QString& dataDir, QObject* parent)
             this, &AuthServer::onNewConnection);
 }
 
-bool AuthServer::start(quint16 port)
+bool AuthServer::start(quint16 port, const QHostAddress& bindAddress)
 {
-    // QHostAddress::Any = listen on every network interface, so both
-    // localhost (the app on this same laptop) and the LAN IP (a phone on the
-    // same Wi-Fi) can reach us. On a public box you'd bind more narrowly;
-    // on a home network this is what "reachable from my other devices" means.
-    if (!m_server.listen(QHostAddress::Any, port)) {
+    // v30.2.1 — the caller chooses, and the default is LOCALHOST.
+    //
+    // QHostAddress::Any listens on every interface, which is what "reachable
+    // from my phone on the same Wi-Fi" means and what this used to do
+    // unconditionally. It is also what "reachable from the entire internet"
+    // means the day the same binary runs on a VPS — and this is a hand-rolled
+    // HTTP parser that should only ever see requests a real server already
+    // validated. One forgotten flag was the whole distance between those two
+    // sentences, so the default now fails safe and `--bind any` is a thing
+    // somebody types on purpose.
+    if (!m_server.listen(bindAddress, port)) {
         QTextStream(stderr)
             << "TickTimer server: could not listen on port " << port
             << " — is another copy already running?\n";
@@ -39,20 +46,103 @@ bool AuthServer::start(quint16 port)
     // Print every address a client could use — the fix for "my laptop's IP
     // keeps changing / I don't know what it is." The user reads this line off
     // their own terminal and types it into the phone.
+    const bool everyInterface = (bindAddress == QHostAddress::Any
+                                 || bindAddress == QHostAddress::AnyIPv4);
+
     QTextStream out(stdout);
-    out << "TickTimer server listening on port " << port << "\n";
+    out << "TickTimer server listening on port " << port
+        << " (bound to " << bindAddress.toString() << ")\n";
     out << "  from THIS computer:      http://localhost:" << port << "\n";
-    const auto addresses = QNetworkInterface::allAddresses();
-    for (const QHostAddress& a : addresses) {
-        if (a.protocol() == QAbstractSocket::IPv4Protocol
-            && !a.isLoopback()) {
-            out << "  from another device:     http://" << a.toString()
-                << ":" << port << "\n";
+    if (everyInterface) {
+        const auto addresses = QNetworkInterface::allAddresses();
+        for (const QHostAddress& a : addresses) {
+            if (a.protocol() == QAbstractSocket::IPv4Protocol
+                && !a.isLoopback()) {
+                out << "  from another device:     http://" << a.toString()
+                    << ":" << port << "\n";
+            }
         }
+    } else {
+        // Say the thing somebody is about to be confused by, before they are.
+        out << "  from another device:     NOT reachable — pass --bind any\n";
     }
-    out << "Press Ctrl+C to stop.\n";
+
+    // Warn on the COMBINATION, not on either half. Open registration on a
+    // laptop's LAN is fine; every interface behind a proxy is fine. Together
+    // they are an open signup endpoint on whatever network this box is on,
+    // which is the actual risk here — bigger than the parser everyone
+    // worries about.
+    if (everyInterface && registrationIsOpen()) {
+        out << "\n  ! Registration is OPEN and this server is listening on "
+               "every interface.\n"
+               "    Anyone who can reach it can create an account. Pass "
+               "--invite <code>\n"
+               "    if this box is not on a network you control.\n";
+    }
+
+    out << "\nPress Ctrl+C to stop.\n";
     out.flush();
     return true;
+}
+
+// ---- the credential-stuffing brake (v30.2.1) -------------------------------
+
+namespace
+{
+// Five wrong answers in a row buys a pause. Generous enough that a person
+// mistyping their own password never notices; miserly enough that guessing at
+// scale stops being worth the wall-clock.
+constexpr int   kMaxFailures    = 5;
+constexpr qint64 kWindowMs      = 5 * 60 * 1000; // failures older than this
+                                                 // are forgotten entirely
+} // namespace
+
+QString AuthServer::clientIdFor(const QTcpSocket* socket,
+                                const QByteArray& forwardedFor)
+{
+    const QHostAddress peer = socket ? socket->peerAddress() : QHostAddress();
+
+    // Honour X-Forwarded-For ONLY from a loopback peer — i.e. a proxy running
+    // on this same box, which is the deployment this exists for. Trusting it
+    // from an arbitrary peer would let anyone mint a fresh identity per
+    // attempt by varying one header, which is not a brake at all.
+    if (peer.isLoopback() && !forwardedFor.isEmpty()) {
+        // "client, proxy1, proxy2" — the first entry is the original client.
+        const QByteArray first = forwardedFor.split(',').first().trimmed();
+        if (!first.isEmpty())
+            return QString::fromLatin1(first);
+    }
+    return peer.toString();
+}
+
+bool AuthServer::throttled(const QString& clientId)
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QVector<qint64>& stamps = m_failures[clientId];
+
+    // Prune first, so the window slides instead of being a permanent ban.
+    for (int i = stamps.size() - 1; i >= 0; --i)
+        if (now - stamps.at(i) > kWindowMs)
+            stamps.remove(i);
+
+    if (stamps.isEmpty()) {
+        m_failures.remove(clientId); // don't grow a map of empty vectors
+        return false;
+    }
+    return stamps.size() >= kMaxFailures;
+}
+
+void AuthServer::noteFailure(const QString& clientId)
+{
+    m_failures[clientId].append(QDateTime::currentMSecsSinceEpoch());
+}
+
+void AuthServer::clearFailures(const QString& clientId)
+{
+    // A correct password proves the earlier misses were fumbles, not an
+    // attack. Forgiving them is what keeps a real person from being punished
+    // for their own typing.
+    m_failures.remove(clientId);
 }
 
 void AuthServer::onNewConnection()
@@ -79,10 +169,18 @@ void AuthServer::onNewConnection()
                     // waiting until the buffer holds all of it.
                     int contentLength = 0;
                     QByteArray bearer;
+                    QByteArray forwardedFor;
                     for (const QByteArray& line : head.split('\n')) {
                         const QByteArray l = line.trimmed().toLower();
                         if (l.startsWith("content-length:"))
                             contentLength = l.mid(15).trimmed().toInt();
+                        // v30.2.1 — who the PROXY says this came from. Read
+                        // here, trusted only in clientIdFor(), and only from
+                        // a loopback peer.
+                        if (l.startsWith("x-forwarded-for:")) {
+                            QByteArray v = line.trimmed();
+                            forwardedFor = v.mid(v.indexOf(':') + 1).trimmed();
+                        }
                         // Case-insensitive HEADER NAME, case-preserving
                         // VALUE: detect on the lowered copy, but cut the
                         // token from the original line — header names are
@@ -107,8 +205,9 @@ void AuthServer::onNewConnection()
                         req.method = QString::fromLatin1(tokens[0]);
                         req.path   = QString::fromLatin1(tokens[1]);
                     }
-                    req.bearer = QString::fromLatin1(bearer);
-                    req.body   = body.left(contentLength);
+                    req.bearer   = QString::fromLatin1(bearer);
+                    req.clientId = clientIdFor(socket, forwardedFor);
+                    req.body     = body.left(contentLength);
 
                     handle(socket, req);
                     delete buffer;
@@ -160,11 +259,43 @@ void AuthServer::handle(QTcpSocket* socket, const Request& req)
     const QString username = in.value(QStringLiteral("username")).toString();
     const QString password = in.value(QStringLiteral("password")).toString();
 
+    // v30.2.1 — the CORS preflight, answered before anything else looks at
+    // the path. A browser sends OPTIONS on its own, ahead of any request that
+    // carries Content-Type: application/json or an Authorization header —
+    // which is every call this API has. Without this, a web client fails
+    // before its real request is ever sent, and the failure looks like the
+    // server is down rather than like a missing header.
+    //
+    // Needed for the WebAssembly build even though it will be served from the
+    // same origin: the preflight is triggered by the HEADERS, not only by a
+    // cross-origin address.
+    if (req.method == QLatin1String("OPTIONS")) {
+        sendJson(socket, 204, {});
+        return;
+    }
+
     // Router: method + path -> handler. A real framework would give you a
     // table of routes; ours is an if-ladder, which at this size is clearer
     // than any abstraction over it.
     if (req.method == QLatin1String("POST")
         && req.path == QLatin1String("/register")) {
+        // The brake applies to registration too: an open signup endpoint is
+        // as good a place to hammer as a login one.
+        if (throttled(req.clientId)) {
+            sendJson(socket, 429, {{"ok", false}, {"error", "too_many"}});
+            return;
+        }
+        // v30.2.1 — the invite gate. Checked BEFORE the account store is
+        // touched, so a wrong code cannot tell you whether a username was
+        // free: registration on a public box should leak nothing at all.
+        if (!registrationIsOpen()
+            && in.value(QStringLiteral("invite")).toString().trimmed()
+                   != m_inviteCode) {
+            noteFailure(req.clientId);
+            sendJson(socket, 403,
+                     {{"ok", false}, {"error", "invite_required"}});
+            return;
+        }
         const auto r = m_accounts.registerAccount(username, password);
         if (r == AccountStore::Result::Ok) {
             // Registering IS logging in — mint a session token right away so
@@ -184,20 +315,34 @@ void AuthServer::handle(QTcpSocket* socket, const Request& req)
 
     if (req.method == QLatin1String("POST")
         && req.path == QLatin1String("/login")) {
+        if (throttled(req.clientId)) {
+            // 429 rather than 401: this is not a verdict on the password, and
+            // saying so keeps a locked-out person from retyping a correct one
+            // forever wondering why it stopped working.
+            sendJson(socket, 429, {{"ok", false}, {"error", "too_many"}});
+            return;
+        }
         const auto r = m_accounts.login(username, password);
         if (r == AccountStore::Result::Ok) {
+            clearFailures(req.clientId);
             const QString token = newToken();
             m_tokens.insert(token, username.trimmed().toLower());
             sendJson(socket, 200, withDeviceToken(in, username,
                                                   {{"ok", true},
                                                    {"token", token}}));
         }
-        else
+        else {
             // Deliberately ONE message for both "no such user" and "wrong
             // password" — telling an attacker which usernames exist is a
             // (small) information leak. The store distinguishes them; the
             // wire does not. A real security decision, made on purpose.
+            //
+            // v30.2.1: and one failure counted, which is what makes the
+            // one-message rule worth anything — an oracle you can only
+            // consult five times per five minutes is a poor oracle.
+            noteFailure(req.clientId);
             sendJson(socket, 401, {{"ok", false}, {"error", "bad_credentials"}});
+        }
         return;
     }
 
@@ -423,7 +568,13 @@ void AuthServer::handle(QTcpSocket* socket, const Request& req)
 void AuthServer::sendJson(QTcpSocket* socket, int status,
                           const QJsonObject& body)
 {
-    const QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
+    // 204 means NO CONTENT: no body, and therefore Content-Length: 0. Decided
+    // HERE rather than at the write below, so the header and the bytes cannot
+    // disagree — a Content-Length that promises more than arrives is how a
+    // client ends up waiting forever for a response it already has.
+    const QByteArray payload =
+        (status == 204) ? QByteArray()
+                        : QJsonDocument(body).toJson(QJsonDocument::Compact);
 
     // Hand-assemble the HTTP response: status line, the couple of headers a
     // JSON client needs, blank line, body. Seeing this spelled out is the
@@ -440,6 +591,8 @@ void AuthServer::sendJson(QTcpSocket* socket, int status,
     case 403: reason = "Forbidden";    break; // new with share/compare
     case 404: reason = "Not Found";    break;
     case 409: reason = "Conflict";     break;
+    case 204: reason = "No Content";   break; // the CORS preflight (v30.2.1)
+    case 429: reason = "Too Many Requests"; break;
     default:  reason = "OK";           break;
     }
 
@@ -454,9 +607,27 @@ void AuthServer::sendJson(QTcpSocket* socket, int status,
     // back as a NetworkError. This header tells the client "don't reuse me",
     // so it opens a fresh connection each time. (Cost a red test to find.)
     response += "Connection: close\r\n";
-    response += "Access-Control-Allow-Origin: *\r\n"; // dev convenience
+
+    // ---- CORS (v30.2.1) ----------------------------------------------------
+    // Allow-Origin alone was never enough. A browser preflights any request
+    // carrying Content-Type: application/json or an Authorization header —
+    // which is every call this API has — and refuses the real request unless
+    // the preflight names the METHOD and the HEADERS it is about to use.
+    // Without these three lines a web client fails before its request is
+    // sent, and the failure looks like the server being down.
+    //
+    // `*` is safe for Allow-Origin here specifically because this API
+    // authenticates with a bearer HEADER and never a cookie: a browser will
+    // not send credentials to a wildcard origin, and we do not ask it to.
+    response += "Access-Control-Allow-Origin: *\r\n";
+    response += "Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n";
+    response += "Access-Control-Allow-Headers: Content-Type, Authorization\r\n";
+    // Cache the preflight so a browser does not send one before every single
+    // call — a chatty sync would otherwise double its request count.
+    response += "Access-Control-Max-Age: 86400\r\n";
+
     response += "\r\n";
-    response += payload;
+    response += payload; // empty for 204, per the Content-Length above
 
     socket->write(response);
     socket->flush();

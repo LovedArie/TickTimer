@@ -1,0 +1,28 @@
+# TickTimer behind Caddy — the whole reverse-proxy config.
+#
+# THE RULE THIS ENCODES: Caddy is the only thing that talks to TickTimer.
+# ticktimer-server binds 127.0.0.1 (its default since v30.2.1) and never sees
+# a request Caddy has not already parsed and validated. That is what makes a
+# small hand-rolled HTTP parser safe to run on a box with a public address.
+#
+# Copy to /etc/caddy/Caddyfile, change the name, then:
+#   systemctl reload caddy
+
+ticktimer.example.com {
+	# TLS is automatic: Caddy obtains and renews a Let's Encrypt certificate
+	# for the name above. Nothing to configure and nothing to remember —
+	# which matters, because the WebAssembly client will REQUIRE https (a
+	# page served over TLS cannot call a plain-http backend).
+	reverse_proxy 127.0.0.1:8080
+
+	# reverse_proxy sets X-Forwarded-For for you. The server honours it only
+	# from a loopback peer — i.e. from this proxy — which is what lets its
+	# login brake count real clients instead of counting Caddy as one very
+	# unlucky user.
+}
+
+# NOT configured here: rate limiting. Stock Caddy has no rate_limit directive
+# (it needs a plugin and a custom build via xcaddy), so the login brake lives
+# in the server instead — see docs/SERVER.md. Making the safe deployment
+# depend on compiling your own web server is how the safe deployment does not
+# happen.

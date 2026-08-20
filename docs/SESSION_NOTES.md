@@ -3931,3 +3931,81 @@ no revoke UI though `DeviceStore` can already list and forget; and device
 tokens have no expiry, because guessing a duration before anyone has lived
 with one would be inventing a number to look thorough. Three slices — v29.3,
 v30.0, v30.1 — and now a fourth still have zero real-data exercise.
+
+---
+
+## v30.2.1 — the hardening half of Phase 2 (earning past our own warning)
+
+**`docs/SERVER.md` forbade the plan.** *"A development server with no
+hardening. Do not expose it to the public internet."* The VPS is the plan, so
+that sentence had to stop being true rather than be quietly ignored. Three
+changes, in order of how much they matter.
+
+**The bind address now defaults to `127.0.0.1`.** It was `QHostAddress::Any` —
+right for a laptop serving a phone on the same Wi-Fi, exactly wrong the day the
+same binary runs on a box with a public address. One forgotten flag was the
+whole distance between those two sentences. Now the risky choice is the one
+somebody types (`--bind any`), and a reverse proxy is the only thing that
+reaches the parser.
+
+The cost is real and paid on purpose: the owner's current LAN setup breaks
+until he passes the flag. That failure is **loud** — the phone cannot connect,
+and the startup banner literally prints "NOT reachable — pass `--bind any`" —
+and one flag from fixed. The old default's failure is silent and not.
+
+**Registration can be invite-gated** (`--invite CODE`), checked BEFORE the
+account store is touched so a wrong code cannot reveal whether a username was
+free. Still open by DEFAULT, because a closed default makes the first account
+impossible to create; instead the banner warns on the **combination** — every
+interface *and* open registration — since each alone is perfectly fine and only
+together are they an open door on whatever network the box is on.
+
+**A login brake:** five failures from one address in five minutes earns 429,
+including on a correct password. Only failures count, and a success forgives
+them, so fumbling your own typing never locks you out.
+
+**Deviation from the approved plan, with its reason.** The plan said rate-limit
+at the proxy. **Stock Caddy has no rate-limit directive** — it needs a plugin
+and a custom build via xcaddy. Making the safe deployment depend on compiling
+your own web server is how the safe deployment does not happen, so it is twenty
+lines in the server instead, working behind any proxy or none. `X-Forwarded-For`
+is honoured only from a **loopback** peer: trusting it from an arbitrary peer
+would let anyone mint a fresh identity per attempt and defeat the brake
+entirely.
+
+**CORS preflight** answered before anything looks at the path. Needed by the
+WebAssembly build even served same-origin, because a browser preflights on the
+HEADERS — `Content-Type: application/json`, `Authorization` — not only on the
+address. Without it a web client fails before its real request is sent, and the
+failure looks like the server being down. `sendJson` also learned that 204
+means no content, decided at the payload rather than at the write so the
+Content-Length and the bytes cannot disagree.
+
+**A gap created and closed in the same slice.** Gating the server without
+giving the client a key would have been half a feature, so `registerUser` takes
+an invite code and the dialog grows a field for it in register mode. Two new
+outcomes: `InviteRequired`, and `TooManyAttempts` — deliberately NOT mapped to
+"wrong username or password", because the brake may well have caught a correct
+one and that advice would have someone retyping something that was right all
+along. The first draft *did* map it to BadCredentials, directly contradicting
+the comment sitting above it; caught on re-reading.
+
+**Close-out:** six suites, **448 measured** (205+22+76+98+25+22; was 445).
+Versions ×2 → 30.2.1. Deployment templates ship as files —
+`deploy/Caddyfile.example`, `deploy/ticktimer.service.example` — rather than as
+prose to retype, and `SERVER.md` §4 now describes the hardened deployment
+instead of forbidding it.
+
+**One cost recorded rather than hidden:** `login_live` went 9s → 41s (the whole
+run, 46s). Measured rather than guessed — the three new tests cost ~6.6s run
+individually, so the remainder is Windows slowing repeated socket reuse inside
+one process. A harness artifact, not a product one: the app makes one login per
+launch, not twenty. The other five suites still finish in about five seconds.
+Each new test also runs against its OWN server process, because the throttle
+counter is per client address and every test here arrives from 127.0.0.1.
+
+**Next, and it is not code:** the VPS itself — a box, a domain, Caddy in front,
+`systemctl enable --now ticktimer`. After that, Phase 3 (Android distribution,
+and pinning `QT_ANDROID_VERSION_CODE` against `Version.h` — a third seam still
+reading 14 while the app says 30), then the WASM build, then push. And the
+field run that four slices are still owed.

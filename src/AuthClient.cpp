@@ -47,10 +47,15 @@ QJsonObject credentials(const QString& username, const QString& password,
 } // namespace
 
 void AuthClient::registerUser(const QString& username, const QString& password,
-                              bool remember, const QString& deviceLabel)
+                              bool remember, const QString& deviceLabel,
+                              const QString& invite)
 {
-    post(QStringLiteral("/register"),
-         credentials(username, password, remember, deviceLabel), username);
+    QJsonObject body = credentials(username, password, remember, deviceLabel);
+    // Same rule as `remember`: say it only when there is something to say, so
+    // a request to a server that never asks stays exactly what it always was.
+    if (!invite.trimmed().isEmpty())
+        body[QStringLiteral("invite")] = invite.trimmed();
+    post(QStringLiteral("/register"), body, username);
 }
 
 void AuthClient::login(const QString& username, const QString& password,
@@ -161,6 +166,13 @@ void AuthClient::post(const QString& path, const QJsonObject& body,
                          // their server address over a revoked phone.
                          || error == QLatin1String("auth"))
                     outcome = Outcome::BadCredentials;
+                else if (error == QLatin1String("invite_required"))
+                    outcome = Outcome::InviteRequired;
+                else if (error == QLatin1String("too_many"))
+                    // Not a verdict on the password. Telling someone their
+                    // details are wrong here would have them retyping a
+                    // CORRECT password, which is the worst possible advice.
+                    outcome = Outcome::TooManyAttempts;
                 else if (error == QLatin1String("invalid_input"))
                     outcome = Outcome::InvalidInput;
                 else

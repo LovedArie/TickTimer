@@ -88,6 +88,8 @@ private:
     QPushButton* m_submit   = nullptr;
     QPushButton* m_toggle   = nullptr;
     QCheckBox*   m_remember = nullptr; // ask the server for a device token
+    QLineEdit*   m_invite   = nullptr; // register mode only, and only some
+                                       // servers ask for it
     QPushButton* m_offlineBtn = nullptr; // appears only when the server is
                                          // unreachable and local data exists
 };

@@ -11,6 +11,9 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QtTest>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QProcess>
 #include <functional>
 #include <QEventLoop>
@@ -24,6 +27,15 @@ class TestLoginLive : public QObject {
   Q_OBJECT
   QProcess server;
   QTemporaryDir dir;
+  // v30.2.1 — two more instances, each with its OWN state, because the new
+  // behaviour is per-server and per-client-address. Every test here reaches
+  // the server from 127.0.0.1, so a failed attempt in one test is a failed
+  // attempt for every other test on the same instance: isolating them by
+  // PROCESS is the only way these stay order-independent.
+  QProcess invited;      // started with --invite; the gate
+  QTemporaryDir inviteDir;
+  QProcess braked;       // dedicated to the throttle, so its counter is ours
+  QTemporaryDir brakeDir;
 private slots:
   void initTestCase() {
     // The server binary is built into the SAME folder as this test binary,
@@ -36,9 +48,29 @@ private slots:
                      + QStringLiteral("/ticktimer-server"),
                  {dir.path(), "8091"});
     QVERIFY(server.waitForStarted(3000));
-    QTest::qWait(800); // let it bind
+
+    // The invite-gated instance. `--invite` is exactly what a public box
+    // should be started with, so this is the deployment under test.
+    invited.start(QCoreApplication::applicationDirPath()
+                      + QStringLiteral("/ticktimer-server"),
+                  {QStringLiteral("--data"), inviteDir.path(),
+                   QStringLiteral("--port"), QStringLiteral("8092"),
+                   QStringLiteral("--invite"), QStringLiteral("let-me-in")});
+    QVERIFY(invited.waitForStarted(3000));
+
+    braked.start(QCoreApplication::applicationDirPath()
+                     + QStringLiteral("/ticktimer-server"),
+                 {QStringLiteral("--data"), brakeDir.path(),
+                  QStringLiteral("--port"), QStringLiteral("8093")});
+    QVERIFY(braked.waitForStarted(3000));
+
+    QTest::qWait(800); // let them all bind
   }
-  void cleanupTestCase() { server.kill(); server.waitForFinished(2000); }
+  void cleanupTestCase() {
+    server.kill();  server.waitForFinished(2000);
+    invited.kill(); invited.waitForFinished(2000);
+    braked.kill();  braked.waitForFinished(2000);
+  }
 
   // Fire one request and BLOCK until its single result arrives — turning the
   // async client into a synchronous call FOR THE TEST only. A QSignalSpy +
@@ -261,6 +293,129 @@ private slots:
     QCOMPARE(awaitAuth(client, [&] {
                client.resumeSession(laptop.deviceToken);
              }).outcome, AuthClient::Outcome::Success);
+  }
+
+  // ---- v30.2.1: the hardening a public box needs --------------------------
+
+  // The invite gate. Registration on a server with a public address must not
+  // be open to whoever finds it, and this is the door.
+  void anInviteGatedServerRefusesRegistrationWithoutTheCode()
+  {
+    AuthClient client("http://localhost:8092");
+
+    // No code at all.
+    QCOMPARE(awaitAuth(client, [&] {
+               client.registerUser("quinn", "pw123");
+             }).outcome, AuthClient::Outcome::InviteRequired);
+
+    // A wrong code is the same answer as no code — and note what neither
+    // reply says: whether "quinn" was available. The gate is checked BEFORE
+    // the account store is touched, so a stranger learns nothing about who
+    // already exists.
+    QCOMPARE(awaitAuth(client, [&] {
+               client.registerUser("quinn", "pw123", false, QString(),
+                                   "not-the-code");
+             }).outcome, AuthClient::Outcome::InviteRequired);
+
+    // The real code gets in.
+    auto ok = awaitAuth(client, [&] {
+      client.registerUser("quinn", "pw123", false, QString(), "let-me-in");
+    });
+    QCOMPARE(ok.outcome, AuthClient::Outcome::Success);
+    QVERIFY(!ok.token.isEmpty());
+
+    // And LOGGING IN never wants a code — the gate is on creating accounts,
+    // not on using one. Getting this wrong would lock out everyone the day
+    // the owner changed the code.
+    QCOMPARE(awaitAuth(client, [&] {
+               client.login("quinn", "pw123");
+             }).outcome, AuthClient::Outcome::Success);
+  }
+
+  // The credential-stuffing brake. Its own server, because the counter is
+  // per client address and every test here arrives from 127.0.0.1 — sharing
+  // an instance would make this depend on what ran before it.
+  void theBrakeStopsPasswordGuessingAndForgivesASuccess()
+  {
+    AuthClient client("http://localhost:8093");
+
+    QCOMPARE(awaitAuth(client, [&] {
+               client.registerUser("rosa", "correct-horse");
+             }).outcome, AuthClient::Outcome::Success);
+
+    // Four misses: under the limit, so still an honest "no".
+    for (int i = 0; i < 4; ++i) {
+      QCOMPARE(awaitAuth(client, [&] {
+                 client.login("rosa", "wrong");
+               }).outcome, AuthClient::Outcome::BadCredentials);
+    }
+
+    // A CORRECT password forgives them. This is the property that keeps a
+    // real person from locking themselves out by fumbling their own typing.
+    QCOMPARE(awaitAuth(client, [&] {
+               client.login("rosa", "correct-horse");
+             }).outcome, AuthClient::Outcome::Success);
+
+    // Proof the slate is clean: a fifth miss would have tripped the brake if
+    // the earlier four still counted, and it does not.
+    QCOMPARE(awaitAuth(client, [&] {
+               client.login("rosa", "wrong");
+             }).outcome, AuthClient::Outcome::BadCredentials);
+
+    // Now guess in earnest. The brake engages, and says something OTHER than
+    // "wrong password" — telling someone their details are wrong here would
+    // have them retyping a correct one and concluding their account broke.
+    bool braked = false;
+    // Six is the most it can take: five failures trip it and one is already
+    // on the board. A larger bound would only make a RED run slower.
+    for (int i = 0; i < 6 && !braked; ++i) {
+      braked = awaitAuth(client, [&] {
+                 client.login("rosa", "wrong");
+               }).outcome == AuthClient::Outcome::TooManyAttempts;
+    }
+    QVERIFY(braked);
+
+    // And it holds against the RIGHT password too. That is the point: a brake
+    // that let the correct answer through would be a free oracle for anyone
+    // who eventually guessed it.
+    QCOMPARE(awaitAuth(client, [&] {
+               client.login("rosa", "correct-horse");
+             }).outcome, AuthClient::Outcome::TooManyAttempts);
+  }
+
+  // The CORS preflight. A browser sends OPTIONS on its own before any request
+  // carrying Content-Type: application/json or an Authorization header —
+  // which is every call this API has — and refuses the real request unless
+  // the preflight names the method and headers it is about to use. Needed by
+  // the WebAssembly build; nothing else in this suite is a browser, so it is
+  // asserted here at the HTTP level.
+  void thePreflightAnswersWithTheHeadersABrowserNeeds()
+  {
+    QNetworkAccessManager net;
+    QNetworkRequest request(QUrl("http://localhost:8091/login"));
+
+    QNetworkReply* reply =
+        net.sendCustomRequest(request, QByteArray("OPTIONS"));
+    QEventLoop loop;
+    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QCOMPARE(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),
+             204);
+    const QByteArray methods =
+        reply->rawHeader("Access-Control-Allow-Methods");
+    const QByteArray headers =
+        reply->rawHeader("Access-Control-Allow-Headers");
+    QVERIFY(!reply->rawHeader("Access-Control-Allow-Origin").isEmpty());
+    QVERIFY(methods.contains("POST"));
+    QVERIFY(methods.contains("OPTIONS"));
+    QVERIFY(headers.contains("Content-Type"));   // every call sends JSON
+    QVERIFY(headers.contains("Authorization"));  // every sync call sends a token
+    // 204 means no content, and the length must agree or a client waits
+    // forever for bytes that never come.
+    QCOMPARE(reply->readAll().size(), 0);
+    reply->deleteLater();
   }
 private:
   // ---- sync helpers: same one-shot QEventLoop idiom as await() ----------

@@ -54,6 +54,13 @@ public:
         UsernameTaken,     // register only
         BadCredentials,    // login only
         InvalidInput,
+        TooManyAttempts,    // v30.2.1 — the server's brake is on. NOT a
+                            // verdict on the password: saying "wrong
+                            // password" here would have someone retyping a
+                            // CORRECT one and concluding their account
+                            // broke.
+        InviteRequired,     // v30.2.1 — this server only takes new accounts
+                            // with a code, and ours was missing or wrong
         NetworkError,       // server unreachable — the "is it even running?" case
         UnknownServerReply, // v29.0.1 — the server ANSWERED, with an error
                             // token this client doesn't know (not_found, a
@@ -69,9 +76,13 @@ public:
     // returned alongside the session token. Opt-in and defaulted off: a login
     // on someone else's machine must not quietly leave a credential behind.
     // `deviceLabel` is what a human revoking it later will read.
+    // `invite` (v30.2.1) is the code a server started with `--invite` demands.
+    // Empty is correct against a server that does not ask for one, which is
+    // every server on a network its owner controls.
     void registerUser(const QString& username, const QString& password,
                       bool remember = false,
-                      const QString& deviceLabel = QString());
+                      const QString& deviceLabel = QString(),
+                      const QString& invite = QString());
     void login(const QString& username, const QString& password,
                bool remember = false,
                const QString& deviceLabel = QString());

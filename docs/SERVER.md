@@ -60,14 +60,103 @@ the connection. The server prints its current address on every start so you're
 never guessing; a permanent fix is a "static lease"/"address reservation" in
 your router settings.
 
-**4. It's for your home network, not the internet.** This is a development
-server with no hardening. Do **not** expose it to the public internet. The
-whole plan is built so that when you get a Pi, the same code moves over and we
-do internet-facing setup *properly* then.
+**4. On your own network by default — and the flag that changes that.**
+Since v30.2.1 the server binds to **localhost only** unless you say otherwise.
+For a phone on the same Wi-Fi, start it with `--bind any`:
+
+```sh
+ticktimer-server --bind any --port 8080
+```
+
+The old default was "every interface, always", which is right at home and
+exactly wrong on a box with a public address — one forgotten flag stood
+between a hand-rolled HTTP parser and the open internet. Now the risky choice
+is the one you type.
 
 **5. Firewall prompt is normal.** The first time the server opens its port,
 your OS asks "allow this app through the firewall?" — allow it for **private
 networks** only. Expected, not a warning sign.
+
+**Do not put this server directly on the internet.** Not because it is
+hopeless, but because there is a correct way to do it, and it is in the next
+section.
+
+## Putting it on a VPS, properly
+
+The rule: **the reverse proxy is the only thing that talks to TickTimer.**
+Caddy is a hardened, battle-tested web server that terminates TLS, gets you a
+certificate automatically, and absorbs the malformed requests, slow-loris
+attempts and scanner noise that a hand-rolled parser should never have to
+meet. TickTimer stays on `127.0.0.1`, where only the proxy can reach it.
+
+**1. Point a domain at the box** (an A record to its IP). Caddy needs a real
+name to get a certificate.
+
+**2. Install Caddy**, and use this `Caddyfile`:
+
+```
+ticktimer.example.com {
+    # TLS is automatic — Caddy gets and renews a Let's Encrypt certificate
+    # for the name above. Nothing to configure, nothing to remember to renew.
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+`reverse_proxy` sets `X-Forwarded-For` for you, which is what lets the
+server's login brake count real clients instead of counting the proxy as one
+very unlucky user.
+
+**3. Run the server as a service**, bound to localhost, with registration
+gated. `/etc/systemd/system/ticktimer.service`:
+
+```ini
+[Unit]
+Description=TickTimer sync server
+After=network.target
+
+[Service]
+User=ticktimer
+ExecStart=/usr/local/bin/ticktimer-server --data /var/lib/ticktimer \
+          --port 8080 --bind 127.0.0.1 --invite CHANGE-ME
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then `systemctl enable --now ticktimer`.
+
+**4. Firewall to 80 and 443 only.** Nothing should be able to reach 8080 from
+outside; the proxy reaches it over loopback.
+
+**5. Point the app at `https://ticktimer.example.com`** — the Server field on
+the login screen, no port.
+
+### What the hardening actually is
+
+- **`--bind 127.0.0.1`** — the parser only ever sees requests Caddy already
+  validated.
+- **`--invite CODE`** — an open signup endpoint on the internet is the real
+  risk here, more than the parser. With a code set, `/register` refuses
+  before it touches the account store, so a stranger cannot even learn which
+  usernames are taken. Hand the code to a friend; change it whenever.
+- **The login brake** — five failed attempts from one address in five minutes
+  and that address gets `429` for a while, including on a correct password.
+  A successful login forgives earlier misses, so fumbling your own typing
+  never locks you out. Done in the server rather than in Caddy on purpose:
+  stock Caddy has no rate-limit directive (it needs a plugin and a custom
+  build via xcaddy), and making the safe deployment depend on compiling your
+  own web server is how the safe deployment does not happen.
+- **TLS from Caddy** — which the WebAssembly client will require anyway, since
+  a page served over HTTPS cannot call a plain-HTTP backend.
+
+### Still worth knowing
+
+Passwords are salted and stretched (PBKDF2, 200k iterations) and device tokens
+are stored hashed, so `accounts.json` and `devices.json` are not a pile of
+usable credentials. But this is a small hand-written service, so: keep the box
+patched, keep registration gated, and back up `accounts.json`, `devices.json`
+and `planners/` — that folder is everyone's data.
 
 ## The API (what the app says to the server)
 

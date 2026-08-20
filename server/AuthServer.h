@@ -6,7 +6,9 @@
 #include "ShareStore.h"
 
 #include <QHash>
+#include <QVector>
 #include <QObject>
+#include <QHostAddress>
 #include <QTcpServer>
 
 // ---------------------------------------------------------------------------
@@ -42,7 +44,32 @@ public:
     // running is the usual cause). Prints the reachable addresses on success —
     // solving the "what's my laptop's IP?" problem the moment the server
     // starts, so a phone knows where to point.
-    bool start(quint16 port = 8080);
+    //
+    // v30.2.1 — `bindAddress` defaults to LOCALHOST, which is a deliberate
+    // change from the old QHostAddress::Any. This is a hand-rolled HTTP
+    // parser: on a public box it must sit behind a real one (Caddy, nginx)
+    // and see only requests that server already validated. Binding to every
+    // interface by default meant one forgotten flag stood between the parser
+    // and the open internet.
+    //
+    // The cost is real and is paid on purpose: a phone on the same Wi-Fi can
+    // no longer reach a laptop-hosted server until you pass `--bind any`. That
+    // failure is LOUD (the phone cannot connect) and one flag from fixed. The
+    // failure of the old default is silent and not.
+    bool start(quint16 port = 8080,
+               const QHostAddress& bindAddress = QHostAddress::LocalHost);
+
+    // Require an invite code on /register (v30.2.1). Empty means registration
+    // is open, which is right for a laptop on your own LAN and wrong for
+    // anything with a public address — an open signup endpoint on the
+    // internet is a bigger risk than the parser everyone worries about.
+    //
+    // Not a per-account invite, deliberately: one shared code the owner hands
+    // to a friend. Tracking single-use invites would need a store, an expiry
+    // policy and a UI to mint them, for a handful of people who can be told a
+    // word over a message.
+    void setInviteCode(const QString& code) { m_inviteCode = code.trimmed(); }
+    bool registrationIsOpen() const { return m_inviteCode.isEmpty(); }
 
 private slots:
     void onNewConnection();
@@ -53,6 +80,7 @@ private:
         QString method;   // "POST", "GET", "PUT"
         QString path;     // "/login", "/planner"
         QString bearer;   // session token from the Authorization header
+        QString clientId; // who to rate-limit (v30.2.1) — see clientIdFor()
         QByteArray body;  // raw JSON
     };
 
@@ -82,5 +110,37 @@ private:
     // already does on every launch. Persisting tokens would be persisting
     // open doors.
     QHash<QString, QString> m_tokens;
+
+    // ---- v30.2.1: credential-stuffing brake --------------------------------
+    //
+    // Done HERE rather than at the reverse proxy, which is where the plan
+    // first put it, for a practical reason worth writing down: stock Caddy
+    // has no rate-limit directive — it needs a plugin and a custom build via
+    // xcaddy. Making the safe deployment depend on compiling your own web
+    // server is how the safe deployment does not happen. Twenty lines here
+    // work behind any proxy, or none.
+    //
+    // Only FAILURES count. A person legitimately signing in ten times in a
+    // morning must never lock themselves out; someone guessing passwords
+    // produces nothing but failures, which is the signal.
+    bool   throttled(const QString& clientId);
+    void   noteFailure(const QString& clientId);
+    void   clearFailures(const QString& clientId);
+
+    // Who a request is FROM, for throttling purposes.
+    //
+    // Behind a reverse proxy every request arrives from 127.0.0.1, so a
+    // per-peer counter would throttle the whole world as one client — the
+    // first person to fumble a password would lock out everybody. So
+    // X-Forwarded-For is honoured, but ONLY when the peer is loopback (i.e.
+    // the proxy is on this box). Trusting that header from an arbitrary peer
+    // would let anyone forge a fresh identity per attempt and defeat the
+    // brake entirely.
+    static QString clientIdFor(const class QTcpSocket* socket,
+                               const QByteArray& forwardedFor);
+
+    QString m_inviteCode; // empty = registration open
+    // clientId -> the moments of its recent failed attempts.
+    QHash<QString, QVector<qint64>> m_failures;
     QTcpServer   m_server;
 };

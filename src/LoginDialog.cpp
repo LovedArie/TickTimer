@@ -60,6 +60,14 @@ LoginDialog::LoginDialog(const QString& serverUrl, QWidget* parent)
     // app stops being opened. A shared desktop is the case where it should be
     // unticked, which is exactly the case where someone is present to untick
     // it. (See SessionStore.h for what is actually stored, and what is not.)
+    // v30.2.1 — the invite code, for a server started with --invite. Shown
+    // in register mode only (toggleMode hides it), because a server that
+    // asks for one asks only when an account is being CREATED.
+    m_invite = new QLineEdit(this);
+    m_invite->setObjectName("loginInvite");
+    m_invite->setPlaceholderText(tr("Invite code (only if you were given one)"));
+    m_invite->hide();
+
     m_remember = new QCheckBox(tr("Remember this device"), this);
     m_remember->setObjectName("loginRemember");
     m_remember->setChecked(true);
@@ -75,6 +83,7 @@ LoginDialog::LoginDialog(const QString& serverUrl, QWidget* parent)
     layout->addWidget(m_title);
     layout->addWidget(m_username);
     layout->addWidget(m_password);
+    layout->addWidget(m_invite);
     layout->addWidget(m_remember);
     layout->addWidget(m_submit);
     layout->addWidget(m_offlineBtn);
@@ -108,6 +117,8 @@ void LoginDialog::toggleMode()
     m_toggle->setText(m_registerMode
                           ? tr("Already have an account? Log in")
                           : tr("New here? Create an account"));
+    if (m_invite)
+        m_invite->setVisible(m_registerMode);
     m_status->clear();
 }
 
@@ -139,7 +150,8 @@ void LoginDialog::submit()
     // hex string nobody can identify.
     const bool remember = m_remember->isChecked();
     if (m_registerMode)
-        m_client->registerUser(user, pass, remember, session::deviceLabel());
+        m_client->registerUser(user, pass, remember, session::deviceLabel(),
+                               m_invite->text());
     else
         m_client->login(user, pass, remember, session::deviceLabel());
 }
@@ -234,6 +246,18 @@ void LoginDialog::onResult(AuthClient::Outcome outcome,
         }
         m_status->setText(tr("Wrong username or password."));
         return;
+    case AuthClient::Outcome::InviteRequired:
+        m_status->setText(tr("This server needs an invite code to create an "
+                             "account. Ask whoever runs it for one."));
+        m_invite->setFocus();
+        return;
+    case AuthClient::Outcome::TooManyAttempts:
+        // Deliberately NOT "wrong password": the brake may well have caught
+        // a correct one, and telling someone their details are wrong would
+        // have them retyping something that was right all along.
+        m_status->setText(tr("Too many attempts. Wait a few minutes and try "
+                             "again."));
+        return;
     case AuthClient::Outcome::InvalidInput:
         m_status->setText(tr("Please check your details and try again."));
         return;
@@ -270,6 +294,8 @@ void LoginDialog::setBusy(bool busy)
     m_username->setEnabled(!busy);
     m_password->setEnabled(!busy);
     m_server->setEnabled(!busy);
+    if (m_invite)
+        m_invite->setEnabled(!busy);
     if (m_remember)
         m_remember->setEnabled(!busy);
     if (m_offlineBtn)

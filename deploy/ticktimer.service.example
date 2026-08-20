@@ -1,0 +1,41 @@
+# TickTimer sync server as a systemd unit.
+#
+# Copy to /etc/systemd/system/ticktimer.service, edit the paths and the invite
+# code, then:
+#   systemctl daemon-reload
+#   systemctl enable --now ticktimer
+
+[Unit]
+Description=TickTimer sync server
+After=network.target
+
+[Service]
+# A user of its own: this process needs nothing but its own data folder, and
+# an account with no other business on the box is the cheapest blast radius
+# reduction available.
+User=ticktimer
+Group=ticktimer
+
+# --bind 127.0.0.1 is the default, and is stated anyway: this line is the one
+#   somebody will read when they wonder why the port is unreachable, and the
+#   answer should be visible rather than implied.
+# --invite is what keeps /register from being an open signup endpoint on the
+#   internet. Change the code; hand it to whoever should have an account.
+ExecStart=/usr/local/bin/ticktimer-server \
+    --data /var/lib/ticktimer \
+    --port 8080 \
+    --bind 127.0.0.1 \
+    --invite CHANGE-ME
+
+Restart=on-failure
+RestartSec=5
+
+# Ordinary systemd hardening. None of it is exotic; all of it is free.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ticktimer
+
+[Install]
+WantedBy=multi-user.target

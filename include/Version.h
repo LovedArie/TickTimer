@@ -37,8 +37,8 @@
 // down what the check still cannot see, or you will trust it for that too.
 #define TICKTIMER_VERSION_MAJOR  30
 #define TICKTIMER_VERSION_MINOR  2
-#define TICKTIMER_VERSION_PATCH  0
-#define TICKTIMER_VERSION_STRING "30.2.0"
+#define TICKTIMER_VERSION_PATCH  1
+#define TICKTIMER_VERSION_STRING "30.2.1"
 
 #ifndef RC_INVOKED
 

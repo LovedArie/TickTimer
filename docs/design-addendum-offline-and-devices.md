@@ -1,4 +1,4 @@
-# Design Addendum — Offline Start and Remembered Devices (v30.2)
+# Design Addendum — Offline Start, Remembered Devices, and Hardening (v30.2, v30.2.1)
 
 *Phase 1 of the cross-platform program: the app has to survive the server
 being unreachable before it can live on a phone. Companions:
@@ -146,7 +146,7 @@ exists and why remembering is a choice rather than an assumption.
 
 ## F. Tests
 
-Ten new slots, split by what they can prove:
+Thirteen new slots, split by what they can prove:
 
 | Suite | What it pins |
 |---|---|
@@ -157,18 +157,100 @@ That last mapping is a small decision worth naming: `/session` refuses with
 `error: "auth"`, which without a mapping would land in `UnknownServerReply` and
 tell someone to check their server address over a revoked phone.
 
-Six suites, **445 measured** (205 + 22 + 76 + 98 + 25 + 19; was 435).
+The v30.2.1 hardening adds three more, all in `test_login_live` because they
+are HTTP-level facts: the invite gate refuses without the code and accepts
+with it (and never asks for one on *login* — getting that wrong would lock
+everyone out the day the code changed); the brake engages, forgives a success,
+and holds against a correct password once tripped; and the preflight answers
+204 with the method and header lists a browser needs, with a body length that
+agrees with the header. Each of the three runs against its OWN server process,
+because the throttle counter is per client address and every test here arrives
+from 127.0.0.1 — isolating by process is the only way they stay
+order-independent.
+
+Six suites, **448 measured** (205 + 22 + 76 + 98 + 25 + 22; was 435).
 Measured, not remembered.
 
-## G. What this does not do
+## G. Hardening (v30.2.1) — earning past SERVER.md's own warning
 
-- **No hardening.** The server is still the one `docs/SERVER.md` says not to
-  expose. Putting it behind a TLS proxy, rate-limiting `/login`, and closing
-  registration is Phase 2 of the cross-platform plan, and this slice does not
-  pretend to have done it.
+`docs/SERVER.md` said, correctly, *"a development server with no hardening. Do
+not expose it to the public internet."* A VPS is the plan, so that warning had
+to stop being true rather than be ignored. Three changes, in order of how much
+they matter.
+
+**The default bind address is now `127.0.0.1`.** It was `QHostAddress::Any` —
+right for a laptop serving a phone on the same Wi-Fi, and exactly wrong the day
+the same binary runs on a public box. One forgotten flag was the whole distance
+between those two sentences. Now the risky choice is the one somebody types
+(`--bind any`), and the reverse proxy is the only thing that reaches the parser.
+
+The cost is real and paid on purpose: a phone on the same Wi-Fi cannot reach a
+laptop-hosted server until `--bind any`. That failure is **loud** (the phone
+cannot connect) and one flag from fixed; the failure of the old default is
+silent and not.
+
+**Registration can be invite-gated** (`--invite CODE`). An open signup endpoint
+on the internet is the actual risk here — bigger than the parser everyone
+worries about. Checked **before** the account store is touched, so a wrong code
+cannot reveal whether a username was free. One shared code rather than
+per-account invites: tracking single-use invites needs a store, an expiry
+policy and a UI to mint them, for a handful of people who can be told a word.
+
+Registration stays **open by default**, because a closed default makes the
+first account impossible to create. The startup banner warns on the
+**combination** — every interface *and* open registration — rather than on
+either half, because each alone is fine and only together are they an open door.
+
+**A login brake:** five failed attempts from one address in five minutes earns
+`429`, including on a correct password. Only *failures* count and a success
+forgives them, so fumbling your own typing never locks you out.
+
+*Done in the server, not the proxy, which is a change from the plan.* Stock
+Caddy has no rate-limit directive — it needs a plugin and a custom build via
+xcaddy. **Making the safe deployment depend on compiling your own web server is
+how the safe deployment does not happen.** Twenty lines here work behind any
+proxy, or none.
+
+The brake counts per client, and behind a proxy every request arrives from
+`127.0.0.1` — so `X-Forwarded-For` is honoured, but **only from a loopback
+peer**. Trusting that header from an arbitrary peer would let anyone mint a
+fresh identity per attempt and defeat the brake entirely.
+
+**CORS preflight** (`OPTIONS` → 204, with `Allow-Methods` and `Allow-Headers`)
+is answered before anything looks at the path. A browser preflights any request
+carrying `Content-Type: application/json` or an `Authorization` header — which
+is every call this API has — so without it a web client fails *before* its real
+request is sent, and the failure looks like the server being down. Needed by the
+WebAssembly build even served same-origin, because the preflight is triggered by
+the **headers**, not only by the address.
+
+`*` stays safe for `Allow-Origin` here specifically because this API
+authenticates with a bearer header and never a cookie.
+
+**And the gate needed a key.** Gating the server without giving the client a way
+through would have been half a feature, so `AuthClient::registerUser` takes an
+invite code and the login dialog grows a field for it, shown in register mode
+only. Two new outcomes came with it: `InviteRequired`, and `TooManyAttempts` —
+which is deliberately **not** mapped to "wrong username or password", because
+the brake may well have caught a correct one and that advice would have someone
+retyping something that was right all along.
+
+Deployment templates ship as `deploy/Caddyfile.example` and
+`deploy/ticktimer.service.example` rather than as prose to retype, and
+`SERVER.md`'s §4 now describes the hardened deployment instead of forbidding it.
+
+## H. What this does not do
+
+- **No TLS in the server itself**, and none wanted: Caddy terminates it. A
+  hand-rolled parser should not also be a hand-rolled TLS endpoint.
 - **No revoke UI.** `DeviceStore` can list and forget; nothing surfaces that
   yet. The label is stored now precisely so that screen has something readable
   to show when it arrives.
 - **No token expiry.** A device token lives until revoked. Adding an expiry is
   easy later; guessing a duration now, before anyone has lived with it, would
   be inventing a number to look thorough.
+- **The live suite got slower** — 9s to ~41s, because the brake test makes many
+  sequential connections and Windows slows repeated socket reuse within one
+  process. A harness artifact, not a product one: the app makes one login per
+  launch, not twenty. Recorded rather than hidden, and the other five suites
+  still finish in about five seconds.

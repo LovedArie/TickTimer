@@ -1,6 +1,8 @@
 #include "AuthServer.h"
 
 #include <QCoreApplication>
+#include <QHostAddress>
+#include <QStringList>
 #include <QDir>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -20,15 +22,67 @@ int main(int argc, char* argv[])
     QString dataDir = QStandardPaths::writableLocation(
                           QStandardPaths::AppDataLocation)
                       + QStringLiteral("/server");
-    if (argc > 1)
-        dataDir = QString::fromLocal8Bit(argv[1]);
+    quint16     port = 8080;
+    QHostAddress bind = QHostAddress::LocalHost;
+    QString     invite;
 
-    quint16 port = 8080;
-    if (argc > 2)
-        port = static_cast<quint16>(QString::fromLocal8Bit(argv[2]).toUShort());
+    // v30.2.1 — flags, with the two old POSITIONAL arguments still honoured.
+    // Every existing script and every line in SERVER.md keeps working:
+    // anything not starting with "--" fills dataDir then port, in order,
+    // exactly as before.
+    QStringList positional;
+    const QStringList args = QCoreApplication::arguments().mid(1);
+    for (int i = 0; i < args.size(); ++i) {
+        const QString a = args.at(i);
+        const QString next = (i + 1 < args.size()) ? args.at(i + 1) : QString();
+        if (a == QLatin1String("--bind") && !next.isEmpty()) {
+            // "any" is the word for "reachable from other devices", spelled
+            // out rather than left as an IP nobody remembers. This is the
+            // flag a laptop serving a phone on the same Wi-Fi needs.
+            bind = (next.compare(QLatin1String("any"), Qt::CaseInsensitive) == 0)
+                       ? QHostAddress(QHostAddress::Any)
+                       : QHostAddress(next);
+            ++i;
+        } else if (a == QLatin1String("--port") && !next.isEmpty()) {
+            port = static_cast<quint16>(next.toUShort());
+            ++i;
+        } else if (a == QLatin1String("--data") && !next.isEmpty()) {
+            dataDir = next;
+            ++i;
+        } else if (a == QLatin1String("--invite") && !next.isEmpty()) {
+            invite = next;
+            ++i;
+        } else if (a == QLatin1String("--help") || a == QLatin1String("-h")) {
+            QTextStream(stdout)
+                << "ticktimer-server [--data DIR] [--port N] "
+                   "[--bind any|ADDRESS] [--invite CODE]\n\n"
+                   "  --bind    default 127.0.0.1 (this machine only).\n"
+                   "            Pass 'any' to let other devices reach it —\n"
+                   "            correct on your own LAN, wrong on a public\n"
+                   "            box, where a reverse proxy should be the only\n"
+                   "            thing that talks to this.\n"
+                   "  --invite  require this code to create an account.\n"
+                   "            Leave unset only on a network you control.\n\n"
+                   "  DIR and PORT may also be given positionally, as before.\n";
+            return 0;
+        } else if (!a.startsWith(QLatin1String("--"))) {
+            positional << a;
+        }
+    }
+    if (positional.size() > 0)
+        dataDir = positional.at(0);
+    if (positional.size() > 1)
+        port = static_cast<quint16>(positional.at(1).toUShort());
+
+    if (bind.isNull()) {
+        QTextStream(stderr) << "TickTimer server: --bind was not an address "
+                               "this machine understands.\n";
+        return 1;
+    }
 
     AuthServer server(dataDir);
-    if (!server.start(port))
+    server.setInviteCode(invite); // empty = open, and start() says so loudly
+    if (!server.start(port, bind))
         return 1; // couldn't bind the port — message already printed
 
     // A service should ANNOUNCE where its state lives. This line exists
