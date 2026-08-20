@@ -4148,3 +4148,32 @@ on a platform the suites cannot run. Versions ×2 → 30.4.0.
 
 **Next: Phase 5, push** — and it now has a page to live on. Still owed: the VPS
 itself, and a field run that six slices have gone without.
+
+---
+
+## v30.4.1 — the question that found a regression
+
+**"Do I still run Inno?"** — asked while reading the rollout runbook, and the
+answer is yes and unchanged: `deploy-windows.bat` builds the portable folder
+and only CHECKS the .iss version; Inno is the separate step that turns that
+folder into an installer. `ROLLOUT.md` had no Windows stage at all, which is
+what prompted the question, and now has one.
+
+**But looking at the deploy script to answer it turned up a regression this
+session introduced.** The bundle's generated `Start TickTimer server.bat` runs
+`ticktimer-server.exe` with no arguments — and since v30.2.1 that means
+**localhost only**. A portable zip exists precisely so a tester can run it on
+their laptop and reach it from their phone, so the one deployment where
+`--bind any` is unambiguously right was the one silently broken by making it
+the default elsewhere.
+
+Fixed by passing `--bind any` in the generated launcher. The server's own
+banner still warns that an open signup is listening on every interface, which
+is the honest thing to say about a zip somebody runs on their home Wi-Fi.
+
+**The lesson, at the site of the wound:** changing a default changes every
+caller that relied on it, including the ones a build script writes. The
+v30.2.1 work checked the app, the tests and the docs; it did not check the
+file that *generates* a command line.
+
+Versions ×2 → 30.4.1. 448 measured, unchanged.

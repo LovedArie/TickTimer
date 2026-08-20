@@ -192,6 +192,35 @@ Stage 0a bug and not iOS.
 
 ---
 
+## Stage 4b — Windows, if anyone wants it there
+
+None of the phone work replaced the desktop path; it is unchanged and still
+the nicest way to use TickTimer. Two ways to hand it over:
+
+**Portable folder** — no installer, no admin rights:
+
+```
+tools\deploy-windows.bat
+```
+
+Produces `dist\TickTimer\` with the app, the server, the Qt DLLs and two
+double-clickable `.bat` launchers. Zip it and send it. Good for a tester.
+
+**A real installer** — Start Menu entry, uninstaller, the lot:
+
+- [ ] Run `tools\deploy-windows.bat` first. It does **not** build the
+      installer; it builds what the installer packages, and it hard-fails if
+      `include/Version.h` and `installer/ticktimer.iss` disagree about the
+      version.
+- [ ] Open `installer\ticktimer.iss` in **Inno Setup** and click Compile.
+- [ ] The `.exe` lands in `installer\Output\`.
+
+Only worth it when you want a properly installed copy. **Remember the trap
+from the v29.2 field run:** neither the deploy script nor Qt Creator touches
+the installed copy at `%LOCALAPPDATA%\Programs\TickTimer\` — that stays
+whatever you last *installed*, and a Start Menu shortcut opens that one. An
+hour once went into diagnosing "a broken feature" that was a month-old exe.
+
 ## Stage 5 — Friends, later
 
 - [ ] Give them the URL and the invite code. Android people get the APK link;

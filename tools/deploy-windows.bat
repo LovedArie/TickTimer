@@ -205,12 +205,21 @@ echo   Bundling Qt runtime (windeployqt)...
 REM --- Launchers the person actually clicks -------------------------------
 REM Two tiny .bat files with friendly names. The server one leaves its window
 REM open (that window PRINTS THE ADDRESS she needs); the app one just runs.
+REM
+REM --bind any is load-bearing here (v30.4.1). Since v30.2.1 the server binds
+REM LOCALHOST by default, which is the right default for a box on the public
+REM internet and exactly wrong for THIS bundle: a portable zip exists so a
+REM tester can run it on their own laptop and reach it from their own phone.
+REM Without the flag that window prints "NOT reachable" and the phone simply
+REM cannot connect. The server's own banner warns that an open signup is
+REM listening on every interface, which is the honest thing to say about a
+REM zip somebody is running on their home Wi-Fi.
 > "%DIST%\Start TickTimer server.bat" echo @echo off
 >>"%DIST%\Start TickTimer server.bat" echo cd /d "%%~dp0"
 >>"%DIST%\Start TickTimer server.bat" echo echo Leave this window OPEN while you use TickTimer.
 >>"%DIST%\Start TickTimer server.bat" echo echo (It shows the address to type on other devices.)
 >>"%DIST%\Start TickTimer server.bat" echo echo.
->>"%DIST%\Start TickTimer server.bat" echo ticktimer-server.exe
+>>"%DIST%\Start TickTimer server.bat" echo ticktimer-server.exe --bind any
 
 > "%DIST%\TickTimer.bat" echo @echo off
 >>"%DIST%\TickTimer.bat" echo cd /d "%%~dp0"
