@@ -3,12 +3,13 @@
 **Follow this top to bottom. Each step sets up the next.** Tick as you go.
 
 The automated suites cover the logic — six suites green, 402 passing test
-functions, 18 of them new for this slice. (Measured, not remembered: 402 is
-what QTest reports across the six binaries, and it includes each suite's
-synthesized `initTestCase`/`cleanupTestCase` pair. Re-measure before editing
-this line.) They cannot cover the one thing this checklist exists for:
-whether a **real model**, on **your real data**, follows the contract — and
-whether the boundary holds when it doesn't.
+functions, 23 of them new since v29.1 (22 for the verb itself, plus one
+pinning the version seam). (Measured, not remembered: 402 is what QTest
+reports across the six binaries — 181 + 22 + 70 + 95 + 19 + 15 — and it
+includes each suite's synthesized `initTestCase`/`cleanupTestCase` pair.
+Re-measure before editing this line.) They cannot cover the one thing this
+checklist exists for: whether a **real model**, on **your real data**, follows
+the contract — and whether the boundary holds when it doesn't.
 
 > **Read this before you start, it will save you an hour.** When the
 > assistant does something wrong below, the odds are overwhelming that the

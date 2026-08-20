@@ -1,14 +1,10 @@
-# Design Addendum — The Reschedule Verb (v29.2, Slice 3) — DRAFT
+# Design Addendum — The Reschedule Verb (v29.2, Slice 3)
 
 *§N's remaining v29 content: "the confirm loop (§B), intake first (§K), then
 rescheduling." The second write verb, and the first that changes the calendar.
 Companions: `design-addendum-write-boundary.md` (Slice 1, the machine),
 `design-addendum-intake.md` (Slice 2, the model as proposer),
 `design-addendum-catch-up.md` (where `reschedule::` was born).*
-
-**Status: design settled, nothing built yet.** §F decided (`Role::Chat`), §G
-answered (the criterion does not fire, third time). §H names the one domain
-door this slice must add before the verb can honour §B.1.
 
 ---
 
@@ -147,6 +143,11 @@ honestly rather than triumphantly.)*
 The criterion is: **does a dialect need to hold state across calls?**
 The answer here is still no, and conversation does not change it.
 
+That criterion was armed in §B.3 and explicitly re-armed by the write
+boundary's §I, which named *multi-step rescheduling* — this slice — as the case
+where it should genuinely fire. §I asked for the answer either way; this
+section is that answer.
+
 A back-and-forth ("not Thursday — what else have you got?") is carried by
 `ChatSession`'s transcript, which is dialect-neutral and has been multi-turn
 since v25. Each model call stays single-shot: system prompt + transcript +
@@ -166,28 +167,11 @@ construction"; Slice 3 records **"no cross-call state because the conversation
 is the transcript's job, not the dialect's."** Three iterations, three
 non-firings, one unchanged criterion — still armed, and still honest.
 
-## G. §B.3's third recorded answer — provisional
-
-The criterion — *does a dialect need to hold state across calls?* — was armed
-in §B.3 and explicitly re-armed by the write boundary's §I, which named
-"multi-step rescheduling" as the case where it should genuinely fire.
-
-**On the design above, it does not fire, for the third time.** C++ computes the
-option list before the model is consulted; the model selects and phrases in one
-exchange; the confirm loop is the dispatch. No tool-call transcript, no
-cross-call state, so nothing conversational needs threading per provider.
-
-Recorded as provisional because it depends on §F. If the Chat-role reading wins
-and rescheduling becomes a genuine back-and-forth ("not Thursday — what else
-have you got?"), that *is* state across calls, and the criterion fires at last.
-§I asked for the answer either way; this is the answer under option 1 and a
-live question under option 2.
-
-## H. The inverse does not exist yet — verified, and it is the first build task
+## H. The inverse did not exist — verified, and it was the first build task
 
 §B.1's claim that no undo button is needed rests on every verb having an
-inverse. Checked, and the honest answer is that a move's inverse is **not
-available today**, in two separate ways.
+inverse. Checked, and the honest answer is that a move's inverse was **not
+available**, in two separate ways.
 
 **1. Catch-up's "Undo" and "Bring back" invert a *decision*, not a move.**
 Both emit `resolveBlock(id, Unset)`, which reverses Done or Skipped. Applied
@@ -201,6 +185,9 @@ So the inverse needs a real door — `undoReschedule(id)`, removing the
 replacement and clearing the original in one guarded step, symmetric with
 `rescheduleBlock` and using the same `notify` trick so two mutations look like
 one to `changed()`.
+
+That door was built first, before any verb could reach it — `AppData.h:393`,
+`AppData.cpp:510`.
 
 **2. For a Split, the inverse is not expressible at all with today's data.**
 `movedToId` is a *single forward link*, and `rescheduleBlockSplit` points it at

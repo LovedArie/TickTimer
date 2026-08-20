@@ -3576,3 +3576,106 @@ findings become the punch list, per house tradition; then candidate
 slices: the memory file (§L, K.4's other half) or rescheduling (the
 second verb, where overwrite semantics and possibly the Dialect
 criterion get real).
+
+---
+
+## v29.2 — the reschedule verb (Slice 3: the first verb that changes the calendar)
+
+**Shipped, in the addendum's own build order — the inverse first.** §H had
+found that a move's inverse did not exist: catch-up's "Undo" and "Bring back"
+invert a *decision* (`resolveBlock(id, Unset)`), which on a moved block clears
+`outcome`/`movedToId` and leaves the replacement sitting on the calendar — the
+work appearing twice, "a state nobody proposed". So `AppData::undoReschedule`
+was built before any verb could reach it, removing the replacement and clearing
+the original in one guarded step, one `changed()` for two mutations. Then:
+block handles as a second strict namespace (`B1`, never a UUID); `Verb::MoveBlock`
+with `verbsFor(Role::Chat) → { MoveBlock }`; the briefing's `can move to:` lines
+(§C); `scrub::`; the chat-turn wiring; and the read-only claim retired.
+
+**The two fences are the whole safety story.** Only blocks the domain already
+judges missed may move — *a block you might still do is a plan you are living
+inside, and an assistant that may move it is a calendar editor*. And the
+placement must be one `reschedule::propose()` offers **right now**. The model
+selects; it never invents a time. Proposals carry the concrete placement rather
+than an index into the offered list, because an index is a handle with no
+fail-safe property — a list recomputed at the tap would silently rename option
+2, while a placement fails closed. `apply()` re-runs the whole search at the
+tap, and `rescheduleBlock` declines rather than forces, so even the remaining
+race ends in a refusal.
+
+**Three build verdicts worth keeping.** `verbs::World` (clock, missed rule,
+search policy) is **passed, not defaulted** — a default-constructed World would
+give MoveBlock a silently wrong verdict, so every existing caller now says
+explicitly that it consults none; the per-block deadline is derived inside
+validation, because policy comes from the caller and facts come from the
+domain. `scrub::` got its **own file** rather than a home in `AssistantVerbs.h`:
+that header's value is that a diff of it IS the complete security review, and a
+reply parser grants no capability — it can only produce a `Proposal` that
+`validate()` then judges exactly as it judges a C++-composed one. And intake's
+extraction could not be reused, by design: intake is a *mode* where prose would
+be a malfunction, chat is a *conversation* where the proposal rides inside the
+reply.
+
+**Two test tripwires fired and were RE-PINNED, not relaxed.**
+`chatPromptStatesTheReadOnlyContract` and
+`everyPersonaKeepsTheContractAndTheFloors` both asserted "cannot change
+anything". They now pin the *shape* of the permission — one proposable change,
+everything else refused, nothing without the tap, no persona able to widen any
+of it. A test that stopped naming the boundary would stop guarding it.
+
+**§B.3's third recorded non-firing.** Slice 1: no cross-call state because C++
+composes the proposals. Slice 2: because extraction is one exchange by
+construction. Slice 3: **because the conversation is `ChatSession`'s
+transcript's job, not the dialect's.** §F was decided (`Role::Chat`) and the
+criterion still did not fire — recorded honestly rather than triumphantly, and
+still armed. What *would* fire it is native `tool_use` blocks, declined because
+a local Ollama seat has no tool support and this verb must not become a
+premium-seat feature.
+
+**The version incident — the expensive lesson of the slice.** The verb shipped
+in seven commits and the version never moved, so the app called itself 29.1.0
+through an entire manual QA pass. That is not bookkeeping: the QA run opened a
+month-old *installed* binary (`%LOCALAPPDATA%\Programs\TickTimer` — what a Start
+Menu shortcut opens; neither `deploy-windows.bat` nor Qt Creator touches it),
+saw a briefing with no block handles and no "can move to" line, and it read
+exactly like a broken feature. Both builds reported the same ProductVersion, so
+*Help → About* could not tell them apart, and diagnosing it meant diffing UTF-16
+strings out of the two exes. Fixed twice over: the bump itself, then
+`installerVersionMatchesTheHeader()` in the **domain** suite — not at CMake
+configure time, because the failure mode is an ordinary incremental build where
+nobody reconfigures. `deploy-windows.bat`'s comparison catches a *half* bump but
+is silent about *no* bump, since two files agreeing on a stale number is exactly
+what it asserts. Cost of writing that test, now in TROUBLESHOOTING: **moc's
+simplified preprocessor mis-lexes raw string literals**, aborts before writing
+the `.moc`, and the compiler then blames the missing include four thousand lines
+away — and the aborted run still refreshes AUTOMOC's timestamp, so every later
+build skips the work and the error appears unfixable.
+
+**The field run: all 22 steps passed on a live Groq route**, including the two
+that matter — the stale card and the invented time. Three fixes it earned, all
+in the checklist rather than the code: the installed-copy trap above (the check
+offered is step 7's handles, not About); "seeing the block on both days is the
+design, not a duplicate" stated up front, because two rows read cold look like a
+bug and the first person through reported it as one; and the header counts now
+name their convention and say to re-measure.
+
+**Close-out:** six suites, **402 measured** (181 + 22 + 70 + 95 + 19 + 15; was
+379 — 23 new, 22 for the verb plus the version-seam pin). Format v13, unchanged
+— this slice added no persisted fields. Versions ×2 → 29.2.0, and now pinned by
+a test. Question bank unchanged at V290.
+
+**Record close-out (following session).** The addendum shipped still marked
+DRAFT, still saying "nothing built yet", and carrying **two `## G.` sections** —
+the revised one and the provisional one it was written to replace. De-DRAFTed to
+the house form (the title carries the marker; shipped addenda have no status
+paragraph), the survivor absorbed the one fact only the provisional copy held
+(§I re-armed the criterion and named multi-step rescheduling as its case), §H's
+tense corrected with the built door recorded, and the file finally **indexed in
+`design-doc.md` §3** — it had been missing. The checklist's derived count was
+also wrong (18 claimed, 23 measured); it had drifted from birth, where it read
+"379 green, 24 of them new", which was self-contradictory.
+
+**Next session: candidate slices** — the memory file (§L, K.4's other half), or
+§H.2's `movedFromId` back-link, the additive format-v14 bump that would give
+split pieces an expressible inverse and let `Kind::Split` inside the fence. The
+latter is a domain change and gets its own addendum, as this one records.
