@@ -32,6 +32,7 @@
 #include <QDate>
 #include <QDateTime>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 // The planning grid is a DOMAIN rule (design-doc §3.1), not a UI detail:
@@ -143,17 +144,28 @@ struct Event
     // judgement is derived and the decision is stored.
     BlockOutcome outcome = BlockOutcome::Unset;
 
-    // Set only when outcome == Moved: the block this one turned into.
+    // Set only when outcome == Moved: the blocks this one turned into, in
+    // the order they were created. A plain move has one; a SPLIT has several.
     //
-    // ONE DIRECTION, deliberately. The obvious symmetric design stores a
-    // movedFromId on the new block too, and the obvious problem with it is
-    // that two pointers can disagree — a half-applied edit leaves a chain
-    // that says different things depending on which end you read. The
-    // reverse question ("was this block rescheduled from somewhere?") is a
-    // linear scan over events, which is trivially cheap and cannot drift.
-    // Derive the reverse, store the forward. (The repeat chain makes the
-    // same call: the rule lives on exactly one link.)
-    QString movedToId;
+    // ONE DIRECTION, still. The obvious symmetric design stores a movedFromId
+    // on each new block, and the obvious problem with it is that two pointers
+    // can disagree — a half-applied edit leaves a chain that says different
+    // things depending on which end you read. The reverse question ("was this
+    // block rescheduled from somewhere?") is a linear scan over events, which
+    // is trivially cheap and cannot drift. Derive the reverse, store the
+    // forward. (The repeat chain makes the same call: the rule lives on
+    // exactly one link.)
+    //
+    // v29.3 corrected the CARDINALITY, not the direction — and the difference
+    // is the whole lesson. This was a lone QString, so a split could only
+    // record its FIRST piece and the siblings were linked at neither end;
+    // nothing could answer "which pieces belong to this move?", which is why
+    // a split had no inverse. That reads like an argument for the back-link,
+    // and it isn't: a list keeps exactly one record owning the move, so there
+    // is still nothing to disagree with. The back-link was rejected twice for
+    // the same reason, and the second time it was rejected on stronger
+    // evidence.
+    QStringList movedToIds;
 
     qint64 plannedSeconds() const
     {

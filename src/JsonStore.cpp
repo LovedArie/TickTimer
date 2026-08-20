@@ -256,7 +256,18 @@ static QJsonObject toJson(const Event& e)
         // what a pre-v11 file's MISSING key reads back as — so the format
         // grows without a migration branch, the fourth time running.
         {"outcome",      blockOutcomeToString(e.outcome)},
-        {"movedToId",    e.movedToId},
+        // v14: EVERY replacement, in creation order — a plain move has one,
+        // a split has several. `movedToId` stays beside it as a COMPATIBILITY
+        // MIRROR of the first element, so a v13 build reads exactly what it
+        // always read.
+        //
+        // A mirror is safe HERE and would not be safe in memory. One door
+        // writes both in the same instant and the loader below always prefers
+        // the list, so no reader ever has to choose between two live
+        // opinions. Event.h keeps a single field for the same reason in
+        // reverse: nothing in the domain should be able to hold two.
+        {"movedToIds",   QJsonArray::fromStringList(e.movedToIds)},
+        {"movedToId",    e.movedToIds.value(0)},
         {"title",        e.title},    // v6: …or just this label (ad-hoc)
         {"note",         e.note},
         {"segments",     segments},
@@ -286,7 +297,21 @@ static Event eventFromJson(const QJsonObject& o)
     // tolerated here and ignored by readers, exactly like a dangling
     // activityId: the loader repairs shape, not referential integrity.
     e.outcome             = blockOutcomeFromString(o["outcome"].toString());
-    e.movedToId           = o["movedToId"].toString();
+    // v14: prefer the list. A pre-v14 file carries only the single key, and
+    // wrapping it reproduces exactly the old behaviour — one replacement, or
+    // none at all when the key is absent and reads back as "". Additive
+    // growth, tolerant read, no migration branch: the sixth time now.
+    if (o.contains("movedToIds")) {
+        for (const QJsonValue& v : o["movedToIds"].toArray()) {
+            const QString replacementId = v.toString();
+            if (!replacementId.isEmpty())
+                e.movedToIds.append(replacementId);
+        }
+    } else {
+        const QString replacementId = o["movedToId"].toString();
+        if (!replacementId.isEmpty())
+            e.movedToIds.append(replacementId);
+    }
     e.title               = o["title"].toString();
     e.note                = o["note"].toString();
     for (const QJsonValue& v : o["segments"].toArray())
@@ -539,7 +564,9 @@ QJsonObject JsonStore::toJsonObject(const AppData& data)
         // additive (old files still load — see the loader), but bumping
         // costs nothing and lets any future reader that must care tell
         // the files apart.
-        {"version",     13}, // v13: + Task.parentId / estimateMinutes /
+        {"version",     14}, // v14: + Event.movedToIds (the split's inverse —
+                             //      movedToId stays as its compat mirror);
+                             //      v13: + Task.parentId / estimateMinutes /
                              //      chunkable (subtasks §I + sizing §J.1 —
                              //      the v27 re-land, finally). v12: + moods
                              //      (check-in §G.2); v11: + Event.outcome /

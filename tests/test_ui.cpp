@@ -2607,8 +2607,8 @@ private slots:
         const Event* old = data.eventById(id);
         QVERIFY(old);
         QCOMPARE(old->outcome, BlockOutcome::Moved);
-        QVERIFY(!old->movedToId.isEmpty());
-        QVERIFY(data.eventById(old->movedToId) != nullptr);
+        QVERIFY(!old->movedToIds.isEmpty());
+        QVERIFY(data.eventById(old->movedToIds.value(0)) != nullptr);
 
         // Moved blocks are excluded from BOTH derived sets, so the chip has
         // nothing left to say: the card hides entirely.

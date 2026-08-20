@@ -2486,8 +2486,8 @@ private slots:
         const Event* old = data.eventById(id);
         QVERIFY(old);
         QCOMPARE(old->outcome, BlockOutcome::Moved);
-        QVERIFY(!old->movedToId.isEmpty());
-        const Event* fresh = data.eventById(old->movedToId);
+        QVERIFY(!old->movedToIds.isEmpty());
+        const Event* fresh = data.eventById(old->movedToIds.value(0));
         QVERIFY(fresh);
         QCOMPARE(fresh->date, p.newDate);
         QCOMPARE(fresh->plannedStartMinutes, p.newStartMinutes);
@@ -3401,7 +3401,7 @@ private slots:
         QCOMPARE(fresh->outcome, BlockOutcome::Unset);
 
         QCOMPARE(old->outcome, BlockOutcome::Moved);
-        QCOMPARE(old->movedToId, newId);
+        QCOMPARE(old->movedToIds, QStringList{ newId });
         QCOMPARE(old->segments.size(), 1);         // the old day keeps its 10 min
     }
 
@@ -3428,7 +3428,7 @@ private slots:
         const Event* old = data.eventById(oldId);
         QVERIFY(old);
         QCOMPARE(old->outcome, BlockOutcome::Unset);   // unresolved again
-        QVERIFY(old->movedToId.isEmpty());             // no dangling link
+        QVERIFY(old->movedToIds.isEmpty());             // no dangling link
         QCOMPARE(old->segments.size(), 1);             // its own time survives
     }
 
@@ -3454,7 +3454,7 @@ private slots:
         QVERIFY(data.eventById(newId));
         QCOMPARE(data.eventById(newId)->segments.size(), 1);
         QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Moved);
-        QCOMPARE(data.eventById(oldId)->movedToId, newId);
+        QCOMPARE(data.eventById(oldId)->movedToIds, QStringList{ newId });
     }
 
     // This door reverses a MOVE and only a move; resolveBlock already
@@ -3474,7 +3474,7 @@ private slots:
         QVERIFY(!data.undoReschedule("no-such-id"));   // and no such block
     }
 
-    // A movedToId whose target is already gone is a LIE, not an error: the
+    // A link whose target is already gone is a LIE, not an error: the
     // block reads Moved while nothing was moved. Clearing it is a repair, so
     // this succeeds rather than refusing.
     void undoRescheduleRepairsADanglingLink()
@@ -3490,7 +3490,7 @@ private slots:
 
         QVERIFY(data.undoReschedule(oldId));
         QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Unset);
-        QVERIFY(data.eventById(oldId)->movedToId.isEmpty());
+        QVERIFY(data.eventById(oldId)->movedToIds.isEmpty());
     }
 
     // Both halves must look like one change. A listener that sees the middle
@@ -3527,7 +3527,7 @@ private slots:
     }
 
     // Moved is earned, not asserted: allowing it here would permit an
-    // outcome of Moved with a movedToId pointing at nothing.
+    // outcome of Moved pointing at nothing.
     void resolveBlockRefusesToFakeAMove()
     {
         AppData data;
@@ -3568,7 +3568,7 @@ private slots:
         const Event* old = loaded.eventById(oldId);
         QVERIFY(old);
         QCOMPARE(old->outcome, BlockOutcome::Moved);
-        QCOMPARE(old->movedToId, newId);
+        QCOMPARE(old->movedToIds, QStringList{ newId });
         QCOMPARE(loaded.eventById(newId)->outcome, BlockOutcome::Unset);
     }
 
@@ -3595,8 +3595,9 @@ private slots:
             QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Unset);
         }
 
-        // A legal split: two pieces, source Moved, forward pointer at the
-        // FIRST piece (one link by design — §H).
+        // A legal split: two pieces, source Moved, and the forward link
+        // naming EVERY piece in creation order (v29.3 — the single link is
+        // what made a split uninvertible).
         QVector<AppData::BlockSpan> good{
             {QDate(2026, 7, 21), 9 * 60, 10 * 60},
             {QDate(2026, 7, 22), 9 * 60, 9 * 60 + 30},
@@ -3605,8 +3606,186 @@ private slots:
         QVERIFY(!firstId.isEmpty());
         QCOMPARE(data.events().size(), 3);
         QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Moved);
-        QCOMPARE(data.eventById(oldId)->movedToId, firstId);
+        QCOMPARE(data.eventById(oldId)->movedToIds.size(), 2);
+        QCOMPARE(data.eventById(oldId)->movedToIds.value(0), firstId);
         QCOMPARE(data.eventById(firstId)->date, QDate(2026, 7, 21));
+        // The second piece is reachable from the original — the whole point.
+        const QString secondId = data.eventById(oldId)->movedToIds.value(1);
+        QVERIFY(data.eventById(secondId));
+        QCOMPARE(data.eventById(secondId)->date, QDate(2026, 7, 22));
+    }
+
+    // ---- v29.3: the split's inverse ---------------------------------------
+    //
+    // The gap this closes: before movedToIds, undoing a split deleted the
+    // FIRST piece and orphaned the rest, because nothing could name them.
+
+    void splitIsUndoneWholeOrNotAtAll()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60 + 30, act, "");
+
+        QVector<AppData::BlockSpan> spans{
+            {QDate(2026, 7, 21), 9 * 60, 10 * 60},
+            {QDate(2026, 7, 22), 9 * 60, 9 * 60 + 30},
+            {QDate(2026, 7, 23), 14 * 60, 14 * 60 + 30},
+        };
+        QVERIFY(!data.rescheduleBlockSplit(oldId, spans).isEmpty());
+        const QStringList pieces = data.eventById(oldId)->movedToIds;
+        QCOMPARE(pieces.size(), 3);
+        QCOMPARE(data.events().size(), 4);
+
+        QVERIFY(data.undoReschedule(oldId));
+
+        // Every piece gone, not just the first one the old link could name.
+        for (const QString& pieceId : pieces)
+            QVERIFY(!data.eventById(pieceId));
+        QCOMPARE(data.events().size(), 1);
+        QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Unset);
+        QVERIFY(data.eventById(oldId)->movedToIds.isEmpty());
+    }
+
+    // One piece holding real time refuses the WHOLE move. The piece chosen
+    // here is deliberately not the first: under the single link that block
+    // could not even be asked, so this is the case the old design could not
+    // have failed correctly.
+    void splitUndoRefusesWhenAnyPieceHasTrackedTime()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60 + 30, act, "");
+
+        QVector<AppData::BlockSpan> spans{
+            {QDate(2026, 7, 21), 9 * 60, 10 * 60},
+            {QDate(2026, 7, 22), 9 * 60, 9 * 60 + 30},
+        };
+        QVERIFY(!data.rescheduleBlockSplit(oldId, spans).isEmpty());
+        const QStringList pieces = data.eventById(oldId)->movedToIds;
+        data.appendSegment(pieces.value(1), makeSegment(
+            SegmentKind::Focus, QDateTime(QDate(2026, 7, 22), QTime(9, 0)), 25));
+
+        QVERIFY(!data.undoReschedule(oldId));
+
+        // Refused means NOTHING moved — the untouched first piece survives too.
+        QVERIFY(data.eventById(pieces.value(0)));
+        QVERIFY(data.eventById(pieces.value(1)));
+        QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Moved);
+        QCOMPARE(data.eventById(oldId)->movedToIds, pieces);
+    }
+
+    // Same repair as the single link, piece by piece: a hand-deleted piece is
+    // a gap in the record, not a reason to strand the ones still standing.
+    void splitUndoRepairsAPartiallyDeletedSplit()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60 + 30, act, "");
+
+        QVector<AppData::BlockSpan> spans{
+            {QDate(2026, 7, 21), 9 * 60, 10 * 60},
+            {QDate(2026, 7, 22), 9 * 60, 9 * 60 + 30},
+        };
+        QVERIFY(!data.rescheduleBlockSplit(oldId, spans).isEmpty());
+        const QStringList pieces = data.eventById(oldId)->movedToIds;
+        data.removeEvent(pieces.value(0));             // by hand, behind its back
+
+        QVERIFY(data.undoReschedule(oldId));
+        QVERIFY(!data.eventById(pieces.value(1)));     // the survivor went too
+        QCOMPARE(data.events().size(), 1);
+        QCOMPARE(data.eventById(oldId)->outcome, BlockOutcome::Unset);
+        QVERIFY(data.eventById(oldId)->movedToIds.isEmpty());
+    }
+
+    // Undoing a three-piece split is four mutations; a listener must see one.
+    void splitUndoEmitsExactlyOneChange()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60 + 30, act, "");
+
+        QVector<AppData::BlockSpan> spans{
+            {QDate(2026, 7, 21), 9 * 60, 10 * 60},
+            {QDate(2026, 7, 22), 9 * 60, 9 * 60 + 30},
+            {QDate(2026, 7, 23), 14 * 60, 14 * 60 + 30},
+        };
+        QVERIFY(!data.rescheduleBlockSplit(oldId, spans).isEmpty());
+
+        QSignalSpy spy(&data, &AppData::changed);
+        QVERIFY(data.undoReschedule(oldId));
+        QCOMPARE(spy.count(), 1);
+    }
+
+    // Every piece survives the file, in order.
+    void splitRoundTripsEveryReplacementThroughV14()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("data.json");
+
+        QString oldId;
+        QStringList pieces;
+        {
+            AppData data;
+            const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+            const QString act = data.addActivity("Study", cat);
+            oldId = data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60 + 30,
+                                  act, "");
+            QVector<AppData::BlockSpan> spans{
+                {QDate(2026, 7, 21), 9 * 60, 10 * 60},
+                {QDate(2026, 7, 22), 9 * 60, 9 * 60 + 30},
+            };
+            QVERIFY(!data.rescheduleBlockSplit(oldId, spans).isEmpty());
+            pieces = data.eventById(oldId)->movedToIds;
+            QVERIFY(JsonStore(path).save(data));
+        }
+
+        AppData loaded;
+        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(loaded.eventById(oldId)->movedToIds, pieces);
+        QVERIFY(loaded.undoReschedule(oldId));         // and it still inverts
+        QCOMPARE(loaded.events().size(), 1);
+    }
+
+    // A v13 file has movedToId and no list. Wrapping the single key
+    // reproduces exactly the old behaviour — the additive-read rule, which is
+    // what lets a format grow with no migration branch.
+    void aPreV14FileStillNamesItsOneReplacement()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString oldId =
+            data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
+        const QString newId =
+            data.rescheduleBlock(oldId, QDate(2026, 7, 21), 9 * 60, 10 * 60);
+
+        // Age the document by hand: drop the v14 key, keep the v13 one.
+        QJsonObject root = JsonStore::toJsonObject(data);
+        QJsonArray events = root["events"].toArray();
+        for (int i = 0; i < events.size(); ++i) {
+            QJsonObject e = events.at(i).toObject();
+            if (e["id"].toString() == oldId) {
+                QCOMPARE(e["movedToId"].toString(), newId); // the mirror
+                e.remove("movedToIds");
+                events.replace(i, e);
+            }
+        }
+        root["events"] = events;
+        root["version"] = 13;
+
+        AppData back;
+        QVERIFY(JsonStore::applyJsonObject(back, root, false));
+        QCOMPARE(back.eventById(oldId)->movedToIds, QStringList{ newId });
+        QVERIFY(back.undoReschedule(oldId));           // inverts as it always did
     }
 
     // The bulk door: one decision, one changed(), stale ids skipped.
@@ -4025,8 +4204,9 @@ private slots:
         // literal. v28.3.0 bumped the format to 13 (subtasks) and missed
         // this line — the suite's first real run caught it, which is the
         // tripwire working, one drop late. Moods still round-trip below
-        // regardless of the number; the number is its own test.
-        QCOMPARE(root["version"].toInt(), 13);
+        // regardless of the number; the number is its own test. v29.3 -> 14
+        // (Event.movedToIds), bumped in the same drop this time.
+        QCOMPARE(root["version"].toInt(), 14);
 
         AppData back;
         QVERIFY(JsonStore::applyJsonObject(back, root, false));

@@ -366,7 +366,7 @@ QString AppData::appendGuardedEvent(QDate date, int startMin, int endMin,
 bool AppData::resolveBlock(const QString& id, BlockOutcome outcome)
 {
     // Moved is earned, not asserted — see the header. Without this guard a
-    // caller could leave outcome == Moved with an empty movedToId, and every
+    // caller could leave outcome == Moved with an empty link, and every
     // reader downstream would have to defend against a chain link that goes
     // nowhere.
     if (outcome == BlockOutcome::Moved)
@@ -380,7 +380,7 @@ bool AppData::resolveBlock(const QString& id, BlockOutcome outcome)
     // Clearing the link is part of the same decision: re-deciding a block
     // that HAD been moved (say, back to Dropped) must not leave a dangling
     // pointer to the replacement.
-    e->movedToId.clear();
+    e->movedToIds.clear();
 
     notifyChanged();
     return true;
@@ -397,7 +397,7 @@ int AppData::resolveBlocks(const QStringList& ids, BlockOutcome outcome)
         if (!e || e->outcome == outcome)
             continue; // unknown or already there: skip, don't sink the batch
         e->outcome = outcome;
-        e->movedToId.clear();
+        e->movedToIds.clear();
         ++changedCount;
     }
 
@@ -441,7 +441,7 @@ QString AppData::rescheduleBlock(const QString& id, QDate newDate,
     // Re-lookup, for the reallocation reason above.
     if (Event* old = mutableEventById(id)) {
         old->outcome   = BlockOutcome::Moved;
-        old->movedToId = newId;
+        old->movedToIds = { newId };
     }
 
     notifyChanged(); // exactly one, for both halves
@@ -478,7 +478,8 @@ QString AppData::rescheduleBlockSplit(const QString& id,
     const QString title      = src->title;
     const QString note       = src->note;
 
-    QString firstId;
+    QStringList pieceIds;
+    pieceIds.reserve(spans.size());
     for (const BlockSpan& span : spans) {
         const QString pieceId =
             appendGuardedEvent(span.date, span.startMin, span.endMin,
@@ -494,17 +495,19 @@ QString AppData::rescheduleBlockSplit(const QString& id,
             return {};
         if (Event* fresh = mutableEventById(pieceId))
             fresh->note = note;
-        if (firstId.isEmpty())
-            firstId = pieceId;
+        pieceIds.append(pieceId);
     }
 
     if (Event* old = mutableEventById(id)) {
-        old->outcome   = BlockOutcome::Moved;
-        old->movedToId = firstId;
+        old->outcome    = BlockOutcome::Moved;
+        // EVERY piece, not just the first (v29.3). The old single link is
+        // what made a split uninvertible: siblings it never named could not
+        // be found, so undoReschedule would have orphaned them.
+        old->movedToIds = pieceIds;
     }
 
     notifyChanged(); // one, for the whole split
-    return firstId;
+    return pieceIds.first();
 }
 
 bool AppData::undoReschedule(const QString& id)
@@ -519,33 +522,44 @@ bool AppData::undoReschedule(const QString& id)
     if (old->outcome != BlockOutcome::Moved)
         return false;
 
-    const QString replacementId = old->movedToId;
+    // Copy the links out before anything mutates: removeEvent below can
+    // reallocate m_events and invalidate `old`, the same hazard the two
+    // reschedule doors take copies for.
+    const QStringList replacementIds = old->movedToIds;
 
-    // Take the decision about the replacement BEFORE mutating anything, so a
-    // refusal leaves the world exactly as it found it.
-    if (const Event* replacement = eventById(replacementId)) {
+    // Decide about EVERY replacement before touching any of them, so a
+    // refusal leaves the world exactly as it found it. All-or-nothing, the
+    // same doctrine rescheduleBlockSplit applies on the way out: a split
+    // half-undone is a state nobody proposed.
+    for (const QString& replacementId : replacementIds) {
+        const Event* replacement = eventById(replacementId);
+        if (!replacement)
+            continue; // already gone by hand — a repair, not a refusal
         // The one refusal that protects a fact rather than a pointer. The
         // replacement's segments are time actually sat through — never
         // copied from the original (rescheduleBlock is explicit about that),
         // so they exist nowhere else. Undoing would erase them to tidy a
         // link, which trades a fact for a pointer. An undo is safe only
-        // while the replacement is untouched.
+        // while every piece is untouched — ONE piece holding real time is
+        // enough to refuse the whole move, and before v29.3 a piece after
+        // the first could not even be asked.
         if (!replacement->segments.isEmpty())
             return false;
     }
 
-    // Both halves under one Batch: a listener must never observe the window
-    // where the replacement is gone but the original still reads Moved, nor
+    // Every half under one Batch: a listener must never observe the window
+    // where a replacement is gone but the original still reads Moved, nor
     // the reverse. Same atomicity rescheduleBlock buys with `notify`.
     Batch batch(*this);
 
-    if (!replacementId.isEmpty())
-        removeEvent(replacementId); // no-op if already gone — see the repair
-                                    // case in the header
+    for (const QString& replacementId : replacementIds)
+        if (!replacementId.isEmpty())
+            removeEvent(replacementId); // no-op if already gone — see the
+                                        // repair case in the header
     if (Event* target = mutableEventById(id)) {
         target->outcome = BlockOutcome::Unset;
-        target->movedToId.clear();
-        notifyChanged(); // withheld by the Batch; coalesced with the remove
+        target->movedToIds.clear();
+        notifyChanged(); // withheld by the Batch; coalesced with the removes
     }
     return true;
 }

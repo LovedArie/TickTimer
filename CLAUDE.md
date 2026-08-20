@@ -116,7 +116,7 @@ that tests already pin — never a second implementation of them.
 - **`test_domain` / `test_taskmodel` / `test_nlp` link without Qt Widgets.**
   That is the architecture test nobody wrote: the day a domain file includes a
   widget header, those targets stop building. Don't "fix" it by linking Widgets.
-- **JSON persistence grows additively only** (format v13, `src/JsonStore.cpp`).
+- **JSON persistence grows additively only** (format v14, `src/JsonStore.cpp`).
   A missing key or an unknown enum string must read as a safe default, so old
   files load with no migration branch. Never repurpose a key.
 - **Version lives in `include/Version.h` and must be bumped there *and* in

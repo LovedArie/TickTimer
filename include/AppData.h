@@ -314,7 +314,7 @@ public:
     // state you can simply assert — it is only true if a replacement block
     // actually exists, and the only thing that can produce one is
     // rescheduleBlock below. Letting a caller set Moved by hand would allow
-    // a movedToId pointing at nothing, which is exactly the class of lie the
+    // a Moved block pointing at nothing, which is exactly the class of lie the
     // aggregate root exists to prevent.
     bool    resolveBlock(const QString& id, BlockOutcome outcome);
 
@@ -342,10 +342,9 @@ public:
     // several smaller ones. All-or-nothing — every span is validated (free
     // on its day, and not colliding with its sibling spans) BEFORE anything
     // is appended, because a half-applied split leaves the calendar in a
-    // state nobody proposed. movedToId points at the FIRST piece: the
-    // forward pointer is one link by design (§H of the addendum), and the
-    // remaining pieces are found the same way every reverse question is —
-    // by scanning, which cannot drift.
+    // state nobody proposed. movedToIds names EVERY piece, in creation
+    // order, which is what makes the split invertible (v29.3); returns the
+    // first piece's id, as it always did.
     struct BlockSpan
     {
         QDate date;
@@ -374,22 +373,27 @@ public:
     //     never copies segments ("the time you already spent belongs to the
     //     day you spent it"), so the replacement's segments are time you
     //     really sat through. Deleting them to tidy a link would destroy a
-    //     fact to fix a pointer. An undo is only safe while the replacement
-    //     is untouched, and after that the honest answer is no.
-    // A DANGLING movedToId (replacement already deleted by hand) is not a
-    // refusal but a repair: the original's Moved state is a lie once its
-    // target is gone, so it is cleared and true returned.
+    //     fact to fix a pointer. An undo is only safe while EVERY piece is
+    //     untouched — one piece holding real time refuses the whole move,
+    //     the same all-or-nothing doctrine rescheduleBlockSplit applies on
+    //     the way out.
+    // A DANGLING link (replacement already deleted by hand) is not a refusal
+    // but a repair: the original's Moved state is a lie once its target is
+    // gone, so it is cleared and true returned. A split where SOME pieces
+    // were deleted by hand is the same case, piece by piece.
     //
-    // SCOPE, stated because the gap is real and undetectable from here: this
-    // is the inverse of rescheduleBlock, NOT of rescheduleBlockSplit. A split
-    // sets movedToId to its FIRST piece only, and the siblings carry no back-
-    // link, so undoing one would delete that piece and orphan the rest. This
-    // door cannot tell the two apart — duration does not separate them, since
-    // a legitimate Kind::Shorten replacement is also shorter than its
-    // original. The MoveBlock verb is fenced to single-replacement kinds
-    // (addendum §I) precisely so its promise holds; a future caller that can
-    // reach split moves needs the movedFromId back-link first (§H.2), not a
-    // guess here.
+    // SCOPE (v29.3): this is now the inverse of BOTH reschedule doors. It
+    // stopped needing to tell them apart the moment movedToIds could name
+    // every replacement — the old single link is what made a split
+    // uninvertible, because the siblings it never named could not be found
+    // at either end.
+    //
+    // Note what did NOT change to buy that: the link still points one way.
+    // The defect was the CARDINALITY, not the direction, and Event.h records
+    // why the movedFromId back-link this comment used to call for stayed
+    // rejected. The MoveBlock verb's fence (reschedule-verb addendum §I) is
+    // NOT lifted here either — this removes the reason §I cited, and opening
+    // the verb is a separate act with its own review.
     bool undoReschedule(const QString& id);
 
     // v19.10: advance every repeating block whose date has passed — the

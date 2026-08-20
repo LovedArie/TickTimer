@@ -211,6 +211,14 @@ Two ways out, and the choice belongs in review:
 The draft recommends the fence now and the back-link later, but records both
 because deciding this by default would decide it wrongly.
 
+> **Answered in v29.3** — `design-addendum-split-inverse.md`. The fence was
+> taken now and the data change came next, as recommended; the *shape* of that
+> change is not the one sketched above. The back-link was rejected (again — and
+> `Event.h` had rejected it once already), because the defect turned out to be
+> the link's **cardinality**, not its direction: `movedToId` became
+> `movedToIds`, so one record still owns the move. The v14 bump happened; the
+> §I fence has **not** been lifted.
+
 ## I. Scope fence
 
 In scope: `Kind::FreeSlot`, `Kind::Shorten`, and `Kind::BeyondDeadline` — the
