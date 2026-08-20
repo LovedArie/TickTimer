@@ -6,6 +6,7 @@
 #include "MissedBlocks.h" // missed::Rule — the catch-up page edits one
 #include "Prefs.h"
 #include "Widgets.h"     // timeLabel
+#include "MemoryStore.h" // the sidecar this page edits (§L)
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -13,16 +14,19 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
 #include <QSpinBox>
 #include <QTimeEdit>
+#include <QVBoxLayout>
 
 // std::max, used once for the fallback combo's index. Named explicitly
 // rather than relying on it arriving through a Qt header — "include what you
 // use" is the rule that stops a build breaking when an unrelated header
 // tidies its own includes.
 #include <algorithm>
+#include <limits>
 
 namespace
 {
@@ -685,4 +689,171 @@ void AssistantSettingsPage::save()
     if (!second.isEmpty() && second != primary)
         route.append(second);
     settings.setValue(ai::settingsKeyRoute(ai::Feature::Chat), route);
+}
+
+// ---------------------------------------------------------------------------
+// MemorySettingsPage (v30.0)
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+// One entry per line, both ways. Blank lines are dropped rather than stored
+// as empty entries — an empty bullet in the file would render as "- " and
+// read to a model as a fact it failed to receive.
+QStringList linesToEntries(const QPlainTextEdit* edit)
+{
+    QStringList out;
+    const QStringList lines =
+        edit->toPlainText().split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        const QString trimmed = line.trimmed();
+        if (!trimmed.isEmpty())
+            out.append(trimmed);
+    }
+    return out;
+}
+
+QPlainTextEdit* sectionEditor(QWidget* parent, const QString& objectName,
+                              const QStringList& entries)
+{
+    auto* edit = new QPlainTextEdit(parent);
+    edit->setObjectName(objectName);
+    edit->setPlainText(entries.join(QLatin1Char('\n')));
+    // Four boxes on one page: each stays small enough that all four are
+    // visible together, which is what makes the whole file readable at once.
+    edit->setFixedHeight(84);
+    return edit;
+}
+
+} // namespace
+
+MemorySettingsPage::MemorySettingsPage(QString filePath, QWidget* parent)
+    : SettingsPage(parent)
+    , m_filePath(filePath.isEmpty() ? MemoryStore::defaultFilePath()
+                                    : std::move(filePath))
+{
+    const memory::File file = MemoryStore(m_filePath).load();
+
+    auto* intro = new QLabel(
+        tr("Short, lasting things about you that the planner cannot work out "
+           "on its own. The assistant is told this at the start of every "
+           "conversation.\n\n"
+           "One per line. Replace a line when it changes rather than adding "
+           "another — two answers to the same question read as a "
+           "contradiction.\n\n"
+           "Do NOT put tasks, deadlines or what you did yesterday here. The "
+           "assistant already sees all of that, freshly, every time."),
+        this);
+    intro->setWordWrap(true);
+    intro->setObjectName("sub");
+
+    m_routines = sectionEditor(this, QStringLiteral("memoryRoutinesEdit"),
+                               file.routines);
+    m_preferences = sectionEditor(this, QStringLiteral("memoryPreferencesEdit"),
+                                  file.preferences);
+    m_situation = sectionEditor(this, QStringLiteral("memorySituationEdit"),
+                                file.situation);
+    m_people = sectionEditor(this, QStringLiteral("memoryPeopleEdit"),
+                             file.people);
+
+    m_cost = new QLabel(this);
+    m_cost->setObjectName("memoryCostLabel");
+    m_cost->setWordWrap(true);
+
+    auto* form = new QFormLayout;
+    form->addRow(tr("Routines"), m_routines);
+    form->addRow(tr("Preferences"), m_preferences);
+    form->addRow(tr("Current situation"), m_situation);
+    form->addRow(tr("People"), m_people);
+
+    auto* root = new QVBoxLayout(this);
+    root->addWidget(intro);
+    root->addSpacing(8);
+    root->addLayout(form);
+    root->addWidget(m_cost);
+
+    // A file that is preserved but not understood is worth saying out loud,
+    // so nobody wonders where their hand-written section went.
+    if (!file.preserved.isEmpty()) {
+        auto* kept = new QLabel(
+            tr("This file also contains text this version did not recognise. "
+               "It is kept exactly as written, under \"%1\", and is never sent "
+               "to the assistant.")
+                .arg(memory::preservedHeading()),
+            this);
+        kept->setWordWrap(true);
+        kept->setObjectName("sub");
+        root->addWidget(kept);
+    }
+
+    auto* where = new QLabel(tr("Stored at %1").arg(m_filePath), this);
+    where->setWordWrap(true);
+    where->setObjectName("sub");
+    where->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    root->addWidget(where);
+    root->addStretch(1);
+
+    // Live, because the number is the point: this is the one setting whose
+    // cost is paid again on every single turn.
+    for (QPlainTextEdit* edit : {m_routines, m_preferences, m_situation,
+                                 m_people})
+        connect(edit, &QPlainTextEdit::textChanged, this,
+                &MemorySettingsPage::refreshCost);
+    refreshCost();
+}
+
+void MemorySettingsPage::refreshCost()
+{
+    memory::File current;
+    current.routines    = linesToEntries(m_routines);
+    current.preferences = linesToEntries(m_preferences);
+    current.situation   = linesToEntries(m_situation);
+    current.people      = linesToEntries(m_people);
+
+    const int written = current.entryCount();
+    const QString band = memory::promptBand(current);
+    // Re-parsing the band to count what survived would be guesswork; asking
+    // for an unlimited band and comparing sizes is exact.
+    const QString untrimmed =
+        memory::promptBand(current, std::numeric_limits<int>::max());
+
+    if (written == 0) {
+        m_cost->setText(tr("Nothing stored yet — the assistant is told "
+                           "nothing about you."));
+        return;
+    }
+
+    if (band.size() < untrimmed.size()) {
+        m_cost->setText(
+            tr("%1 of %2 characters — over the limit, so the entries that do "
+               "not fit are left out (whole, never cut in half). Shorten or "
+               "remove a few.")
+                .arg(untrimmed.size())
+                .arg(memory::kDefaultBudgetChars));
+        return;
+    }
+
+    m_cost->setText(tr("%n line(s), %1 of %2 characters, sent every turn.",
+                       nullptr, written)
+                        .arg(band.size())
+                        .arg(memory::kDefaultBudgetChars));
+}
+
+void MemorySettingsPage::save()
+{
+    // Re-read FIRST, and take the preserved half from disk rather than from
+    // the copy loaded when this page was built. The file is hand-editable and
+    // this dialog may have been open for a while; text added in an editor
+    // meanwhile must not be destroyed by an OK here. The four sections are
+    // the page's to own — the rest is the owner's, always.
+    MemoryStore  store(m_filePath);
+    memory::File file = store.load();
+
+    file.routines    = linesToEntries(m_routines);
+    file.preferences = linesToEntries(m_preferences);
+    file.situation   = linesToEntries(m_situation);
+    file.people      = linesToEntries(m_people);
+
+    store.save(file);
 }

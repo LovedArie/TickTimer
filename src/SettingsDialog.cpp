@@ -9,7 +9,8 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
-SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
+SettingsDialog::SettingsDialog(QWidget* parent, QString memoryPath)
+    : QDialog(parent), m_memoryPath(std::move(memoryPath))
 {
     setWindowTitle(tr("Settings"));
     setModal(true);
@@ -50,6 +51,10 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
                                             // this line is the WHOLE cost of
                                             // a new settings section
     addPage(new AssistantSettingsPage(this));
+    // v30.0 — the memory file (§L). The path arrives from the composition
+    // root because only IT knows which account is logged in; an empty one
+    // means the global file, the same fallback JsonStore already uses.
+    addPage(new MemorySettingsPage(m_memoryPath, this));
 
     // Nav drives stack. No lambda, no glue: currentRowChanged carries an int
     // and setCurrentIndex takes an int, and addPage() guarantees the two

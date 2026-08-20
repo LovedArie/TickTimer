@@ -127,6 +127,23 @@ public:
     // knows WHAT.
     std::function<void()> preApplyHook;
 
+    // v30.0 — this turn's memory band (§L), already trimmed to budget.
+    //
+    // The same seam as preApplyHook and for the same reason: the page knows
+    // WHEN (fire time, every turn), the composition root knows WHAT (which
+    // account's file, since login scopes memory exactly as it scopes the
+    // planner). ChatPage never learns a username or a path.
+    //
+    // Called per turn rather than cached, which is the read-at-fire-time
+    // doctrine the briefing, the provider and the key already follow — and
+    // here it buys something visible: the file is hand-editable, so an edit
+    // made in a text editor takes effect on the very next question instead
+    // of at the next restart.
+    //
+    // Unset is normal and means no band at all. Nobody is required to have
+    // written anything.
+    std::function<QString()> memoryBandProvider;
+
     // v28.2p2 — the check-in entry: appends the opener bubble (a question
     // with three answer buttons) to the transcript. Public: MainWindow
     // calls it from the toast's action. The whole exchange is localOnly —

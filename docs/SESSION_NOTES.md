@@ -3679,3 +3679,106 @@ also wrong (18 claimed, 23 measured); it had drifted from birth, where it read
 §H.2's `movedFromId` back-link, the additive format-v14 bump that would give
 split pieces an expressible inverse and let `Kind::Split` inside the fence. The
 latter is a domain change and gets its own addendum, as this one records.
+
+---
+
+## v29.3 — the split's inverse (the domain iteration §H.2 owed)
+
+**The repo was arguing with itself, and settling it was the slice.** v29.2's
+§H.2 and `AppData.h`'s own SCOPE paragraph both named a `movedFromId`
+back-link as the fix for a split having no inverse. `Event.h` had already
+**rejected** that exact field when the forward link was born — *"two pointers
+can disagree… derive the reverse, store the forward."* Both could not stand.
+
+**The answer was to name what was actually broken.** The reverse question
+("was this block rescheduled from somewhere?") was never the problem — a scan
+answers it and cannot drift. The problem was that `movedToId` held **one** id
+where a split produces **many**, so pieces 2..n were linked at neither end.
+That is a **cardinality** defect, fixed by widening the field that is too
+narrow, not by adding a second field pointing the other way. `movedToIds`
+keeps exactly one record owning the move, so there is still nothing to
+disagree with; the back-link would have made n+1 records that must agree, and
+for a plain move the pair would be pure redundancy — the shape Event.h
+refused. **Rejected a second time, with better evidence than the first.**
+
+**Format v14, additive both ways.** Writes `movedToIds` and keeps `movedToId`
+as a compatibility mirror of the first element; reads the list when present,
+else wraps the single key. The mirror is safe in `JsonStore` and would not be
+in memory — one door writes both in the same instant and the loader always
+prefers the list, so no reader ever chooses between two live opinions. Two
+costs recorded rather than discovered later: a v13 build that re-saves a v14
+file collapses a split back to its first piece, and splits already on disk
+cannot be retro-linked because nothing ever named their siblings.
+
+**`undoReschedule` became all-or-nothing on the way back**, matching the entry
+contract: every replacement judged before any is touched, one piece holding
+tracked segments refuses the whole move, a hand-deleted piece is a repair, all
+under one `Batch`. The verb's §I fence was **not** lifted — this removes the
+reason §I cited, and opening it is a separate act.
+
+**Close-out:** six suites, **408 measured** (181+22+70+95+19+15; was 402).
+Versions ×2 → 29.3.0. The format-version tripwire fired on the first run and
+was bumped 13 → 14 in the same drop — the behaviour its own comment asks for,
+after v28.3.0 missed it once.
+
+---
+
+## v30.0 — the memory file (§L, read-first)
+
+**§N's v30, unblocked once v29 completed.** The owner writes short, lasting
+things about themselves into `memory-<username>.md`; the assistant is told
+that text every turn.
+
+**The half deliberately not built.** §L.4 says memory writes ride the confirm
+loop, and they still will — but not yet. **`AssistantVerbs.h` is untouched:**
+no `Verb`, no `Role` change, no signature change, so a diff of the
+security-sensitive header is empty. The reason is sharper than "machine before
+model": **memory would be the first thing a model writes that a model later
+reads as prompt.** Every earlier verb writes domain data that reaches the
+model only after `brief::` turns it into a computed fact; a memory entry goes
+back into the system prompt verbatim, forever. Living with the read half for
+an iteration answers the two questions that should govern the write verb —
+whether memory earns its per-turn cost, and what people actually put in it.
+
+**Sidecar decided (§L.5).** `MemoryStore::pathForUser()` mirrors
+`JsonStore::filePathForUser()` exactly, because if the two ever disagreed
+about what a username maps to, logging in would pair one person's planner with
+another person's memory. Accepted cost: memory does not follow you to another
+device. **And the claim that must not be overstated —** not syncing is *not*
+never leaving the machine: memory rides in the prompt to the AI provider on
+every turn. `docs/AI.md` §6 now states both halves, including "if that matters
+for something you were about to write down, use Ollama — or don't write it
+down."
+
+**Two of §L's rules became physical.** Entries are replaced, not appended — an
+entry is a line, the editor edits lines, and there is no add button. And
+trimming is a **prompt** concern, never a data concern: the file keeps
+everything, the band drops whole entries and never truncates, because half a
+sentence about a person is a fact with its qualifier removed.
+
+**Never destroy the owner's text.** Unrecognised content is preserved verbatim
+under a sink heading, never sent, and the sink is also what makes
+`parse(render(f)) == f` stable — without it a preserved `- ` line would be
+re-adopted as an entry of the last section and the file would mutate on every
+save. The settings page re-reads at save time so a hand-edit made *while the
+dialog was open* survives an OK.
+
+**Three things the work turned up.** Contract rule 2 read "never from memory",
+meaning the model's own recollection — with a section literally called memory
+in the same prompt it reads as "ignore the memory section", so it was reworded
+and the old phrasing is pinned gone. The **"What can it see?" viewer would
+have started lying**: its caption said "nothing else is sent", so it now shows
+the memory band under its own heading — rule recorded, *whatever is sent is
+what is shown*, and any future prompt addition inherits it. And one test
+earned its keep during the writing: the band-order test first matched the bare
+phrase and measured the **contract's** mention of the section rather than the
+band.
+
+**Close-out:** six suites, **422 measured** (194+22+75+97+19+15; was 408).
+`data.json` stays at v14 — this slice added no persisted planner fields.
+Versions ×2 → 30.0.0.
+
+**Next: the field run.** v29.3 and v30.0 have both had zero real-data
+exercise, and per house tradition the findings are the punch list. After that,
+the candidates are §L.4's write verb (v30.1) or opening §I's fence for Split,
+which v29.3 unblocked.

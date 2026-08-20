@@ -666,7 +666,9 @@ void ChatPage::sendCurrentInput()
     // stale snapshot is worse than one with no data at all. Same
     // read-at-fire-time doctrine the provider and key follow.
     m_client->send(chat::systemPrompt(currentBriefing(),
-                                      chat::configuredPersonaBand()),
+                                      chat::configuredPersonaBand(),
+                                      memoryBandProvider ? memoryBandProvider()
+                                                         : QString()),
                    m_transcript.window(chat::kDefaultBudgetChars));
 }
 
@@ -766,18 +768,38 @@ void ChatPage::showContextDialog()
     dialog.setWindowTitle(tr("What the assistant can see"));
     dialog.resize(620, 520);
 
+    // v30.0 — the memory band shows here too, and that is not a nicety. This
+    // dialog's whole job is "don't take our word for it", so the moment
+    // something else rides along in the prompt, a viewer that omits it starts
+    // telling a comfortable lie. Whatever is sent is what is shown.
+    const QString memoryBand =
+        memoryBandProvider ? memoryBandProvider() : QString();
+
     auto* layout = new QVBoxLayout(&dialog);
     auto* caption = new QLabel(
-        tr("This is generated fresh from your own data every time you send a "
-           "message, and goes to %1. Nothing else is sent — no notes, no "
-           "descriptions, no ids.")
-            .arg(ai::configured().displayName),
+        memoryBand.isEmpty()
+            ? tr("This is generated fresh from your own data every time you "
+                 "send a message, and goes to %1. Nothing else is sent — no "
+                 "notes, no descriptions, no ids.")
+                  .arg(ai::configured().displayName)
+            : tr("This is what goes to %1 every time you send a message: the "
+                 "briefing, generated fresh from your own data, and what you "
+                 "wrote in Settings → Memory. Nothing else — no notes, no "
+                 "descriptions, no ids.")
+                  .arg(ai::configured().displayName),
         &dialog);
     caption->setWordWrap(true);
     caption->setObjectName(QStringLiteral("sub"));
     layout->addWidget(caption);
 
-    auto* view = new QPlainTextEdit(currentBriefing(), &dialog);
+    QString shown = currentBriefing();
+    if (!memoryBand.isEmpty()) {
+        shown += QStringLiteral("\n\n--- FROM YOUR MEMORY FILE (Settings → "
+                                "Memory) ---\n")
+                 + memoryBand;
+    }
+
+    auto* view = new QPlainTextEdit(shown, &dialog);
     view->setReadOnly(true);
     layout->addWidget(view, 1);
 

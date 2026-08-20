@@ -75,6 +75,10 @@ set(DOMAIN_SOURCES
     src/AssistantVerbs.cpp
     include/ProposalScrub.h
     src/ProposalScrub.cpp
+    include/Memory.h
+    src/Memory.cpp
+    include/MemoryStore.h
+    src/MemoryStore.cpp
     include/Intake.h
     src/Intake.cpp
     include/Category.h
@@ -358,6 +362,13 @@ qt_add_executable(test_nlp
     # here). Its domain-reading brain stays in Intake.cpp / test_domain.
     include/Intake.h
     src/IntakeExtract.cpp
+    # v30.0: memory:: earns a seat by the same argument chat:: did — a string
+    # in and values out, no AppData, no clock, no socket. Note what is NOT
+    # here: MemoryStore, which knows QStandardPaths and QSaveFile. The split
+    # between the two files is exactly what lets the prompt band be asserted
+    # in this Core-only suite without dragging the disk in behind it.
+    include/Memory.h
+    src/Memory.cpp
     tests/test_nlp.cpp
 )
 target_include_directories(test_nlp PRIVATE include)

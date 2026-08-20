@@ -137,6 +137,22 @@ QString systemPrompt(const QString& briefing);
 // An empty band emits no STYLE section at all rather than an empty header.
 QString systemPrompt(const QString& briefing, const QString& personaBand);
 
+// v30.0 — the three-arg form adds the MEMORY band (§L): what the owner has
+// written about themselves, already trimmed to budget by memory::promptBand.
+//
+// It sits BELOW both locked bands, exactly where the persona band sits and
+// for the same reason: anything a person can author is prompt-injection
+// surface, and the defence is that the locked bands are above it and say so.
+// CONTRACT rule 4 names this section and classes it as information rather
+// than instruction — so the header text in the .cpp and the header named in
+// rule 4 must stay identical, or the rule stops pointing at anything.
+//
+// A memory band the model could WRITE would be a different proposition
+// entirely — the first thing it authors that it later reads as prompt. v30.0
+// deliberately ships the read half alone.
+QString systemPrompt(const QString& briefing, const QString& personaBand,
+                     const QString& memoryBand);
+
 // ---- persona (v25.3) ------------------------------------------------------
 // A persona is a VALUE from a catalog, same doctrine as ai::Provider: the
 // Settings combo is populated from personaCatalog() so adding one means

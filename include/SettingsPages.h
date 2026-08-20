@@ -50,6 +50,7 @@ class ChatClient;
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QPlainTextEdit;
 class QLineEdit;
 class QPushButton;
 class QSpinBox;
@@ -249,4 +250,51 @@ private:
     QString                 m_shownId; // whose values the fields hold now
     QHash<QString, QString> m_keys;    // providerId -> key, as edited
     QHash<QString, QString> m_models;  // providerId -> model override, as edited
+};
+
+// ---------------------------------------------------------------------------
+// Memory — what the assistant knows about you (§L, v30.0).
+//
+// The ONE page whose save() does not write QSettings. Memory is neither a
+// preference nor planner data: it is a third lifetime, a sidecar Markdown
+// file the owner may also edit in any text editor. The base class contract
+// says "widgets -> QSettings" because that is what every page before this
+// one did; what it actually means is "commit my widgets", and where they
+// land is the page's own business.
+//
+// FOUR EDITORS, ONE PER SECTION, one entry per line — because §L.3 says
+// entries are REPLACED, never appended. A line editor replaces; there is no
+// "add" button here, and that absence is the rule made physical.
+//
+// The character counter is not decoration. Memory is billed on EVERY turn
+// forever, whether or not it was relevant, so the one number worth showing
+// is how much of the budget this costs — and which entries are being dropped
+// because they no longer fit.
+//
+// WHAT THIS PAGE MUST NEVER DO is lose text it did not understand. The file
+// belongs to its owner; unrecognised sections are re-read at save time and
+// written back untouched.
+// ---------------------------------------------------------------------------
+class MemorySettingsPage : public SettingsPage
+{
+    Q_OBJECT
+public:
+    // An empty path means the global memory file — the same convention
+    // JsonStore::filePathForUser() already uses for an empty username, so
+    // tests and a login-less build behave the way they always have.
+    explicit MemorySettingsPage(QString filePath, QWidget* parent = nullptr);
+
+    QString title() const override { return tr("Memory"); }
+    void    save() override;
+
+private:
+    void refreshCost();
+
+    QString m_filePath;
+
+    QPlainTextEdit* m_routines    = nullptr;
+    QPlainTextEdit* m_preferences = nullptr;
+    QPlainTextEdit* m_situation   = nullptr;
+    QPlainTextEdit* m_people      = nullptr;
+    QLabel*         m_cost        = nullptr;
 };

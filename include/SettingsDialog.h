@@ -49,7 +49,13 @@ class SettingsDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit SettingsDialog(QWidget* parent = nullptr);
+    // memoryPath: which account's memory file the Memory page edits. Empty
+    // means the global file — the same convention JsonStore::filePathForUser()
+    // uses for an empty username, so tests and a login-less build are
+    // unaffected. Defaulted rather than required because every existing call
+    // site is a test that has no account and wants none.
+    explicit SettingsDialog(QWidget* parent = nullptr,
+                            QString memoryPath = QString());
 
 private:
     // Append a page: one nav row, one stack entry, one vector slot — kept at
@@ -59,6 +65,8 @@ private:
 
     // The ONE QSettings write, on OK: ask every page to save itself.
     void save();
+
+    QString m_memoryPath;
 
     QListWidget*           m_nav   = nullptr;
     QStackedWidget*        m_stack = nullptr;

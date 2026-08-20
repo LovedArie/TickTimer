@@ -35,10 +35,10 @@
 // (docs/SESSION_NOTES.md, "shipping a drop"). The lesson generalises past
 // this repo — when you catch a class of bug with a compile-time check, write
 // down what the check still cannot see, or you will trust it for that too.
-#define TICKTIMER_VERSION_MAJOR  29
-#define TICKTIMER_VERSION_MINOR  3
+#define TICKTIMER_VERSION_MAJOR  30
+#define TICKTIMER_VERSION_MINOR  0
 #define TICKTIMER_VERSION_PATCH  0
-#define TICKTIMER_VERSION_STRING "29.3.0"
+#define TICKTIMER_VERSION_STRING "30.0.0"
 
 #ifndef RC_INVOKED
 

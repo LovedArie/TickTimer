@@ -14,6 +14,7 @@
 #include "CheckIn.h"
 #include "CheckInService.h"
 #include "ChatSession.h"
+#include "MemoryStore.h"
 #include "PomodoroEngine.h"
 #include "PomodoroLink.h"
 #include "PomodoroPage.h"
@@ -423,7 +424,7 @@ MainWindow::MainWindow(const QString& username)
     settingsBtn->setCursor(Qt::PointingHandCursor);
     settingsBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(settingsBtn, &QToolButton::clicked, this, [this]() {
-        SettingsDialog dialog(this);
+        SettingsDialog dialog(this, MemoryStore::pathForUser(m_username));
         if (dialog.exec() != QDialog::Accepted)
             return;
         // The dialog wrote QSettings; now the pages re-read and re-tell
@@ -558,6 +559,19 @@ MainWindow::MainWindow(const QString& username)
         const QString dst = src + QStringLiteral(".pre-apply");
         QFile::remove(dst);
         QFile::copy(src, dst);
+    };
+
+    // v30.0 — the memory band (§L), wired here for the same reason the hook
+    // above is: this is where the account, and therefore the file path, is
+    // known. Login scopes memory exactly as it scopes the planner, so the
+    // two paths are chosen from the same username and can never drift.
+    //
+    // Read on every turn rather than cached at startup. The file is meant to
+    // be opened and corrected by hand, so an edit must take effect on the
+    // next question, not the next launch.
+    m_chat->memoryBandProvider = [this]() {
+        return memory::promptBand(
+            MemoryStore(MemoryStore::pathForUser(m_username)).load());
     };
 
     // LAST, on purpose. Everything above adds widgets, and adding widgets

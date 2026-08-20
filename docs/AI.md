@@ -158,6 +158,28 @@ today's blocks and their tracked time, task titles due soon, special days,
 and your life-area names. It deliberately **excludes** task descriptions,
 event notes, and all internal ids.
 
+It also sends your **memory file**, if you have written one (Settings →
+Memory). That is the short list of lasting things about you — routines,
+preferences, your current situation, people — and it goes with **every**
+message, not just the first. It is capped at about 1200 characters; anything
+past that is left out whole rather than cut off mid-sentence, and the settings
+page tells you when that is happening.
+
+Two things about memory worth being exact about, because they are easy to
+confuse:
+
+- It **does not sync.** It lives beside your planner as `memory-<you>.md` and
+  never travels to the TickTimer server, so it does not follow you to another
+  device.
+- That is **not** the same as never leaving your machine. It is sent to your
+  AI provider on every Assistant turn, exactly like the briefing. If that
+  matters for something you were about to write down, use Ollama — or don't
+  write it down.
+
+The memory file is plain Markdown. You can open it in any text editor, and
+anything in it TickTimer doesn't recognise is kept exactly as you wrote it and
+never sent.
+
 Don't take this page's word for it: the Assistant's **"What can it see?"**
 button shows the exact briefing text, verbatim, and names the provider it
 goes to. Errors you see in the chat (⚠ bubbles) are local — they are never

@@ -63,6 +63,7 @@
 #include "LlmProvider.h"
 #include "SettingsDialog.h"
 #include "SettingsPages.h"
+#include "MemoryStore.h"
 #include "AffordabilityService.h" // v28.10 — the debug panel tests
 #include "CheckInService.h"       // v28.10 — forceOffer
 #include "ChatPage.h"             // v29.0 — the write boundary
@@ -75,6 +76,7 @@
 #include <QPointer>
 #include <QLabel>
 #include <QPlainTextEdit>
+#include <QTemporaryDir>
 #include <QPushButton>
 
 #include <QLineEdit>
@@ -3468,6 +3470,93 @@ private slots:
                 > QDateTime::currentDateTime().addDays(300));
         QTest::qWait(20); // the deferred continuation runs, finds nothing
         QVERIFY(!page.beginIntake()); // ask once means once
+    }
+
+    // ---- v30.0: the memory settings page (§L) ------------------------------
+
+    // The page is the only surface that WRITES the memory file, and the one
+    // property it must never break is that the file belongs to its owner. A
+    // hand-written section this build cannot parse has to survive an OK —
+    // including one added while the dialog sat open, which is why save()
+    // re-reads rather than trusting the copy it loaded at construction.
+    void memoryPageEditsItsSectionsAndKeepsWhatItCannotParse()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("memory-ui.md");
+
+        {
+            memory::File seed;
+            seed.routines = {QStringLiteral("Breakfast at 07:30")};
+            QVERIFY(MemoryStore(path).save(seed));
+        }
+
+        MemorySettingsPage page(path);
+        auto* routines = page.findChild<QPlainTextEdit*>(
+            QStringLiteral("memoryRoutinesEdit"));
+        auto* people = page.findChild<QPlainTextEdit*>(
+            QStringLiteral("memoryPeopleEdit"));
+        QVERIFY(routines && people);
+        QCOMPARE(routines->toPlainText(), QStringLiteral("Breakfast at 07:30"));
+
+        // Edit one section, add another, and leave a blank line behind — a
+        // blank line is not an entry.
+        routines->setPlainText(QStringLiteral("Breakfast at 07:00\n\nGym Tuesdays"));
+        people->setPlainText(QStringLiteral("Marc — budget extra"));
+
+        // Meanwhile, someone opens the file in an editor and appends a
+        // section this build knows nothing about.
+        {
+            memory::File onDisk = MemoryStore(path).load();
+            onDisk.preserved = QStringLiteral("## Rutines\n- typed by hand");
+            QVERIFY(MemoryStore(path).save(onDisk));
+        }
+
+        page.save();
+
+        const memory::File saved = MemoryStore(path).load();
+        QCOMPARE(saved.routines,
+                 QStringList({QStringLiteral("Breakfast at 07:00"),
+                              QStringLiteral("Gym Tuesdays")}));
+        QCOMPARE(saved.people,
+                 QStringList{QStringLiteral("Marc — budget extra")});
+        // The unparsed text is still there, untouched by an OK it never
+        // appeared in.
+        QVERIFY(saved.preserved.contains(QStringLiteral("typed by hand")));
+        // And it is still never sent to a model.
+        QVERIFY(!memory::promptBand(saved).contains(QStringLiteral("typed by hand")));
+    }
+
+    // The counter is the point of the page: memory is billed on every turn,
+    // so the cost has to be visible while you type it.
+    void memoryPageShowsWhatTheBandWillCost()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("memory-cost.md");
+
+        MemorySettingsPage page(path);
+        auto* cost = page.findChild<QLabel*>(QStringLiteral("memoryCostLabel"));
+        auto* prefsEdit = page.findChild<QPlainTextEdit*>(
+            QStringLiteral("memoryPreferencesEdit"));
+        QVERIFY(cost && prefsEdit);
+
+        // Nothing written yet — say so plainly rather than showing "0".
+        QVERIFY(cost->text().contains(QStringLiteral("Nothing stored")));
+
+        prefsEdit->setPlainText(QStringLiteral("Nothing before 09:00"));
+        QVERIFY(!cost->text().contains(QStringLiteral("Nothing stored")));
+        QVERIFY(cost->text().contains(QString::number(memory::kDefaultBudgetChars)));
+
+        // Past the budget, the label must say entries are being LEFT OUT —
+        // silently trimming what someone typed is the one outcome this
+        // feature cannot afford.
+        QStringList many;
+        for (int i = 0; i < 200; ++i)
+            many << QStringLiteral("a preference number %1 that is fairly long")
+                        .arg(i);
+        prefsEdit->setPlainText(many.join(QLatin1Char('\n')));
+        QVERIFY(cost->text().contains(QStringLiteral("over the limit")));
     }
 };
 

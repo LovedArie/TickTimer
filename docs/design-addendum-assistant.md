@@ -534,6 +534,15 @@ the right shape for this.
 
 ## L. The memory file *(planned, last)*
 
+> **Built in v30.0, read-first** — `design-addendum-memory.md`. §L.5's
+> location question is decided: the **sidecar**, `memory-<username>.md`. §L.2
+> and §L.3 became code (four fixed sections; entries are lines, so the editor
+> replaces rather than appends; the budget drops whole entries and never
+> truncates). §L.4 is the half deliberately NOT built: memory writes still
+> ride the confirm loop when they arrive, but a model that can write its own
+> future prompt is a capability worth designing against evidence, so v30.0
+> ships the read half alone and `AssistantVerbs.h` is untouched.
+
 ### L.1 The model does not learn
 
 Nothing is trained; nothing persists inside the model. "Memory" is text
@@ -617,8 +626,8 @@ value. Version numbers are indicative, not promises.
 | **v26** | ~~**AI foundation**~~ **SHIPPED** as three drops | ✓ reasoning models (v25.2, provider §L) · ✓ persona (v25.3, chat §K) · ✓ routing (v26.0, provider §M) | — |
 | **v27** | **Subtasks & sizing** *(no AI)* — built, **never landed**; **re-landed fresh as v28.3.0 (format v13)** | ✓ subtasks (§I) + `estimateMinutes`/`chunkable` (§J.1) → `design-addendum-subtasks.md`. **Done, v28.4.0:** the multiplier (§J.2) + `affordability()` rewired off its proxy (estimate-first, proxy fallback) | nothing |
 | **v28** | **The proactive assistant** *(read-only)* — **SHIPPED through 28.2** (28.3 = the subtasks re-land, above) | nudges (§F), morning check-in + mood (§G), affordability *phrased* by the model — on the planned-blocks proxy, as §N always allowed; the proxy retired in v28.4.0 (kept as fallback for unestimated tasks) | v26 ✓ |
-| **v29** | **Tool use** | the confirm loop (§B), intake first (§K), then rescheduling; dialect strategy promotion (§B.3) | v28 |
-| **v30** | **Memory** | the residue file (§L), riding v29's confirm loop | v29 |
+| **v29** | **Tool use** — **SHIPPED as four drops** | ✓ the confirm loop (§B) v29.0 · ✓ intake (§K) v29.1 · ✓ rescheduling v29.2 · ✓ the split's inverse v29.3 (the domain iteration rescheduling's §H.2 owed). **The dialect strategy promotion (§B.3) did NOT happen** — three iterations, three recorded non-firings, criterion still armed. A completed decision, not outstanding work | v28 ✓ |
+| **v30** | **Memory** — **v30.0 SHIPPED read-first** | the residue file (§L): the owner writes it, the assistant is told it every turn, and there is **no model write path yet** — `design-addendum-memory.md` §B says why the confirm-loop half is worth designing against evidence, since memory is the first thing a model would write that a model later reads as prompt | v29 ✓ |
 
 **Notes on the order:**
 
