@@ -40,15 +40,42 @@ if errorlevel 1 (
     )
 )
 
-REM --- 3. The WASM Qt kit ----------------------------------------------------
-REM NOT the desktop kit: a separate install, usually a different Qt version.
+REM --- 3. The WASM Qt kit -- AND IT MUST HAVE ASYNCIFY -----------------------
+REM
+REM The stock "wasm_singlethread" kit from the Maintenance Tool DOES NOT WORK
+REM for this app, and the failure is ugly: it builds and links fine, loads in
+REM the browser, and then aborts the instant anything calls QDialog::exec() —
+REM which for TickTimer is the login window, i.e. immediately. In Release the
+REM message is a bare "Aborted().".
+REM
+REM exec() needs a nested event loop, which a browser's single main thread
+REM cannot do without Emscripten's asyncify. Qt decides that when QT ITSELF is
+REM built (QtWasmHelpers.cmake reads QT_EMSCRIPTEN_ASYNCIFY from qdevice.pri),
+REM so no flag on OUR build can rescue it — the app has 15 exec() call sites
+REM and rewriting them all would make the desktop code worse for the web's
+REM benefit.
+REM
+REM So we prefer a kit built with asyncify. See docs/WEB.md for the recipe;
+REM it is one configure line and about half an hour.
 set "QTWASM="
 for /d %%V in ("C:\Qt\6.*") do (
-    if exist "%%V\wasm_singlethread\bin\qt-cmake.bat" set "QTWASM=%%V\wasm_singlethread"
+    if exist "%%V\wasm_asyncify\bin\qt-cmake.bat" set "QTWASM=%%V\wasm_asyncify"
 )
 if not defined QTWASM (
-    echo   [X] No Qt for WebAssembly kit found under C:\Qt.
-    echo       Qt Maintenance Tool -^> Add components -^> Qt ^> ^<version^> ^> WebAssembly
+    REM Fall back to the stock kit only to give a USEFUL error, never to build
+    REM something that is guaranteed to abort at the login screen.
+    for /d %%V in ("C:\Qt\6.*") do (
+        if exist "%%V\wasm_singlethread\bin\qt-cmake.bat" set "QTWASM=%%V\wasm_singlethread"
+    )
+    if defined QTWASM (
+        echo   [X] Found the STOCK WebAssembly kit, which cannot run this app.
+        echo       It has no asyncify, so QDialog::exec^(^) aborts at the login
+        echo       window. Build a kit that has it — docs\WEB.md, "Building the
+        echo       Qt kit". One configure line, about half an hour, once.
+    ) else (
+        echo   [X] No Qt for WebAssembly kit found under C:\Qt.
+        echo       You need one built WITH asyncify — see docs\WEB.md.
+    )
     exit /b 1
 )
 echo   Using Qt kit: %QTWASM%

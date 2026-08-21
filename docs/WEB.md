@@ -11,42 +11,123 @@ more than it sounds — see "Why not a normal web app" below.
 
 ---
 
-## Status, honestly
+## Status
 
-**Verified:** it configures, compiles, links, and serves. `ticktimer.wasm` is
-15.6 MB raw and **5.8 MB gzipped**, which is what a phone actually downloads
-once (Caddy compresses on the fly).
+**Verified working** (v30.4.2, desktop Chrome/Edge): it loads, logs in, and —
+the part that took three separate fixes — **it remembers across a reload**.
 
-**Not yet verified:** that it *runs*. Nobody has opened it in a browser at the
-time of writing — there was no browser available to the machine that built it.
-The first person to open it is doing real testing, and the checklist below is
-in the order that finds problems fastest.
+`ticktimer.wasm` is 23.1 MB raw and **7.6 MB gzipped**, which is what a phone
+actually downloads once (Caddy compresses on the fly). That is up from 5.8 MB
+before asyncify; see below for what bought the extra 1.8 MB.
 
-The single most important check is **step 2**: write something, reload, and see
-whether it is still there.
+**Not yet verified:** iOS Safari specifically, and Add-to-Home-Screen. Those
+need an iPhone and a real HTTPS origin, i.e. the VPS.
 
 ---
 
-## Building it
+## THE QT KIT — read this before anything else
+
+**The stock WebAssembly kit from the Qt Maintenance Tool cannot run this app.**
+You need one built with **asyncify**, and this is the single most important
+fact in this document.
+
+The failure is nasty because everything looks fine: it configures, compiles,
+links, loads in the browser, and then aborts the instant anything calls
+`QDialog::exec()` — which for TickTimer is the login window, so, immediately.
+In a Release build the entire message is `Aborted().`
+
+`exec()` runs a nested event loop. A browser's single main thread cannot do
+that without Emscripten's **asyncify**, which unwinds and rewinds the stack.
+Qt decides whether to support it when **Qt itself** is built — `QtWasmHelpers.
+cmake` reads `QT_EMSCRIPTEN_ASYNCIFY` out of `qdevice.pri` — so no flag on
+*our* build can rescue it.
+
+*The alternative was rewriting all 15 `exec()` call sites as `open()` plus
+signal callbacks, including restructuring startup, since `main()` blocks on
+`login.exec()` and v30.2's resume/offline logic lives in that dialog. That
+would make the DESKTOP code worse to suit a secondary platform, and it is
+all-or-nothing: miss one and the app dies when somebody opens Settings.*
+
+### Building the Qt kit (once, ~40 minutes)
+
+Only **qtbase** is needed — the app uses Widgets, Core, Gui and Network, all of
+which live there. You also need a **desktop Qt of the exact same version** as
+the host for `moc`/`rcc`; a mismatch is the usual reason this goes wrong.
+
+```sh
+# 1. Source (~50 MB)
+curl -L -o qtbase.tar.xz \
+  https://download.qt.io/archive/qt/6.11/6.11.1/submodules/qtbase-everywhere-src-6.11.1.tar.xz
+tar -xf qtbase.tar.xz
+```
+
+```bat
+:: 2. Configure. The -device-option IS the point.
+call C:\emsdk\emsdk_env.bat
+mkdir build && cd build
+..\qtbase-everywhere-src-6.11.1\configure.bat ^
+    -platform wasm-emscripten ^
+    -prefix C:/Qt/6.11.1/wasm_asyncify ^
+    -qt-host-path C:/Qt/6.11.1/mingw_64 ^
+    -device-option QT_EMSCRIPTEN_ASYNCIFY=1 ^
+    -release -nomake examples -nomake tests ^
+    -- -G Ninja
+
+:: 3. Build and install
+cmake --build . --parallel
+cmake --install .
+```
+
+**Check the option took** before spending the build time — a silently ignored
+`-device-option` costs you the whole thing for nothing:
+
+```
+grep QT_EMSCRIPTEN_ASYNCIFY build/CMakeCache.txt
+→ QT_QMAKE_DEVICE_OPTIONS:UNINITIALIZED=QT_EMSCRIPTEN_ASYNCIFY=1
+```
+
+It installs to a **new prefix** beside your existing kits. Nothing that works
+today is touched, and `tools\build-wasm.bat` prefers `wasm_asyncify`
+automatically — refusing to build against the stock kit, with a message
+pointing back here.
+
+---
+
+## Building the app
 
 ```
 tools\build-wasm.bat
 ```
 
-It needs three things that no other build here needs, and it checks for all
-three before doing anything:
+It checks for all three prerequisites before doing anything:
 
 - **Emscripten 4.0.7**, at `C:\emsdk`. Qt pins the version it was built
   against and refuses a mismatch by name, which is the good kind of failure.
 - **Ninja** — the Qt kits ship none, and Emscripten cannot use MSVC's
   generator. `C:\msys64\ucrt64\bin\ninja.exe` will do.
-- **The `wasm_singlethread` Qt kit**, which is a *separate install from your
-  desktop Qt* and usually a different Qt version. Maintenance Tool → Add
-  components → Qt → *version* → WebAssembly.
+- **A `wasm_asyncify` Qt kit**, per the section above.
 
 Output lands in `build-wasm\serve\` — the shell page and icons from `web\`
 plus the `.js`/`.wasm` from the build. Both halves are needed; neither is
 useful alone.
+
+### When something aborts
+
+Release builds strip Emscripten's assertions, so a failure reads `Aborted().`
+and nothing else. Rebuild with them on:
+
+```
+cmake -B build-wasm -DTICKTIMER_WASM_ASSERTIONS=ON
+cmake --build build-wasm
+```
+
+That turns the same abort into a sentence naming the cause — it is what turned
+a bare `Aborted()` into *"'addRunDependency' was not exported… forcing
+filesystem support (-sFORCE_FILESYSTEM) can export this for you"*, which was
+the fix, spelled out.
+
+Also useful: **`?nostore`** on the URL skips the storage mount, so "is it the
+storage layer or the app?" is answered by editing a URL rather than rebuilding.
 
 ## Trying it locally
 
@@ -84,7 +165,7 @@ having been done.
 ## The first-run checklist
 
 - [ ] **1. It loads.** A TickTimer boot screen, then the login window. First
-      load fetches ~6 MB; after that the browser caches it.
+      load fetches ~7.6 MB; after that the browser caches it.
       - ❌ A stuck progress bar or a blank page: open the browser console.
         `web/index.html` reports failures there deliberately.
 
@@ -130,7 +211,7 @@ having been done.
   authoritative copy.
 - **No sound.** Qt Multimedia is not in the WASM kit; the build says so at
   configure time and falls back to silence.
-- **First load is ~6 MB.** Cached afterwards, and re-fetched only when you
+- **First load is ~7.6 MB.** Cached afterwards, and re-fetched only when you
   deploy a new build.
 
 ## Why not a normal web app

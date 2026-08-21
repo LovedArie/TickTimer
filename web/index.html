@@ -150,13 +150,26 @@
         //             own, and the app cannot ask (it is C++ writing to what
         //             it believes is an ordinary file), so the page does it
         //             on a timer and whenever the tab is hidden.
-        const IDB_ROOT = '/home/web_user';
+        // WHERE THESE COME FROM, because getting it wrong is silent and total:
+        // `FS` and `IDBFS` are NOT globals on the page. Emscripten builds the
+        // module as a closure and exports only what it was asked to. `FS` is
+        // exported (Module["FS"]); `IDBFS` is not — but it is registered in
+        // FS.filesystems by FS.staticInit(), which runs at module top level,
+        // before any preRun callback. So the module object reaches both, and
+        // the page reaches neither.
+        //
+        // The first version of this file referenced them bare. Every load died
+        // with a ReferenceError before Qt started, and the page reported "the
+        // app failed to load" — which was true and useless.
+        const IDB_ROOT = '/home/web_user'; // Emscripten creates this itself
+        let mod = null;                    // the module, captured in preRun
         let syncing = false;
+
         const persist = () => {
-          if (syncing || typeof FS === 'undefined') return;
+          if (!mod || !mod.FS || syncing) return;
           syncing = true;
           // false = filesystem -> IndexedDB.
-          FS.syncfs(false, (err) => {
+          mod.FS.syncfs(false, (err) => {
             syncing = false;
             if (err) console.error('TickTimer: could not persist storage', err);
           });
@@ -166,7 +179,28 @@
           const instance = await qtLoad({
             preRun: [function (Module) {
               try {
-                FS.mkdirTree(IDB_ROOT);
+                mod = Module; // the only handle the page ever gets to FS
+
+                // ?nostore — skip the mount entirely. A diagnostic switch, so
+                // "is it the storage layer or the app?" can be answered by
+                // editing a URL instead of doing a five-minute rebuild. The
+                // session runs in memory and forgets on reload, which is the
+                // pre-v30.4 behaviour and useless for real work.
+                if (new URLSearchParams(location.search).has('nostore')) {
+                  console.warn('TickTimer: ?nostore — storage NOT mounted, '
+                               + 'this session will be forgotten.');
+                  note.textContent = 'Diagnostic mode: nothing will be saved.';
+                  return;
+                }
+                const FS = Module.FS;
+                const IDBFS = FS.filesystems && FS.filesystems.IDBFS;
+                if (!IDBFS) {
+                  // The build was linked without -lidbfs.js. Say exactly that,
+                  // because the symptom otherwise is "it forgets everything"
+                  // with no hint about which half is missing.
+                  throw new Error('IDBFS missing — was the app linked with '
+                                  + '-lidbfs.js?');
+                }
                 FS.mount(IDBFS, {}, IDB_ROOT);
                 // Hold startup open until IndexedDB has been read in.
                 Module.addRunDependency('ticktimer-idbfs');
@@ -230,10 +264,13 @@
           void instance;
         } catch (e) {
           console.error(e);
+          // SHOW THE ACTUAL ERROR. The first version of this said "a reload
+          // usually fixes it; the server may be serving an incomplete build"
+          // — which was a guess, was wrong, and sent the first person who hit
+          // it looking for a server that was already running. A failure
+          // message that speculates is worse than one that just reports.
           fail('TickTimer didn’t start',
-               'The app failed to load. A reload usually fixes it; if it '
-               + 'keeps happening, the server may be serving an incomplete '
-               + 'build.');
+               (e && (e.message || String(e))) || 'Unknown error.');
         }
       })();
     </script>

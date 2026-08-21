@@ -4177,3 +4177,64 @@ v30.2.1 work checked the app, the tests and the docs; it did not check the
 file that *generates* a command line.
 
 Versions ×2 → 30.4.1. 448 measured, unchanged.
+
+---
+
+## v30.4.2 — the WebAssembly build, actually run
+
+**Four bugs, found by one person clicking a link.** v30.4 shipped with
+"nobody has opened it in a browser" written at the top of `WEB.md`. The first
+run found every one of them, in the order that matters, and none were
+theoretical.
+
+**1. The storage layer referenced symbols that did not exist.** `FS` and
+`IDBFS` were used as page globals. They are not: Emscripten builds the module
+as a closure and exports what it was asked to. `FS` is `Module.FS`; `IDBFS`
+is not exported at all but is reachable as `Module.FS.filesystems.IDBFS`,
+registered by `FS.staticInit()` which runs before any `preRun`.
+
+**2. `addRunDependency` was not exported**, so the mount aborted the module
+before Qt started. Fixed with `-sFORCE_FILESYSTEM=1`, which the error message
+itself suggested — once assertions were on. That call is not optional: it is
+what holds startup open until IndexedDB has been read in, and without it Qt
+loads a blank planner and saves it over the real one.
+
+**3. THE WALL: `QDialog::exec()` does not work on a stock Qt WASM kit.**
+A browser's single main thread cannot run a nested event loop without
+Emscripten's asyncify, and Qt decides that when QT ITSELF is built. The app
+has 15 `exec()` sites across 9 files and `main()` blocks on `login.exec()`,
+so the failure was immediate and total: login window, abort.
+
+Two ways out, and the owner chose the one that leaves the code alone —
+**rebuild Qt for WebAssembly with asyncify** (qtbase only, ~40 minutes,
+`-device-option QT_EMSCRIPTEN_ASYNCIFY=1`, installed to a new prefix beside
+the stock kit). Zero source changes. The alternative was rewriting every
+modal as `open()` plus callbacks, restructuring startup, and making the
+DESKTOP code worse to suit a secondary platform — all-or-nothing, since one
+missed site kills the app when somebody opens Settings.
+
+Cost, measured rather than estimated: 5.8 → **7.6 MB gzipped**. Every stale
+size figure in `WEB.md` and the Caddyfile corrected.
+
+**4. Self-inflicted:** wiping `build-wasm` to force a clean reconfigure also
+deleted `serve/index.html`, so the bare URL served a directory listing and
+the owner tested on `qt-default.html` — Qt's own shell, which has no storage
+mount at all. "It forgets everything" was true and meaningless.
+
+**Two diagnostics earned their place permanently.** A
+`TICKTIMER_WASM_ASSERTIONS` CMake option, because Release strips Emscripten's
+assertions and a bare `Aborted().` is unreadable by design — it is what turned
+one abort into a sentence naming the missing export AND the flag to fix it.
+And `?nostore` on the URL, which skips the storage mount so "is it the storage
+layer or the app?" costs a URL edit instead of a five-minute rebuild.
+
+**`tools\build-wasm.bat` now refuses the stock kit** rather than building
+something guaranteed to abort at the login screen, and says where the recipe
+is. `WEB.md` leads with the Qt requirement, because it is the one fact that
+makes the difference between a working build and a mystery.
+
+**Verified working:** loads, logs in, and remembers across a reload, on
+desktop Chrome/Edge. Still unverified: iOS Safari and Add-to-Home-Screen,
+which need an iPhone and a real HTTPS origin.
+
+Versions ×2 → 30.4.2. 448 measured, unchanged — the desktop build never moved.

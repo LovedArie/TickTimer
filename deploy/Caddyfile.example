@@ -39,7 +39,7 @@ ticktimer.example.com {
 		root * /var/www/ticktimer-app
 		uri strip_prefix /app
 
-		# The .wasm is ~16 MB raw and ~6 MB gzipped, so compression is the
+		# The .wasm is ~23 MB raw and ~7.6 MB gzipped, so compression is the
 		# difference between a pleasant first load on a phone and an
 		# abandoned one. Caddy picks zstd or gzip per request.
 		encode zstd gzip
@@ -51,7 +51,7 @@ ticktimer.example.com {
 		# amount of reloading fixes it — the phone would keep running last
 		# month's app while its owner insisted they had updated. "no-cache"
 		# is a misleading name: it does not mean don't store, it means ask
-		# first. The browser keeps the 6 MB and gets a 304 when nothing
+		# first. The browser keeps the 7.6 MB and gets a 304 when nothing
 		# changed, which costs one small round trip and is always correct.
 		#
 		# Content-addressed filenames would let us use immutable properly.

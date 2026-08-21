@@ -319,6 +319,36 @@ message(STATUS "TickTimer version ${_ticktimer_version_name} "
 # makes IDBFS exist to be mounted.
 if(EMSCRIPTEN)
     target_link_options(ticktimer PRIVATE -lidbfs.js)
+
+    # -sFORCE_FILESYSTEM makes Emscripten export the filesystem machinery to
+    # JavaScript instead of tree-shaking it away. Without it the shell page
+    # can mount nothing: `addRunDependency` in particular is not exported, and
+    # the module ABORTS the moment the page calls it — before Qt starts, with
+    # no message worth reading unless assertions are on.
+    #
+    # That is exactly how this was found: a bare "Aborted()." in Release, and
+    # then, with the option below, a sentence naming the missing export and
+    # suggesting this very flag.
+    #
+    # addRunDependency is not optional here. It is what holds startup open
+    # until IndexedDB has been read into the filesystem; without it Qt starts
+    # against an empty directory, loads a blank planner, and saves it over the
+    # real one.
+    target_link_options(ticktimer PRIVATE -sFORCE_FILESYSTEM=1)
+
+    # -sASSERTIONS turns Emscripten's "Aborted(). Build with -sASSERTIONS for
+    # more info." into a sentence naming what actually failed. Off by default
+    # because it costs size and speed in a shipped build; an OPTION rather
+    # than a line somebody comments in and out, because the next person to
+    # meet a bare Aborted() should find a switch, not a suggestion.
+    #     tools\build-wasm.bat  (normal)
+    #     cmake -B build-wasm -DTICKTIMER_WASM_ASSERTIONS=ON   (diagnosing)
+    option(TICKTIMER_WASM_ASSERTIONS
+           "Build the WebAssembly app with Emscripten assertions" OFF)
+    if(TICKTIMER_WASM_ASSERTIONS)
+        target_link_options(ticktimer PRIVATE -sASSERTIONS=1)
+        message(STATUS "TickTimer WASM: assertions ON (diagnostic build)")
+    endif()
 endif()
 # ---- Android packaging ---------------------------------------------------------
 # qt_add_executable above is what makes this possible at all: on an Android
