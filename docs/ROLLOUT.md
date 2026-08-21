@@ -14,6 +14,30 @@ report this instead."
 
 ---
 
+## Before any of it: WHICH EXE ARE YOU RUNNING?
+
+There are three copies of TickTimer on a development machine and they are
+routinely different ages. This has now cost time twice — an hour in the v29.2
+field run, and again during Stage 0b, where a test ran against a build three
+versions old.
+
+| Path | What it is | When it changes |
+|---|---|---|
+| `build-release\ticktimer.exe` | what you just compiled | every build — **always current** |
+| `dist\TickTimer\ticktimer.exe` | a **snapshot** | only when you run `deploy-windows.bat` |
+| `%LOCALAPPDATA%\Programs\TickTimer\` | a **snapshot** | only when you run the Inno installer |
+
+The last two are copies, not links. `deploy-windows.bat` copies the binary in;
+the moment you rebuild, `dist` is stale and stays stale silently. A Start Menu
+shortcut opens the third one.
+
+**Check before you conclude anything: *Help → About* names the version.** If it
+does not match what you just built, you are testing the past. That is the whole
+reason `installerVersionMatchesTheHeader()` exists.
+
+For testing, run `build-release\ticktimer.exe` — it needs Qt on `PATH`, which
+is why a bare double-click fails and the launchers in `dist` do not.
+
 ## Stage 0 — Twenty minutes, right now, no server needed
 
 ### 0a. Does the web build actually run? *(the biggest unknown in the repo)*
