@@ -18,7 +18,7 @@ the compact-screen layout kicks in automatically on a phone. Nothing to edit.
 
 1. Open the **Qt Maintenance Tool** — `MaintenanceTool.exe` in your Qt
    folder (usually `C:\Qt`).
-2. Choose **Add or remove components** → expand **Qt → Qt 6.11.0**.
+2. Choose **Add or remove components** → expand **Qt → Qt 6.11.1**.
 3. Check **Android** (this brings the `arm64-v8a` build of Qt — the
    architecture of essentially every phone from the last ~8 years).
 4. Next → install. This is Qt compiled *for Android* — same Qt, different
@@ -47,7 +47,7 @@ the compact-screen layout kicks in automatically on a phone. Nothing to edit.
 1. Open the TickTimer project in Qt Creator.
 2. Left sidebar → **Projects** (the wrench icon).
 3. Under *Build & Run*, click the new kit —
-   **Android Qt 6.11.0 Clang arm64-v8a** — to activate it.
+   **Android Qt 6.11.1 Clang arm64-v8a** — to activate it.
 4. Expected: a fresh CMake configure runs. The test and screenshot targets
    won't appear on this kit — that's the `if(NOT ANDROID)` fence in
    CMakeLists doing its job, not a problem.
@@ -232,7 +232,7 @@ downloads or installs anything by itself.
 
 | Symptom | Fix |
 |---|---|
-| No Android kit appears | Step 1 component not installed for **6.11.0** exactly — re-run Maintenance Tool. |
+| No Android kit appears | Step 1 component not installed for **6.11.1** exactly — re-run Maintenance Tool. |
 | Kit has a red/yellow icon | Preferences → Devices → Android: one of the four lights is off; re-run **Set Up SDK**. |
 | Phone not in device list | Re-plug; check the USB-debugging prompt on the phone; try another cable (charge-only cables exist). |
 | Gradle errors on first build | Almost always a blocked download — check internet/proxy, press Run again. |
