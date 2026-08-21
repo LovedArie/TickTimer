@@ -100,7 +100,23 @@ public:
     // server's copy is idempotent, so a retry later costs nothing.
     void revokeDevice(const QString& deviceToken);
 
+    // v30.4.3 — is the server there AT ALL? No credential involved.
+    //
+    // Exists because of a fair complaint from the first field run: when the
+    // app is offline without a remembered device, the only way back is a
+    // password — and nothing told the person WHEN that would be worth trying.
+    // They were left clicking hopefully. This lets the window wait for the
+    // server and say "it's back" at the moment it is.
+    //
+    // GET /version because it is the one route that needs no token and
+    // answers even before anyone has an account. Its CONTENT is irrelevant
+    // here: a 404 "not_configured" is a perfectly good yes.
+    void probeReachable();
+
 signals:
+    // Reply to probeReachable(). True means the server answered something —
+    // anything. False means the request never arrived.
+    void reachable(bool isReachable);
     // One signal for both calls: the dialog shows a spinner, then reacts to
     // whatever comes back. `username` echoes back so a caller who fired
     // several requests knows which one resolved.

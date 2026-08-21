@@ -4238,3 +4238,57 @@ desktop Chrome/Edge. Still unverified: iOS Safari and Add-to-Home-Screen,
 which need an iPhone and a real HTTPS origin.
 
 Versions ×2 → 30.4.2. 448 measured, unchanged — the desktop build never moved.
+
+---
+
+## v30.4.3 — the way back online, found by using it
+
+**Stage 0b's first run walked straight into a hole.** The app went offline
+correctly, and then sat there. The status bar promised *"your changes will
+sync when the server is back"*; the server came back; nothing happened.
+
+**The cause, from the registry rather than a guess:** `sync/lastUser` and
+`sync/serverUrl` existed, and `sync/device` did not. `beginOffline()` returns
+early when there is no device token, so the retry timer was never armed. Not
+an edge case — that is the normal state for anyone upgrading from before
+v30.2, and for anyone who unticks "Remember this device".
+
+The function's own comment said it out loud: *"the only way back online is a
+real login, which means a restart."* That limitation was written down, shipped,
+and placed directly beneath a status message claiming the opposite. Writing a
+constraint in a comment is not the same as handling it.
+
+**Fixed in two parts.**
+
+A **"Sign in to sync"** button in the rail, present in offline mode always,
+whether or not a credential exists. It carries a guard that matters more than
+the button does: signing in as a DIFFERENT account is refused, not honoured.
+The window is already holding `data-<user>.json` in memory and saving to it;
+enabling sync for someone else would push this planner up as theirs and pull
+theirs down over it — one tap, two planners destroyed. A window cannot change
+identity mid-life.
+
+And the status message now says only what is true, splitting on whether a
+token exists: *"will sync when the server is back"* versus *"sign in to sync
+them"*.
+
+**Then the owner made the sharper observation:** *"the user won't know when
+the server will come up."* Exactly — a button that is always present and only
+sometimes works asks a person to guess, and guessing wrong looks like the app
+being broken.
+
+So `AuthClient::probeReachable()`: a credential-free `GET /version`, whose
+CONTENT is irrelevant — a 404 `not_configured` is a perfectly good yes. While
+offline and tokenless the window polls it once a minute and, the moment the
+server answers, relabels the button *"Server is back — sign in"* and says so.
+It deliberately does not emit `resultReady`: reachability is not an auth
+outcome and must never be mistaken for one by a slot that only glances at the
+enum.
+
+**On the other half of the complaint — logging in twice —** that is a
+transitional cost, not a permanent design. It happens once, to anyone whose
+last login predates v30.2 and therefore left no device token. After a single
+sign-in with "Remember this device", offline→online is silent forever, which
+is the path that matters on a phone.
+
+Versions ×2 → 30.4.3. 448 measured, unchanged.

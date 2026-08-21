@@ -71,6 +71,14 @@ public:
     // timer and no retry, and enableSync() guards against running twice.
     void beginOffline(const QString& serverUrl);
 
+private:
+    // v30.4.3 — the two halves of coming back online, shared by the silent
+    // retry and the button, so they cannot drift into doing it differently.
+    void goOnline(const QString& serverUrl, const QString& token);
+    void addSignInButton();
+
+public:
+
     // The logged-in username scopes local storage to this account
     // (data-<username>.json) and the sync-state keys. Defaults to empty so
     // the every existing caller — and every test that builds a bare
@@ -160,6 +168,7 @@ private:
     // the first successful resume, after which it stops and is never armed
     // again: once sync exists, keeping a login timer alive would be a second
     // thing racing to create it.
+    class QToolButton* m_signInBtn       = nullptr; // offline: the way back
     class QTimer*      m_reconnect       = nullptr;
     class AuthClient*  m_reconnectClient = nullptr;
     QString            m_offlineServerUrl;

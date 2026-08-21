@@ -63,6 +63,7 @@
 #include "SharingDialog.h"
 #include "AuthClient.h"
 #include "SessionStore.h"
+#include "LoginDialog.h"
 #include "SyncClient.h"
 #include "UpdateBanner.h"
 #include "UpdateClient.h"
@@ -913,28 +914,112 @@ void MainWindow::showPage(int index)
         m_navButtons[index]->setChecked(true); // autoExclusive unchecks the rest
 }
 
+void MainWindow::goOnline(const QString& serverUrl, const QString& token)
+{
+    if (m_reconnect)
+        m_reconnect->stop();
+    if (m_signInBtn) {
+        // deleteLater, not delete: this can be reached from the button's own
+        // clicked handler, and a slot must never delete its sender.
+        m_signInBtn->deleteLater();
+        m_signInBtn = nullptr;
+    }
+    statusBar()->showMessage(tr("Back online — syncing."), 5000);
+    enableSync(serverUrl, token);
+}
+
+void MainWindow::addSignInButton()
+{
+    m_signInBtn = new QToolButton(this);
+    m_signInBtn->setObjectName("nav"); // same name, same stylesheet, for free
+    m_signInBtn->setText(tr("⇅  Sign in to sync"));
+    m_signInBtn->setCursor(Qt::PointingHandCursor);
+    m_signInBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(m_signInBtn, &QToolButton::clicked, this, [this]() {
+        LoginDialog dialog(m_offlineServerUrl, this);
+        if (dialog.exec() != QDialog::Accepted || dialog.offline())
+            return; // cancelled, or chose to stay offline again
+
+        // THE GUARD THAT MATTERS. This window is already holding
+        // data-<m_username>.json in memory and saving to it. Enabling sync
+        // for a DIFFERENT account would push this planner up as theirs and
+        // pull theirs down over it — one tap, two planners destroyed. The
+        // window cannot change identity mid-life, so a different account is
+        // a refusal, not a switch.
+        if (dialog.loggedInUser().compare(m_username, Qt::CaseInsensitive) != 0) {
+            statusBar()->showMessage(
+                tr("That's a different account. Restart TickTimer to use it — "
+                   "this window is holding %1's planner.").arg(m_username),
+                8000);
+            return;
+        }
+
+        session::setLastUser(dialog.loggedInUser());
+        if (!dialog.deviceToken().isEmpty())
+            session::setDeviceToken(dialog.loggedInUser(), dialog.deviceToken());
+        goOnline(dialog.serverUrl(), dialog.authToken());
+    });
+    m_navLayout->addWidget(m_signInBtn);
+}
+
 void MainWindow::beginOffline(const QString& serverUrl)
 {
     m_offlineServerUrl = serverUrl;
-    statusBar()->showMessage(
-        tr("Working offline — your changes are saved here and will sync when "
-           "the server is back."));
 
-    // Nothing to retry WITH: this machine was never remembered, so the only
-    // way back online is a real login, which means a restart. Say nothing
-    // further — a timer that can never succeed is just heat.
     const QString token = session::deviceToken(m_username);
-    if (token.isEmpty())
+
+    // Say only what is true. v30.4.3: the first field run started offline with
+    // no device token — which is the normal state for anyone upgrading from
+    // before v30.2, or anyone who unticks "Remember this device" — and sat
+    // there forever while the status bar promised it would sync by itself.
+    // A promise the code cannot keep is worse than no promise.
+    statusBar()->showMessage(
+        token.isEmpty()
+            ? tr("Working offline — your changes are saved here. Sign in to "
+                 "sync them.")
+            : tr("Working offline — your changes are saved here and will sync "
+                 "when the server is back."));
+
+    // ALWAYS offer a way back, whether or not a silent one exists. Without
+    // this the only route online was restarting the app, which the offline
+    // door never mentioned.
+    addSignInButton();
+
+    // A silent retry needs something to retry WITH. Without a remembered
+    // device there is no credential to offer — but the app can still WATCH
+    // for the server and say when it is worth signing in.
+    //
+    // v30.4.3, from the first field run: "the user won't know when the server
+    // will come up." Quite right. A button that is always there and only
+    // sometimes works asks a person to guess, and guessing wrong looks like
+    // the app being broken.
+    if (token.isEmpty()) {
+        m_reconnectClient = new AuthClient(serverUrl, this);
+        connect(m_reconnectClient, &AuthClient::reachable, this,
+                [this](bool isReachable) {
+            if (!isReachable || !m_signInBtn)
+                return; // still gone, or we already went online
+            m_reconnect->stop(); // it is back; no reason to keep asking
+            m_signInBtn->setText(tr("⇅  Server is back — sign in"));
+            statusBar()->showMessage(
+                tr("The server is back. Sign in to sync your changes."));
+        });
+
+        m_reconnect = new QTimer(this);
+        m_reconnect->setInterval(60 * 1000);
+        connect(m_reconnect, &QTimer::timeout,
+                m_reconnectClient, &AuthClient::probeReachable);
+        m_reconnect->start();
+        m_reconnectClient->probeReachable(); // ask once now, not in a minute
         return;
+    }
 
     m_reconnectClient = new AuthClient(serverUrl, this);
     connect(m_reconnectClient, &AuthClient::resultReady, this,
             [this](AuthClient::Outcome outcome, const QString&,
                    const QString& sessionToken, const QString&) {
         if (outcome == AuthClient::Outcome::Success) {
-            m_reconnect->stop();
-            statusBar()->showMessage(tr("Back online — syncing."), 5000);
-            enableSync(m_offlineServerUrl, sessionToken);
+            goOnline(m_offlineServerUrl, sessionToken);
             return;
         }
         if (outcome == AuthClient::Outcome::BadCredentials) {

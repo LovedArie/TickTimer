@@ -83,6 +83,27 @@ void AuthClient::revokeDevice(const QString& deviceToken)
     post(QStringLiteral("/session/revoke"), body, QString());
 }
 
+void AuthClient::probeReachable()
+{
+    // A GET, so it cannot go through post(). Deliberately does NOT emit
+    // resultReady: this is not an auth outcome and must never be mistaken for
+    // one by a slot that only glances at the enum.
+    m_net.clearConnectionCache(); // same one-request-per-connection server
+
+    QNetworkRequest request(QUrl(m_serverUrl + QStringLiteral("/version")));
+    QNetworkReply* reply = m_net.get(request);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        // The same test post() uses, and for the same reason: an HTTP status
+        // means the server ANSWERED, whatever it said. A 404 is a yes.
+        const bool answered =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute)
+                .isValid();
+        reply->deleteLater();
+        emit reachable(answered);
+    });
+}
+
 void AuthClient::post(const QString& path, const QJsonObject& body,
                       const QString& usernameHint)
 {
