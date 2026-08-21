@@ -4372,3 +4372,116 @@ revision 4706, written today, where an hour earlier it was two days stale.
 silent reconnect; and an offline change provably on the server.
 
 Versions ×2 → 30.4.5. 448 measured, unchanged.
+
+---
+
+## Stage 2 — the VPS, and the three stale copies found on the way there
+
+**The session opened by proving the runbook wrong about its own state.** Stage
+0 was ticked in the log and unticked in `ROLLOUT.md`; that was bookkeeping. The
+next two findings were not.
+
+**Every executable on the machine was a version behind.** `build-release`'s
+`ticktimer.exe` and `ticktimer-server.exe` both stamped **30.4.4** while the
+sources said 30.4.5 — the version bump was committed without a rebuild. The
+field run about to start would have exercised the build WITHOUT `markDirty()`,
+i.e. the exact binary v30.4.5 exists to replace.
+
+**And the guard for that seam was disarmed by the same staleness.**
+`test_domain::installerVersionMatchesTheHeader` compares a version compiled
+INTO the test binary against `ticktimer.iss` read off disk. A stale
+`test_domain.exe` therefore passes by comparing two old numbers, which is why
+`test-results.txt` said six-green over a broken seam. Rebuilding failed it
+instantly. **A green suite is not evidence of which exe it ran.**
+
+**The checklist pointed at a decoy planner.** `QA_CHECKLIST_v30.0.md` named
+`%APPDATA%\TickTimer\` in three places; the live file is one level deeper, at
+`TickTimer\TickTimer\`, per the v22.7 org-name move. Because
+`migrateLegacyData` COPIES rather than moves, the parent still holds a
+same-named file — here `"version": 10` against the live `14`. Step 3 is the
+BACKUP step and step 5 asserts the file reads 14, so the checklist contradicted
+itself across two lines, and following it literally meant backing up the wrong
+file and then hunting a `movedToIds` that could never be there.
+
+Third instance of one shape in one session, and it is worth naming: **the copy
+you reach for is not the copy you tested.** Three exes, two data files, and
+later a GitHub remote 20 commits behind whose tree had no `deploy/`, no `web/`
+and no `ROLLOUT.md` at all — a `git clone` on the new box would have produced a
+runbook-shaped hole where the files the runbook names should be.
+
+**The box:** Hetzner CX23, x86_64, Ubuntu 26.04, Caddy 2.6.2 from Ubuntu's own
+universe repo. The Cloudsmith install was abandoned after pasted commands kept
+truncating mid-line; one short `apt install` was the better answer, and the
+lesson generalises — **when someone is executing rather than deciding, the
+shortest command that works beats the most correct one that wraps.** The same
+correction arrived explicitly a few messages earlier: *"too much jargon. What
+do you need from me, what do i need to do."*
+
+**Cloudflare grey, not orange.** DNS only, so Caddy obtains its own
+certificate and no edge cache sits in front of a `.wasm` whose filename never
+changes — the `immutable` trap from v30.4, one layer further out, where the fix
+would be a dashboard button rather than a header.
+
+**2f went the safe way and never reached the cliff.** `PlannerStore::revision`
+returns `0` for an unknown user as a clean success, and `sync/<user>/
+lastRevision` is keyed by ACCOUNT NAME, not by server — so registering fresh on
+a new box gives `decide(0, 4706, dirty=false)` → **Pull**, replacing a real
+planner with an empty one and reporting *"Updated from the server (revision
+0)."* Carrying `accounts.json`, `devices.json`, `shares.json` and `planners/`
+across keeps the revision line continuous; the app said **"Already in sync"**,
+which is the whole proof.
+
+**Backups, and the bug they found.** `deploy/` gains a script and a systemd
+oneshot + timer. systemd rather than cron because a failing cron job mails root
+on a box with no mail — a failure into nowhere; `journalctl` makes a broken
+backup visible, and a backup you cannot see failing is not a backup. The
+archive is written `.partial`, read back with `tar -tz`, and only then renamed
+— the same write-then-rename discipline `QSaveFile` uses, for the same reason.
+`Persistent=true` matters less on a VPS than it will on the Pi, which loses
+power. 2g ends in a RESTORE rather than a checkmark: it returned `phanp.json`
+at 76597 bytes, and the restore IS the Pi migration, rehearsed nightly for
+months before it is ever walked in anger.
+
+---
+
+## v30.4.6 — the two stores that did not follow their own rule
+
+Writing the backup script is what found it. `ShareStore.cpp` has carried the
+argument in a comment since it was written — *"QSaveFile everywhere data
+matters — a crash mid-write must leave the previous grants intact, not a
+truncated file"* — and `PlannerStore` obeys it. `AccountStore` and
+`DeviceStore`, holding strictly more than shares do, opened a plain `QFile`
+`WriteOnly`, **which truncates the file the instant it opens**.
+
+The window is microseconds; the consequence is not. A crash there leaves
+`accounts.json` a well-formed, empty, entirely believable file: every password
+hash gone, nobody able to prove they own an account they used yesterday, and
+the planners still on disk keyed to users the server no longer believes in.
+The backup would have preserved that empty file faithfully — **the tarball
+doing its job perfectly and saving nothing**, which is what made this a
+backup-shaped discovery rather than a code-reading one.
+
+`devices.json` is the milder twin: no lockout, just every phone asking for a
+password on every launch — arriving disguised as a regression in v30.2's
+remembered devices rather than as a half-written file.
+
+The other half of the fix is **failing loudly**. The old `if (open) write` had
+no `else`, so a full disk lost every account change from then on in silence,
+which is this project's recurring villain. Both paths now `qWarning`, and the
+server runs under systemd, so it lands where somebody can find it.
+
+**On coverage, honestly:** atomicity under interruption is not unit-testable —
+QTest cannot crash the process mid-write. What the suite covers is the
+regression that would actually happen, someone dropping `commit()`: all four
+stores already destroy-and-reload from disk (`test_auth.cpp:112`, `:164`,
+`:326`, `:377`), and without a commit the file is never written. The original
+bug was caught by reading the four write paths side by side, which is the
+cheapest place it was ever going to be caught.
+
+Deployed and verified from the far end: server restarted on 30.4.6, every
+session token forgotten as designed (`AuthServer.h:107` — *"persisting tokens
+would be persisting open doors"*), the app let straight back in by its
+remembered device with no password, and Sync answered **"Already in sync."**
+
+Versions ×2 → 30.4.6. 448 measured, unchanged — this fixes a failure mode the
+suites never exercised.
