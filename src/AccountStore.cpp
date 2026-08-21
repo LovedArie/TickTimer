@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
+#include <QSaveFile>
 
 AccountStore::AccountStore(const QString& filePath)
     : m_filePath(filePath)
@@ -112,7 +113,34 @@ void AccountStore::save() const
     root[QStringLiteral("accounts")] = arr;
 
     QFileInfo(m_filePath).absoluteDir().mkpath(QStringLiteral("."));
-    QFile f(m_filePath);
-    if (f.open(QIODevice::WriteOnly))
-        f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+
+    // QSaveFile, same as PlannerStore and ShareStore and for the same reason —
+    // but the stakes here are the highest in the project. A plain QFile opened
+    // WriteOnly TRUNCATES THE FILE THE INSTANT IT OPENS, so a crash, a power
+    // cut or an OOM kill anywhere between that open and the write completing
+    // leaves accounts.json reading as "no accounts". Not a corrupted record
+    // that someone notices: a well-formed, empty, entirely believable file.
+    // Every password hash on the box would be gone, and nobody could prove
+    // they owned an account they had used the day before. There is no undo for
+    // that and no amount of syncing brings it back, because the planners are
+    // keyed by users the server no longer believes in.
+    //
+    // QSaveFile writes to a temporary beside the target and RENAMES on
+    // commit(). Rename is atomic at the filesystem level, so a reader sees
+    // wholly the old file or wholly the new one, and an interrupted write
+    // leaves the previous version untouched.
+    QSaveFile f(m_filePath);
+    if (!f.open(QIODevice::WriteOnly)) {
+        qWarning("AccountStore: cannot open %s for writing — accounts NOT saved",
+                 qUtf8Printable(m_filePath));
+        return;
+    }
+    f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    // Failing LOUDLY is the other half. The old code's `if (open) write` had no
+    // else at all, so a full disk or a permissions change lost every account
+    // change from then on in perfect silence. This server runs under systemd,
+    // so a qWarning lands in `journalctl -u ticktimer` where it can be found.
+    if (!f.commit())
+        qWarning("AccountStore: commit failed for %s — accounts NOT saved",
+                 qUtf8Printable(m_filePath));
 }

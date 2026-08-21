@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
+#include <QSaveFile>
 
 namespace
 {
@@ -162,7 +163,25 @@ void DeviceStore::save() const
     root[QStringLiteral("devices")] = arr;
 
     QFileInfo(m_filePath).absoluteDir().mkpath(QStringLiteral("."));
-    QFile f(m_filePath);
-    if (f.open(QIODevice::WriteOnly))
-        f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+
+    // QSaveFile, for the reason spelled out at length in AccountStore::save:
+    // a plain QFile truncates on open, so an interruption in that window
+    // leaves a well-formed EMPTY file rather than the previous contents.
+    //
+    // Losing devices.json is milder than losing accounts.json — nobody is
+    // locked out, because a forgotten device just means a password prompt.
+    // It is still exactly the failure v30.2 exists to prevent: every phone
+    // asking for a password on every launch is what makes a phone app
+    // intolerable, and it would arrive looking like a regression in the
+    // remembered-device feature rather than like a half-written file.
+    QSaveFile f(m_filePath);
+    if (!f.open(QIODevice::WriteOnly)) {
+        qWarning("DeviceStore: cannot open %s for writing — devices NOT saved",
+                 qUtf8Printable(m_filePath));
+        return;
+    }
+    f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    if (!f.commit())
+        qWarning("DeviceStore: commit failed for %s — devices NOT saved",
+                 qUtf8Printable(m_filePath));
 }
