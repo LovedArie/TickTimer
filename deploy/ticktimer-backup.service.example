@@ -1,0 +1,49 @@
+# TickTimer backup, as a systemd oneshot job.
+#
+# WHY SYSTEMD AND NOT CRON: this box already expresses "this runs as a
+# service" in systemd, and two mechanisms for scheduled work is one more place
+# somebody has to think to look. The deciding reason is failure reporting --
+# a failing cron job mails root, and on a server with no mail configured that
+# means it fails into nowhere, silently, possibly for months. A systemd job
+# writes to the journal whether it succeeds or not:
+#
+#   systemctl status ticktimer-backup.timer     <- is it scheduled?
+#   journalctl -u ticktimer-backup -n 20        <- what did the last runs do?
+#
+# A backup you cannot see failing is not a backup.
+#
+# Copy to /etc/systemd/system/ticktimer-backup.service alongside the .timer.
+
+[Unit]
+Description=TickTimer data backup
+# Ordering only, not a dependency: the backup is still worth taking if the
+# server is stopped -- arguably it is worth MORE then, because a stopped
+# server is often a server somebody is about to do something drastic to.
+After=ticktimer.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ticktimer-backup
+
+# Runs as root: it must read a directory owned by the ticktimer user and write
+# to /var/backups, and no single unprivileged account has both. The blast
+# radius is held down by the sandboxing below instead -- this process can see
+# almost nothing of the filesystem and can write to exactly one directory.
+User=root
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=
+ReadWritePaths=/var/backups/ticktimer
+ReadOnlyPaths=/var/lib/ticktimer
+
+# RestrictAddressFamilies= with no value removes network access entirely. A
+# local backup has no business opening a socket, and the day this script grows
+# an "upload to somewhere" line, this is the line that will refuse -- which is
+# the correct outcome, because that upload needs credentials and a review, not
+# a quiet addition to a job that already runs as root every night.

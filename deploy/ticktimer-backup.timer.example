@@ -1,0 +1,30 @@
+# Nightly schedule for ticktimer-backup.service.
+#
+# Copy to /etc/systemd/system/ticktimer-backup.timer, then:
+#   systemctl daemon-reload
+#   systemctl enable --now ticktimer-backup.timer
+#   systemctl list-timers ticktimer-backup.timer
+
+[Unit]
+Description=Nightly TickTimer data backup
+
+[Timer]
+# 03:00 local time. The hour barely matters for 80 KB of JSON; what matters is
+# that it is not a moment anybody is using the app, so a truncated read of
+# accounts.json is that much less likely.
+OnCalendar=*-*-* 03:00:00
+
+# THE LINE THAT MATTERS ON A MACHINE THAT SLEEPS. Persistent=true means a
+# missed run fires as soon as the machine is next up, instead of being skipped
+# until tomorrow. On a VPS this is nearly free insurance against a reboot
+# landing on 03:00. On the Raspberry Pi this plan ends at -- a home machine,
+# subject to power cuts and being unplugged -- it is the difference between a
+# nightly backup and a backup that happens on nights the box felt like it.
+Persistent=true
+
+# Spread the start so the job never lands on the same second as anything else
+# a future box happens to schedule at 03:00.
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

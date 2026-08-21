@@ -256,18 +256,74 @@ exactly how the owner's data came back in v30.4.5.
 
 ### 2g. Backups, on day one — because your backup IS your migration
 
-`accounts.json`, `devices.json` and `planners/` are everyone's data, and
-nothing copies them anywhere yet.
+`accounts.json`, `devices.json` and `planners/` are everyone's data. Two
+halves: a nightly tarball ON the box, and a copy OFF it. The first is
+automated below; the second is yours to run until a NAS does it.
 
-- [ ] Set up a nightly copy of `/var/lib/ticktimer/` off the box — anywhere
-      that is not the box.
-- [ ] **Restore it once, now, onto a scratch directory.** A backup nobody has
-      restored is a hope, not a backup.
+**On the box.** Three files ship in `deploy/`, so the Pi inherits them by
+`git clone` exactly as the server and Caddy configs do:
 
-This is not just housekeeping. A migration to the Pi is precisely "restore last
-night's backup onto the new machine" — so building it now means you rehearse
-the Pi move every night, and the real one is a path you have already walked a
-hundred times.
+- [ ] Get the files and install them:
+
+```sh
+cd ~/TickTimer && git pull
+install -m 755 deploy/ticktimer-backup.sh /usr/local/bin/ticktimer-backup
+cp deploy/ticktimer-backup.service.example /etc/systemd/system/ticktimer-backup.service
+cp deploy/ticktimer-backup.timer.example   /etc/systemd/system/ticktimer-backup.timer
+mkdir -p /var/backups/ticktimer
+```
+
+- [ ] Schedule it, then run it once by hand rather than waiting for 03:00:
+
+```sh
+systemctl daemon-reload
+systemctl enable --now ticktimer-backup.timer
+systemctl start ticktimer-backup.service
+journalctl -u ticktimer-backup -n 5 --no-pager
+ls -lh /var/backups/ticktimer/
+```
+
+**The archive is written as `.partial` and renamed only once `tar -tz` has
+read it back** — the same write-then-rename discipline `QSaveFile` uses in the
+C++ stores, for the same reason. A backup killed halfway must not be sitting
+there under a name that says it finished.
+
+- [ ] **RESTORE IT, NOW, before you trust it.** Into a scratch directory, so
+      nothing live is touched:
+
+```sh
+mkdir -p /tmp/restore-test
+tar -xzf "$(ls -1t /var/backups/ticktimer/ticktimer-*.tar.gz | head -1)" -C /tmp/restore-test
+ls -l /tmp/restore-test/ticktimer/ /tmp/restore-test/ticktimer/planners/
+```
+
+Your planner should be there at its real size (~76 KB), not zero. **A backup
+nobody has restored is a hope, not a backup** — and the restore is also the
+migration, so this is the Pi move rehearsed on the day the VPS was built.
+
+- [ ] Clean up the scratch copy: `rm -rf /tmp/restore-test`
+
+**Off the box.** The tarballs above live on the machine they protect, which
+covers a bad write and covers nothing about losing the machine. From
+PowerShell on your PC:
+
+```powershell
+mkdir C:\Users\phanp\Backups\ticktimer -Force
+scp root@YOUR.SERVER.IP:/var/backups/ticktimer/*.tar.gz C:\Users\phanp\Backups\ticktimer\
+```
+
+- [ ] Run that, and confirm the files arrived.
+- [ ] Do it again whenever you think of it, until the NAS exists. A month of
+      dailies is about 2.5 MB, so pulling the lot every time is fine and
+      needs no cleverness about which are new.
+
+**Known limitation, written down rather than discovered later:** the server
+writes `accounts.json` and `devices.json` with a plain truncating `QFile`, so
+a tarball taken during one of those writes can capture a truncated file. The
+window is microseconds and only opens on registration and login, which is why
+03:00 was chosen — but the honest fix is `QSaveFile` in those two stores, as
+`PlannerStore` and `ShareStore` already do. The backup script warns to the
+journal if it ever sees an empty `accounts.json`.
 
 ### 2h. What will change when the Pi arrives *(nothing to do yet)*
 
