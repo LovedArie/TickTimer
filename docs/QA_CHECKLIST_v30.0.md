@@ -7,8 +7,8 @@ are independent: Part A needs no AI and no memory, Part B needs no AI, and only
 Part C needs a model at all. If you have twenty minutes, do 1–2 and Part B —
 that is where the new user-facing surface is.
 
-The automated suites cover the logic — six suites green, 422 passing test
-functions (194 + 22 + 75 + 97 + 19 + 15). *Measured, not remembered: that is
+The automated suites cover the logic — six suites green, 448 passing test
+functions (205 + 22 + 76 + 98 + 25 + 22). *Measured, not remembered: that is
 what QTest reports across the six binaries, and it includes each suite's
 synthesized `initTestCase`/`cleanupTestCase` pair. Re-measure before editing
 this line.* What they cannot cover is your real file, your real editor, and a
@@ -30,11 +30,21 @@ real model.
         `%LOCALAPPDATA%\Programs\TickTimer\ticktimer.exe` and it is still
         whatever you last installed. Run `installer\ticktimer.iss` through Inno
         Setup, or launch `dist\TickTimer\ticktimer.exe` directly.
-      - **This time *Help → About* can actually tell you.** It reads **30.0.0**
-        on this build. In v29.2 it could not, because the version had not been
+      - **This time *Help → About* can actually tell you.** It must read
+        **30.4.5**. In v29.2 it could not, because the version had not been
         bumped and both binaries claimed the same number — an hour went into
-        diagnosing that. If About says anything below 30.0.0, you are looking
-        at an old exe, not a broken feature.
+        diagnosing that. If About says anything else you are looking at an old
+        exe, not a broken feature.
+      - **The tests do not save you here.** On 2026-08-21 all six suites were
+        green against a `build-release` whose `ticktimer.exe` and
+        `ticktimer-server.exe` both still stamped **30.4.4** — the version bump
+        was committed without a rebuild, so the exes lagged their own sources
+        by one release, and the release they lagged by was the data-loss fix.
+        `test_domain::installerVersionMatchesTheHeader` is the guard for that
+        seam, and a stale `test_domain.exe` disarms it silently: it compares a
+        version compiled INTO the binary against `ticktimer.iss` read off disk,
+        so an unrebuilt test passes by comparing two old numbers. Build, THEN
+        read the stamp — never trust a green run as proof of which exe it ran.
 
 - [ ] **2. Run the tests once.** `tools\run-tests.bat` — **from PowerShell or
       the Qt prompt, not Git Bash** (output vanishes there).
@@ -42,9 +52,22 @@ real model.
 
 - [ ] **3. Take a copy of your planner before you start.**
       Close the app, and copy `data-<you>.json` from
-      `%APPDATA%\TickTimer\` somewhere safe. Part A asks you to read that file
-      and Part B writes a new one beside it. Nothing here is destructive, but a
-      copy costs ten seconds and this is the first run of a format bump.
+      `%APPDATA%\TickTimer\TickTimer\` somewhere safe. Part A asks you to
+      read that file and Part B writes a new one beside it. Nothing here is
+      destructive, but a copy costs ten seconds and this is the first run of a
+      format bump.
+      - **MIND THE DOUBLE FOLDER, and check the file before you trust it.**
+        The live planner is nested one level deeper than looks right:
+        `TickTimer\TickTimer\`, not `TickTimer\`. That is not a typo — v22.7 gave
+        the app an organization name, which silently moved
+        `QStandardPaths::AppDataLocation` a level down, and
+        `JsonStore::migrateLegacyData` COPIES rather than moves. So the parent
+        folder still holds a same-named `data-<you>.json` frozen at the moment
+        of that migration.
+      - The one way to tell them apart is the `"version"` line near the end of
+        the file: the live one reads **14**, the decoy reads whatever format
+        was current when it was abandoned. **If it does not say 14, you have
+        the wrong file** — and every read in Part A will lie to you.
 
 ---
 
@@ -107,7 +130,7 @@ step 6 will look like a missing feature:
       to a model as a contradiction, and it picks one at random.
 
 - [ ] **9. Press OK, then find the file.**
-      `%APPDATA%\TickTimer\memory-<you>.md`, beside your planner.
+      `%APPDATA%\TickTimer\TickTimer\memory-<you>.md`, beside your planner.
       - ✅ It is plain Markdown, with `## Routines` / `## Preferences` headings
         and `- ` bullets. You should be able to read it at a glance
       - ✅ Your entries are there, one per line
@@ -176,7 +199,7 @@ step 6 will look like a missing feature:
 - [ ] **16. Log out and log in as a different account** (register a throwaway
       one if you need to).
       - ✅ **Settings → Memory is empty** for the new account
-      - ✅ `%APPDATA%\TickTimer\` now has `memory-<you>.md` *and*
+      - ✅ `%APPDATA%\TickTimer\TickTimer\` now has `memory-<you>.md` *and*
         `memory-<other>.md`, beside the two planners
       - ✅ Log back in as yourself: your entries are exactly as you left them
       - ❌ If the second account sees the first one's memory, stop and report —

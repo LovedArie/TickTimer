@@ -53,8 +53,8 @@ python -m http.server 8099
 
 Open <http://localhost:8099/> in Chrome or Edge.
 
-- [ ] It loads — boot screen, then TickTimer's login window.
-- [ ] **Log in, change something, then RELOAD the page. Is it still there?**
+- [x] It loads — boot screen, then TickTimer's login window.
+- [x] **Log in, change something, then RELOAD the page. Is it still there?**
 
 That second one is the whole game. Qt mounts a memory-only filesystem in a
 browser; `web/index.html` mounts IndexedDB over it instead. If that fix does
@@ -69,11 +69,11 @@ works.
 
 On the desktop app, with your server running as usual:
 
-- [ ] Log in with **"Remember this device"** ticked. Close the app.
-- [ ] Reopen it — it should go **straight in**, no password.
-- [ ] Now **stop the server**, and open the app again. It should offer
+- [x] Log in with **"Remember this device"** ticked. Close the app.
+- [x] Reopen it — it should go **straight in**, no password.
+- [x] Now **stop the server**, and open the app again. It should offer
       **"Work offline as \<you\>"**. Take it; your planner should be there.
-- [ ] Make a change while offline. Start the server again and wait a minute —
+- [x] Make a change while offline. Start the server again and wait a minute —
       the Sync button should appear by itself and the change should go up.
 
 **STOP IF** the app refuses to open with the server down. That is the entire
@@ -120,18 +120,40 @@ That is the one security property the whole band placement exists for.
 
 ---
 
-## Stage 2 — The VPS *(~30 minutes, ~$5/month, the first thing that costs money)*
+## Stage 2 — The VPS *(~an hour, ~$5/month, the first thing that costs money)*
 
 Everything above was free. This is the step that makes TickTimer reachable
 from anywhere, and it is required before anyone else can use it at all.
 
-### 2a. Get a box and a name
+**This stage is also a rehearsal.** The plan is VPS now, Raspberry Pi behind a
+Cloudflare Tunnel later. Every choice below is made so the second move is a
+copy rather than a redesign — and so the one thing that must never change, the
+origin your users' phones know, never does.
 
-- [ ] Rent the smallest VPS anywhere reputable (Hetzner, DigitalOcean,
-      Vultr). 1 vCPU / 1 GB is ample — this server stores JSON and hashes
-      passwords.
-- [ ] Point a domain (or subdomain) at its IP with an **A record**. Caddy
-      needs a real name to get a certificate.
+### 2a. The name first, then the box
+
+The name outlives the hosting. Decide it once.
+
+- [ ] Register a domain (~$12/year at an at-cost registrar). **Cloudflare
+      Tunnel itself is free** — the domain is the whole bill.
+- [ ] Put it on **Cloudflare's nameservers now**, even though this stage does
+      not use a tunnel. Cloudflare DNS is free and behaves as ordinary DNS
+      with a plain A record. Doing it now makes the Pi hop a record edit
+      instead of a registrar migration mid-move.
+- [ ] **Use a SUBDOMAIN: `ticktimer.yourdomain.com`, never the bare domain.**
+      One process owns port 443 and routes by hostname, so a second app later
+      is a new subdomain and a new Caddy block. If TickTimer squats the apex,
+      adding anything else means MOVING TickTimer — a new origin, and an
+      installed web app does not carry its IndexedDB to a new origin. She
+      reinstalls and arrives at an empty planner. Free to avoid today.
+- [ ] Rent the smallest VPS anywhere reputable. 1 vCPU / 1 GB is ample — this
+      server stores JSON and hashes passwords.
+- [ ] **Pick an ARM64 instance** (e.g. Hetzner's CAX line). A Raspberry Pi 4/5
+      on a 64-bit OS is also ARM64, so the binary, the systemd unit and the
+      Caddyfile all transfer to the Pi unchanged. An x86 VPS adds "rebuild for
+      another architecture" to the Pi move for no benefit today.
+- [ ] Point the subdomain at its IP with an **A record**. Caddy needs a real
+      name to get a certificate.
 
 ### 2b. Put the server on it
 
@@ -146,32 +168,143 @@ from anywhere, and it is required before anyone else can use it at all.
 ### 2c. Put Caddy in front
 
 - [ ] Install Caddy. Copy `deploy/Caddyfile.example` to `/etc/caddy/Caddyfile`
-      and change the domain in the first line.
+      and change the domain in the first line to your subdomain.
 - [ ] `mkdir -p /var/www/ticktimer /var/www/ticktimer-app`
 - [ ] `systemctl reload caddy`
 - [ ] Firewall: allow **80 and 443 only**. Nothing outside should reach 8080.
 
-### 2d. Prove it
+### 2d. Put the web app up now, not in Stage 4
+
+Stage 4 is her iPhone, but the files belong here — `/app/` should work from the
+moment the box does, so you can test it in a desktop browser first.
+
+- [ ] Copy the *contents* of `build-wasm\serve\` to `/var/www/ticktimer-app/`.
+      The `/app*` block in the Caddyfile already serves it.
+- [ ] Open `https://ticktimer.yourdomain.com/app/` in a desktop browser. Same
+      two checks as Stage 0a: it loads, and it remembers across a reload.
+
+### 2e. Prove the hardening
 
 From your phone, **on mobile data, not Wi-Fi**:
 
-- [ ] `https://your-domain/version` answers with JSON (or a 404 saying
-      `not_configured`, which is also fine — it means the server is alive).
-- [ ] `http://your-domain:8080/version` **times out**. If it answers, the
-      server is not bound to localhost and you should fix that before going
-      further.
+- [ ] `https://ticktimer.yourdomain.com/version` answers with JSON (or a 404
+      saying `not_configured`, which is also fine — it means the server is
+      alive).
+- [ ] `http://ticktimer.yourdomain.com:8080/version` **times out**. If it
+      answers, the server is not bound to localhost and you should fix that
+      before going further.
 
 **STOP IF** port 8080 answers from outside. That is the one thing Stage 2
 exists to prevent.
 
-### 2e. Move your account over
+### 2f. Move your account over — READ THIS BEFORE YOU SYNC
 
-Your existing account lives on your laptop's server, not this one.
+Your account and planner live on your PC's server, not this one. **The obvious
+procedure — register on the new server, press Sync — can silently replace your
+planner with an empty one.** Here is the mechanism, because knowing it is what
+makes the safe procedure obvious:
 
-- [ ] In the desktop app's login screen, change **Server** to
-      `https://your-domain` (no port).
-- [ ] Create your account there — you will need the invite code from 2b.
-- [ ] Sync. Your planner uploads to the new server.
+`PlannerStore::revision` returns `0` for a user it has never heard of. Not an
+error — a clean success. And `sync/<user>/lastRevision` in QSettings is keyed
+by **account name, not by server**, so it still holds the number your PC's
+server reached. Feed both to the truth table:
+
+```
+decide(serverRevision=0, lastSynced=4706, dirty=false)
+  -> server "moved" (0 != 4706), local not dirty
+  -> Action::Pull
+  -> your planner is replaced by the new server's empty one
+```
+
+...and the app reports **"Updated from the server (revision 0)."** A cheerful
+success message over a destructive action — the same family as the v30.4.5
+bug, reached this time by changing servers instead of by going offline.
+
+**The safe procedure is to carry the data across, which keeps the revision line
+continuous.** Do this instead of registering fresh:
+
+- [ ] Stop the server on your PC.
+- [ ] Copy `accounts.json`, `devices.json`, `shares.json` and the whole
+      `planners/` folder from `%APPDATA%\ticktimer-server\server\` to
+      `/var/lib/ticktimer/` on the VPS, then
+      `chown -R ticktimer:ticktimer /var/lib/ticktimer`.
+- [ ] `systemctl restart ticktimer`.
+- [ ] In the desktop app, change **Server** to
+      `https://ticktimer.yourdomain.com` (no port). Your existing password
+      works — you carried the account file.
+- [ ] Sync. It should say **"Already in sync"**, because both sides now agree
+      on the same revision number. That sentence is the proof the move worked.
+
+If you would rather start the server clean, force the other safe branch
+instead: **make a trivial edit in the app immediately before switching.** That
+sets `dirty`, which turns the same divergence into a **Conflict** — a question
+this codebase has never auto-resolved — and you choose to keep yours. Sync
+ships the whole planner, so one trivial edit carries everything, which is
+exactly how the owner's data came back in v30.4.5.
+
+- [ ] **Verify from the server's side, not from the dialog.**
+      `ls -l /var/lib/ticktimer/planners/` — is your file there, the right
+      size, and written just now? The dialog said "already synced" for two days
+      once while the server held nothing.
+
+### 2g. Backups, on day one — because your backup IS your migration
+
+`accounts.json`, `devices.json` and `planners/` are everyone's data, and
+nothing copies them anywhere yet.
+
+- [ ] Set up a nightly copy of `/var/lib/ticktimer/` off the box — anywhere
+      that is not the box.
+- [ ] **Restore it once, now, onto a scratch directory.** A backup nobody has
+      restored is a hope, not a backup.
+
+This is not just housekeeping. A migration to the Pi is precisely "restore last
+night's backup onto the new machine" — so building it now means you rehearse
+the Pi move every night, and the real one is a path you have already walked a
+hundred times.
+
+### 2h. What will change when the Pi arrives *(nothing to do yet)*
+
+Recorded here so the choices above stay legible later:
+
+| Piece | Changes on the Pi? |
+|---|---|
+| `ticktimer-server` binary | No — same ARM64 |
+| `ticktimer.service` | No — copy verbatim |
+| `/download/*` and `/app*` Caddy blocks | No — byte-identical |
+| Caddy site address | `ticktimer.yourdomain.com {` becomes `:80 {` |
+| Where TLS comes from | Caddy/Let's Encrypt becomes Cloudflare's edge |
+| DNS | A record becomes a tunnel CNAME |
+| `/var/lib/ticktimer/` | Restored from backup |
+| **The origin phones know** | **Never** |
+
+One line the Pi needs that the VPS does not — inside `reverse_proxy`, pin
+`X-Forwarded-For` to the header Cloudflare controls:
+
+```
+header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+```
+
+`AuthServer::clientIdFor` trusts `X-Forwarded-For` from a loopback peer and
+takes the FIRST entry. Cloudflare appends to a client-supplied header rather
+than replacing it, so without this line a caller can put a value of their own
+at the front and mint a fresh identity per login attempt — the exact brake
+bypass the loopback guard was written to prevent, arriving through the header
+instead of the socket. Verify Cloudflare's current behaviour when you get
+there; pin it regardless, because pinning is correct either way.
+
+### 2i. Hosting more than TickTimer *(for later, decided now)*
+
+One process owns 443. Everything else binds a distinct loopback port and Caddy
+routes by hostname:
+
+```
+ticktimer.yourdomain.com  ->  127.0.0.1:8080
+otherapp.yourdomain.com   ->  127.0.0.1:8081
+```
+
+A systemd unit and a Caddy block each. When the tunnel arrives, point
+`cloudflared` at Caddy and let Caddy keep doing the routing — one routing
+config survives both hops, and app number three stays a five-line edit.
 
 ---
 
@@ -267,9 +400,26 @@ hour once went into diagnosing "a broken feature" that was a month-old exe.
   `devices.json` on the server.
 - **The web UI is the desktop UI**, drawn in a canvas. Usable, not native.
   Text entry on a touchscreen is its roughest edge.
+- **The web app cannot start without the server, at all.** There is no service
+  worker in this repo — no `sw.js`, no `navigator.serviceWorker` in
+  `web/index.html`, and `manifest.webmanifest` carries no offline story. So
+  Add-to-Home-Screen is a chrome-less bookmark: tapping the icon fetches
+  `start_url` from the origin on every launch. Server unreachable means Safari's
+  error page, not TickTimer — she will not even reach the honest "TickTimer
+  didn't start" screen, because `index.html` is what failed to arrive. The
+  Caddyfile's `no-cache` on the wasm is correct for deploy freshness and works
+  directly against this.
+
+  **The asymmetry to keep in mind:** desktop and the Android APK are installed
+  binaries that own their own copy, so v30.2's offline gate covers them. The web
+  app is downloaded fresh each launch. Her data survives in IndexedDB the whole
+  time — intact and unreachable, which is arguably worse than losing it. A
+  cache-first service worker over the app shell closes it, and puts the file
+  Phase 5's push handler needs there early.
+
 - **Nothing is backed up automatically.** `accounts.json`, `devices.json` and
-  `planners/` in `/var/lib/ticktimer` are everyone's data. Copy them somewhere
-  on a schedule.
+  `planners/` in `/var/lib/ticktimer` are everyone's data. Stage 2g sets up the
+  nightly copy — do not skip it, because it doubles as the Pi migration.
 
 ## If you send a report
 
