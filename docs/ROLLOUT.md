@@ -134,63 +134,70 @@ origin your users' phones know, never does.
 
 The name outlives the hosting. Decide it once.
 
-- [ ] Register a domain (~$12/year at an at-cost registrar). **Cloudflare
+- [x] Register a domain (~$12/year at an at-cost registrar). **Cloudflare
       Tunnel itself is free** — the domain is the whole bill.
-- [ ] Put it on **Cloudflare's nameservers now**, even though this stage does
+- [x] Put it on **Cloudflare's nameservers now**, even though this stage does
       not use a tunnel. Cloudflare DNS is free and behaves as ordinary DNS
       with a plain A record. Doing it now makes the Pi hop a record edit
       instead of a registrar migration mid-move.
-- [ ] **Use a SUBDOMAIN: `ticktimer.yourdomain.com`, never the bare domain.**
+- [x] **Use a SUBDOMAIN: `ticktimer.yourdomain.com`, never the bare domain.**
       One process owns port 443 and routes by hostname, so a second app later
       is a new subdomain and a new Caddy block. If TickTimer squats the apex,
       adding anything else means MOVING TickTimer — a new origin, and an
       installed web app does not carry its IndexedDB to a new origin. She
       reinstalls and arrives at an empty planner. Free to avoid today.
-- [ ] Rent the smallest VPS anywhere reputable. 1 vCPU / 1 GB is ample — this
+- [x] Rent the smallest VPS anywhere reputable. 1 vCPU / 1 GB is ample — this
       server stores JSON and hashes passwords.
-- [ ] **Pick an ARM64 instance** (e.g. Hetzner's CAX line). A Raspberry Pi 4/5
-      on a 64-bit OS is also ARM64, so the binary, the systemd unit and the
-      Caddyfile all transfer to the Pi unchanged. An x86 VPS adds "rebuild for
-      another architecture" to the Pi move for no benefit today.
-- [ ] Point the subdomain at its IP with an **A record**. Caddy needs a real
+- [ ] **ARM64 is a mild preference, not a requirement.** *(2026-08-21: this
+      box is a Hetzner CX23, x86_64, Ubuntu 26.04 — deliberately left unticked
+      to record that.)* The original reasoning was that a Pi is ARM64 so the
+      binary would transfer; in practice the server is COMPILED ON THE BOX from
+      four small source files, so the Pi runs the same three commands either
+      way. Architecture costs a recompile, not a redesign.
+- [x] Point the subdomain at its IP with an **A record**. Caddy needs a real
       name to get a certificate.
 
 ### 2b. Put the server on it
 
-- [ ] Build `ticktimer-server` for Linux on the box, or copy a binary over.
-- [ ] `useradd -r -s /usr/sbin/nologin ticktimer` and
+- [x] Build `ticktimer-server` for Linux on the box, or copy a binary over.
+- [x] `useradd -r -s /usr/sbin/nologin ticktimer` and
       `mkdir -p /var/lib/ticktimer` owned by it.
-- [ ] Copy `deploy/ticktimer.service.example` to
+- [x] Copy `deploy/ticktimer.service.example` to
       `/etc/systemd/system/ticktimer.service`. **Change `--invite CHANGE-ME`
       to a real word.** Then `systemctl daemon-reload && systemctl enable --now
       ticktimer`.
 
 ### 2c. Put Caddy in front
 
-- [ ] Install Caddy. Copy `deploy/Caddyfile.example` to `/etc/caddy/Caddyfile`
+- [x] Install Caddy. Copy `deploy/Caddyfile.example` to `/etc/caddy/Caddyfile`
       and change the domain in the first line to your subdomain.
-- [ ] `mkdir -p /var/www/ticktimer /var/www/ticktimer-app`
-- [ ] `systemctl reload caddy`
+- [x] `mkdir -p /var/www/ticktimer /var/www/ticktimer-app`
+- [x] `systemctl reload caddy`
 - [ ] Firewall: allow **80 and 443 only**. Nothing outside should reach 8080.
+      - *(2026-08-21: not done — `ufw` is inactive and no Hetzner cloud
+        firewall is configured. 2e still passed, because what actually closes
+        8080 is the server's `--bind 127.0.0.1`, not a firewall. That is the
+        real protection and it is verified; a firewall would be a second layer
+        in case something is ever started without that flag. Worth adding.)*
 
 ### 2d. Put the web app up now, not in Stage 4
 
 Stage 4 is her iPhone, but the files belong here — `/app/` should work from the
 moment the box does, so you can test it in a desktop browser first.
 
-- [ ] Copy the *contents* of `build-wasm\serve\` to `/var/www/ticktimer-app/`.
+- [x] Copy the *contents* of `build-wasm\serve\` to `/var/www/ticktimer-app/`.
       The `/app*` block in the Caddyfile already serves it.
-- [ ] Open `https://ticktimer.yourdomain.com/app/` in a desktop browser. Same
+- [x] Open `https://ticktimer.yourdomain.com/app/` in a desktop browser. Same
       two checks as Stage 0a: it loads, and it remembers across a reload.
 
 ### 2e. Prove the hardening
 
 From your phone, **on mobile data, not Wi-Fi**:
 
-- [ ] `https://ticktimer.yourdomain.com/version` answers with JSON (or a 404
+- [x] `https://ticktimer.yourdomain.com/version` answers with JSON (or a 404
       saying `not_configured`, which is also fine — it means the server is
       alive).
-- [ ] `http://ticktimer.yourdomain.com:8080/version` **times out**. If it
+- [x] `http://ticktimer.yourdomain.com:8080/version` **times out**. If it
       answers, the server is not bound to localhost and you should fix that
       before going further.
 
@@ -223,16 +230,16 @@ bug, reached this time by changing servers instead of by going offline.
 **The safe procedure is to carry the data across, which keeps the revision line
 continuous.** Do this instead of registering fresh:
 
-- [ ] Stop the server on your PC.
-- [ ] Copy `accounts.json`, `devices.json`, `shares.json` and the whole
+- [x] Stop the server on your PC.
+- [x] Copy `accounts.json`, `devices.json`, `shares.json` and the whole
       `planners/` folder from `%APPDATA%\ticktimer-server\server\` to
       `/var/lib/ticktimer/` on the VPS, then
       `chown -R ticktimer:ticktimer /var/lib/ticktimer`.
-- [ ] `systemctl restart ticktimer`.
-- [ ] In the desktop app, change **Server** to
+- [x] `systemctl restart ticktimer`.
+- [x] In the desktop app, change **Server** to
       `https://ticktimer.yourdomain.com` (no port). Your existing password
       works — you carried the account file.
-- [ ] Sync. It should say **"Already in sync"**, because both sides now agree
+- [x] Sync. It should say **"Already in sync"**, because both sides now agree
       on the same revision number. That sentence is the proof the move worked.
 
 If you would rather start the server clean, force the other safe branch
@@ -242,7 +249,7 @@ this codebase has never auto-resolved — and you choose to keep yours. Sync
 ships the whole planner, so one trivial edit carries everything, which is
 exactly how the owner's data came back in v30.4.5.
 
-- [ ] **Verify from the server's side, not from the dialog.**
+- [x] **Verify from the server's side, not from the dialog.**
       `ls -l /var/lib/ticktimer/planners/` — is your file there, the right
       size, and written just now? The dialog said "already synced" for two days
       once while the server held nothing.
