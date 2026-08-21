@@ -92,6 +92,29 @@ QStringList localAccounts()
     return out;
 }
 
+static QString pendingKey(const QString& username)
+{
+    return QStringLiteral("sync/offlinePending/") + canonical(username);
+}
+
+
+bool offlineEditsPending(const QString& username)
+{
+    if (canonical(username).isEmpty())
+        return false;
+    return QSettings().value(pendingKey(username), false).toBool();
+}
+
+void setOfflineEditsPending(const QString& username, bool pending)
+{
+    if (canonical(username).isEmpty())
+        return;
+    if (pending)
+        QSettings().setValue(pendingKey(username), true);
+    else
+        QSettings().remove(pendingKey(username));
+}
+
 QString deviceLabel()
 {
     // Machine name first — it is what a person recognises in a list of

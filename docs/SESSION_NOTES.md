@@ -4292,3 +4292,45 @@ sign-in with "Remember this device", offline→online is silent forever, which
 is the path that matters on a phone.
 
 Versions ×2 → 30.4.3. 448 measured, unchanged.
+
+---
+
+## v30.4.4 — "Back online — syncing" was not syncing
+
+**Checked the claim instead of the dialog.** After a successful reconnect the
+server's `planners/phanp.json` was still two days old. The offline change had
+never left the machine — the status bar said "syncing", the Sync button had
+appeared, and nothing had been sent.
+
+**Two separate holes, found by reading the file rather than the UI.**
+
+*The reconnect did not sync.* `goOnline()` called `enableSync()`, which
+switches the service on. `setAutoSync(true)` does catch up "with unsent
+edits" — but only edits it KNOWS about, and an offline session has no
+`SyncService` at all, so nothing marked those changes dirty. A service built
+afterwards starts clean and pushes nothing. Fixed by calling `syncNow()` —
+the same entry the button uses, same truth table, same never-auto-resolve
+rule.
+
+*And the edits were invisible even across a restart.* An offline session
+usually ends by closing the app; the next launch logs in normally, never
+touches `goOnline()`, and leaves the work sitting on disk looking saved. So
+offline edits now set a **persisted** per-account flag, checked wherever sync
+starts, and cleared only on a SUCCESSFUL sync — a failed one must leave it
+standing, or one bad moment loses the work for good.
+
+**The pattern, three times in one session:** a status message describing an
+intention rather than an action. "Working offline — will sync when the server
+is back" (nothing was retrying), "Back online — syncing" (nothing was
+syncing). Both were true of the design and false of the code, and both were
+found by someone using the thing rather than by anyone reading it.
+
+**Also recorded:** `dist\TickTimer\ticktimer.exe` goes stale exactly as the
+installed copy does — `deploy-windows.bat` COPIES the binary, so `dist` is
+correct for about as long as it takes to rebuild. Stage 0b's reconnect test
+ran against 30.4.0 from `dist` while 30.4.3 sat in `build-release`. The result
+survived (that code path had not changed since v30.2), but that was luck.
+`ROLLOUT.md` now opens with a table naming all three copies and the one way to
+tell them apart: Help → About.
+
+Versions ×2 → 30.4.4. 448 measured, unchanged.

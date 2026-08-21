@@ -926,6 +926,21 @@ void MainWindow::goOnline(const QString& serverUrl, const QString& token)
     }
     statusBar()->showMessage(tr("Back online — syncing."), 5000);
     enableSync(serverUrl, token);
+
+    // AND ACTUALLY SYNC. v30.4.4, and the second time this exact class of bug
+    // has been found by using the thing: the message above said "syncing"
+    // while the code merely switched the service on.
+    //
+    // setAutoSync(true) does catch up "with unsent edits" — but only edits it
+    // KNOWS about, and while offline there was no SyncService at all, so
+    // nothing marked the session's changes dirty. A service constructed after
+    // the fact starts clean and pushes nothing, and the edits made offline sit
+    // there looking saved.
+    //
+    // syncNow() is the same entry the Sync button uses: same truth table, same
+    // never-auto-resolve rule. A conflict here still goes to a human.
+    if (m_sync)
+        m_sync->syncNow();
 }
 
 void MainWindow::addSignInButton()
@@ -984,6 +999,15 @@ void MainWindow::beginOffline(const QString& serverUrl)
     // this the only route online was restarting the app, which the offline
     // door never mentioned.
     addSignInButton();
+
+    // Remember that this session EDITED something, so whatever sync service
+    // is built later knows there is work to send. Nothing else is watching:
+    // an offline session has no SyncService, so its changes are invisible to
+    // the one constructed afterwards. Persisted, because "offline session"
+    // very often ends with closing the app.
+    connect(&m_data, &AppData::changed, this, [this]() {
+        session::setOfflineEditsPending(m_username, true);
+    });
 
     // A silent retry needs something to retry WITH. Without a remembered
     // device there is no credential to offer — but the app can still WATCH
@@ -1072,6 +1096,23 @@ void MainWindow::enableSync(const QString& serverUrl, const QString& token)
         dialog.exec();
     });
     m_navLayout->addWidget(b);
+
+    // v30.4.4 — work stranded by an offline session. Checked HERE rather than
+    // only on the reconnect path, because an offline session often ends by
+    // closing the app: the next launch logs in normally, never touches
+    // goOnline(), and would otherwise leave those edits sitting on disk
+    // forever, looking saved and never sent.
+    //
+    // Cleared only on a SUCCESSFUL sync. A failed one must leave the flag
+    // standing, or one bad moment loses the work permanently.
+    if (session::offlineEditsPending(m_username)) {
+        connect(m_sync, &SyncService::finished, this,
+                [this](bool ok, const QString&) {
+            if (ok)
+                session::setOfflineEditsPending(m_username, false);
+        });
+        QTimer::singleShot(0, m_sync, &SyncService::syncNow);
+    }
 
     // Auto-sync on: edits push themselves 5s after a burst goes quiet.
     // The one thing autonomy must NOT hide is a conflict — that's a human

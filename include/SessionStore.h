@@ -58,6 +58,21 @@ void    clearDeviceToken(const QString& username);
 // migration already walks.
 QStringList localAccounts();
 
+// Did this account edit its planner while OFFLINE, with no sync service
+// running to notice? (v30.4.4)
+//
+// SyncService tracks unsent edits with a dirty flag, but it only sees changes
+// that happen while it EXISTS. An offline session has no sync service at all,
+// so its edits are invisible to the one built afterwards — which starts clean
+// and pushes nothing, leaving work that looks saved and never leaves the
+// machine.
+//
+// Persisted rather than held in memory, because the offline session may well
+// end by closing the app: the next launch has to know there is something to
+// send.
+bool offlineEditsPending(const QString& username);
+void setOfflineEditsPending(const QString& username, bool pending);
+
 // A human-readable name for THIS machine, for the revoke list on the server.
 // Cosmetic by design — nothing authenticates on it, so a wrong or duplicated
 // label costs nothing but a confusing row in a list.
