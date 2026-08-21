@@ -263,7 +263,7 @@ automated below; the second is yours to run until a NAS does it.
 **On the box.** Three files ship in `deploy/`, so the Pi inherits them by
 `git clone` exactly as the server and Caddy configs do:
 
-- [ ] Get the files and install them:
+- [x] Get the files and install them:
 
 ```sh
 cd ~/TickTimer && git pull
@@ -273,7 +273,7 @@ cp deploy/ticktimer-backup.timer.example   /etc/systemd/system/ticktimer-backup.
 mkdir -p /var/backups/ticktimer
 ```
 
-- [ ] Schedule it, then run it once by hand rather than waiting for 03:00:
+- [x] Schedule it, then run it once by hand rather than waiting for 03:00:
 
 ```sh
 systemctl daemon-reload
@@ -288,7 +288,7 @@ read it back** — the same write-then-rename discipline `QSaveFile` uses in the
 C++ stores, for the same reason. A backup killed halfway must not be sitting
 there under a name that says it finished.
 
-- [ ] **RESTORE IT, NOW, before you trust it.** Into a scratch directory, so
+- [x] **RESTORE IT, NOW, before you trust it.** Into a scratch directory, so
       nothing live is touched:
 
 ```sh
@@ -301,7 +301,7 @@ Your planner should be there at its real size (~76 KB), not zero. **A backup
 nobody has restored is a hope, not a backup** — and the restore is also the
 migration, so this is the Pi move rehearsed on the day the VPS was built.
 
-- [ ] Clean up the scratch copy: `rm -rf /tmp/restore-test`
+- [x] Clean up the scratch copy: `rm -rf /tmp/restore-test`
 
 **Off the box.** The tarballs above live on the machine they protect, which
 covers a bad write and covers nothing about losing the machine. From
@@ -312,7 +312,7 @@ mkdir C:\Users\phanp\Backups\ticktimer -Force
 scp root@YOUR.SERVER.IP:/var/backups/ticktimer/*.tar.gz C:\Users\phanp\Backups\ticktimer\
 ```
 
-- [ ] Run that, and confirm the files arrived.
+- [x] Run that, and confirm the files arrived.
 - [ ] Do it again whenever you think of it, until the NAS exists. A month of
       dailies is about 2.5 MB, so pulling the lot every time is fine and
       needs no cleverness about which are new.
