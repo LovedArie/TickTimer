@@ -55,7 +55,7 @@
 ; audit machine (no Windows, no Inno). Shipping an untested edit to the one
 ; artifact you cannot test is how a documentation cleanup becomes an outage.
 ; Enable it in a session where you can run ISCC and watch it build.
-#define AppVersion     "30.4.4"  ; MUST match include/Version.h (Inno cannot include C headers - bump BOTH, every release)
+#define AppVersion     "30.4.5"  ; MUST match include/Version.h (Inno cannot include C headers - bump BOTH, every release)
 #define AppPublisher   "TickTimer"
 #define DistDir        "..\dist\TickTimer"   ; produced by deploy-windows.bat
 

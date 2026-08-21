@@ -69,6 +69,20 @@ public:
     void resolveUseServer(); // replace local with the held server version
     void resolveKeepMine();  // force-push local, overwriting the server
 
+    // v30.4.5 — "this device has unsent work", asserted from OUTSIDE.
+    //
+    // Normally the service notices edits itself, by watching AppData. It
+    // cannot notice edits made before it existed — and an offline session has
+    // no sync service at all, so a whole evening of work can be invisible to
+    // the one built afterwards.
+    //
+    // Calling syncNow() is NOT enough, and getting that wrong is how you lose
+    // data: with dirty false and the server moved, the truth table says PULL,
+    // which overwrites the very changes nobody knew about. Marked dirty, the
+    // same situation is a CONFLICT, which is a human decision. That is the
+    // difference between silent loss and a question.
+    void markDirty() { setDirty(true); }
+
     int  lastRevision() const { return m_lastRevision; }
     bool dirty() const        { return m_dirty; }
     // The human answer to "when did this last work?" — a timestamp, not a

@@ -4334,3 +4334,41 @@ survived (that code path had not changed since v30.2), but that was luck.
 tell them apart: Help → About.
 
 Versions ×2 → 30.4.4. 448 measured, unchanged.
+
+---
+
+## v30.4.5 — the fix for data loss that would have caused data loss
+
+**Four words from the field run:** *"it says already synced"* — said while the
+app was holding an evening of offline work the server had never seen.
+
+That is not a cosmetic complaint. It is `sync::decide`'s second input being
+false when it should be true, and the truth table is unforgiving about it:
+
+```
+server moved | local dirty | action
+     yes     |     no      | Pull      <- OVERWRITES local
+     yes     |     yes     | Conflict  <- asks a human
+```
+
+An offline session has no `SyncService`, so nothing ever set `dirty`. The
+previous version's fix — calling `syncNow()` on reconnect — therefore walked
+straight into row three: **it would have silently destroyed the very changes
+it was written to rescue**, in the one case that matters (a server that also
+moved). A fix for data loss that causes data loss.
+
+`SyncService::markDirty()` is the missing half, and the ORDER is the whole
+point: marked dirty first, the same divergence becomes a **Conflict**, which
+this codebase has never auto-resolved. Auto means auto-WHEN, never
+auto-WHO-WINS — that rule was already written down; this is what it looks
+like when it is actually load-bearing.
+
+**How the owner's own data came back:** a trivial edit. Sync ships the WHOLE
+planner, so marking it dirty by any means carries everything with it. Verified
+from the server's side rather than the dialog's — `planners/phanp.json`, 76 KB,
+revision 4706, written today, where an hour earlier it was two days stale.
+
+**Stage 0 closed.** Web app loads and remembers; offline start; sign-in-to-sync;
+silent reconnect; and an offline change provably on the server.
+
+Versions ×2 → 30.4.5. 448 measured, unchanged.

@@ -939,8 +939,16 @@ void MainWindow::goOnline(const QString& serverUrl, const QString& token)
     //
     // syncNow() is the same entry the Sync button uses: same truth table, same
     // never-auto-resolve rule. A conflict here still goes to a human.
-    if (m_sync)
+    //
+    // markDirty() first, for the reason spelled out in enableSync(): an
+    // offline session's edits were never seen by any sync service, and asking
+    // an undirty service to sync against a moved server means PULL — which
+    // overwrites them.
+    if (m_sync) {
+        if (session::offlineEditsPending(m_username))
+            m_sync->markDirty();
         m_sync->syncNow();
+    }
 }
 
 void MainWindow::addSignInButton()
@@ -1106,6 +1114,16 @@ void MainWindow::enableSync(const QString& serverUrl, const QString& token)
     // Cleared only on a SUCCESSFUL sync. A failed one must leave the flag
     // standing, or one bad moment loses the work permanently.
     if (session::offlineEditsPending(m_username)) {
+        // MARK DIRTY FIRST, and the order is the whole point (v30.4.5).
+        //
+        // syncNow() alone was not just insufficient, it was dangerous: with
+        // dirty false and the server moved, the truth table says PULL, which
+        // overwrites the very offline changes this branch exists to rescue.
+        // Marked dirty, the same situation is a CONFLICT — and a conflict is
+        // a question put to a human, which is exactly what an unresolvable
+        // divergence deserves.
+        m_sync->markDirty();
+
         connect(m_sync, &SyncService::finished, this,
                 [this](bool ok, const QString&) {
             if (ok)
