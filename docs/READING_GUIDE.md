@@ -247,6 +247,10 @@ Deliberate simplifications (candidates for your first solo features):
 
 - Never name identifiers `slots`, `signals`, or `emit` — they're Qt macros
   (`Widgets.h` has the war story).
+- Never name a **namespace** after a POSIX function either — bionic declares
+  `void sync(void)` in `<unistd.h>`, so `namespace sync` built on Windows for
+  a year and failed the first Android compile. It is `syncplan` now
+  (`SyncPlan.h`); MinGW hides this whole class.
 - `QVector` moves elements when it grows → never store pointers into it;
   store **ids** and look up (`Activity.h`, `AppData.h`).
 - Signal feedback loops (widget edits → data `changed()` → widget reset)

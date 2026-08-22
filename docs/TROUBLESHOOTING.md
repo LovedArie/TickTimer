@@ -560,7 +560,9 @@ Rename the identifier (ours became `slotCount`). Rebuild — code-only change.
 **PREVENT**
 Never use `slots`, `signals`, or `emit` as identifiers in a Qt project. If a
 baffling error points at an innocent-looking line, check it for those three
-words first. (War story recorded in `include/Widgets.h`.)
+words first. (War story recorded in `include/Widgets.h`.) See also the
+`redefinition of 'sync'` entry below — the same shape one layer down, where
+the collision comes from the platform's libc rather than from a Qt macro.
 
 ---
 
@@ -1366,3 +1368,65 @@ buildFor.
 **PREVENT:** the flag is pinned by test
 (`theFormNeverFillsItsOwnBackground`), after open AND after a save's
 rebuild — a tripwire that fails a patch instead of hoping to be read.
+
+---
+
+### `error: redefinition of 'sync' as different kind of symbol` — Android only, builds fine on Windows
+
+**SYMPTOM**
+The Android kit fails to compile a file that has built on Windows for months:
+
+```
+C:/.../include/SyncPlan.h:27:11: error: redefinition of 'sync' as different kind of symbol
+   27 | namespace sync
+C:/.../ndk/27.2.12479018/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/unistd.h:290:6:
+      note: previous definition is here
+  290 | void sync(void);
+ninja: build stopped: subcommand failed.
+```
+
+The same file compiles cleanly with the MinGW desktop kit, and every desktop
+suite is green.
+
+**CAUSE**
+Android's libc (**bionic**) declares POSIX `sync(2)` — the flush-filesystem-
+buffers call — as `void sync(void)` at **global scope** in `<unistd.h>`, which
+Qt headers pull in transitively. A file-scope `namespace sync` is then the same
+name declared as a different kind of entity, which C++ forbids.
+
+MinGW does not declare `sync()`, so Windows never saw a conflict. **The name
+was wrong from the day it was written; only the platform was forgiving.** Note
+what this means for diagnosis: nothing changed in `SyncService.cpp` (untouched
+since v29.1) — the first Android compile simply reached code no Android
+compiler had ever read.
+
+**FIX**
+Rename the namespace. Ours became `syncplan`, matching its header `SyncPlan.h`:
+13 replacements across `SyncPlan.h`, `SyncService.h`, `Compare.h`, `Version.h`,
+`SyncService.cpp` and `test_auth.cpp` — 7 real code lines, the rest comments
+citing `sync::decide` as the pattern to copy. No behaviour changes, so no
+version bump; the server binary does not include the header at all.
+
+Nesting it as `ticktimer::sync` also works and was rejected: every namespace in
+this project is bare (`version::`, `nlp::`, `chat::`, `missed::`, `intake::`,
+`ai::`), so an outer namespace for one case costs consistency to buy exactly
+what the rename buys.
+
+**PREVENT**
+**Check a new namespace name against POSIX before picking it.** The dangerous
+set is larger than it looks — all of these are global-scope functions on
+Linux/Android and would collide identically: `sync`, `link`, `unlink`, `index`,
+`time`, `read`, `write`, `open`, `close`, `remove`, `kill`, `wait`, `select`,
+`poll`, `send`, `recv`, `socket`, `stat`, `pipe`, `exec`, `div`, `chdir`.
+
+Same family as the `slots`/`signals`/`emit` trap above, and worth pairing with
+it mentally: **a name can be illegal without your compiler saying so.** There
+the macro was invisible; here the platform was.
+
+The structural lesson is bigger than the name. A desktop-only CI cannot catch
+this class at all, so a platform that has never compiled the code is not
+"probably fine" — it is **unmeasured**. v30.3 shipped "Android distribution"
+(keystore, version stamping) without an APK ever reaching the compiler. v30.4
+had the same gap for WebAssembly and *said so* at the top of `WEB.md` — "nobody
+has opened it in a browser". Write that sentence when it is true.
+
