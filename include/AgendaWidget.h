@@ -19,6 +19,7 @@
 // ---------------------------------------------------------------------------
 
 #include <QDate>
+#include <QPoint>
 #include <QWidget>
 
 class AppData;
@@ -42,6 +43,10 @@ public:
     static constexpr int kSlotHeight   = 30; // pixels per 30-minute slot
     static constexpr int kTopPad       = 12; // headroom above the first line
     static constexpr int kDefaultGutter = 64; // hour-label column width
+    // A phone's whole width is 360, so 64 of it is 18% spent on "12 PM".
+    // 44 still fits the widest label at the theme's 13px and hands 20px back
+    // to the part of the page that is actually the day.
+    static constexpr int kCompactGutter = 44;
 
     // Render as a narrow COLUMN with no label gutter (px = 0) for the week
     // view, where one shared axis serves all seven days. The default keeps the
@@ -100,6 +105,37 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override; // commit a resize drag
     void leaveEvent(QEvent* event) override;
     QSize sizeHint() const override;
+    bool event(QEvent* event) override; // UngrabMouse cancels a pending tap
+
+private:
+    // ---- touch: a finger that means to SCROLL must not plan a block --------
+    //
+    // On a touchscreen the very first touch of a scroll drag arrives as a
+    // mouse press, and this widget used to act on press — so trying to scroll
+    // the day opened the "what are you doing?" dialog every time. On a phone
+    // the two gestures start identically and can only be told apart by what
+    // happens NEXT, so the decision has to be deferred:
+    //
+    //   empty slot  -> LONG PRESS. Planning a block is a deliberate,
+    //                  creating act; making it deliberate costs nothing and
+    //                  makes accidental blocks impossible.
+    //   an existing
+    //   block       -> tap, decided on RELEASE if the finger did not move.
+    //                  Opening something is not creating something, and
+    //                  "hold to open" would be a surprising gesture.
+    //
+    // Either way, MOVEMENT cancels: that is a scroll. So does losing the
+    // mouse grab, which is how QScroller announces it has taken the gesture
+    // over to pan — without that cancel the timer would still fire mid-flick.
+    //
+    // A real mouse keeps the old immediate behaviour; the ambiguity does not
+    // exist there, and adding a hold to a desktop click would be a regression.
+    void cancelPendingTouch();
+
+    class QTimer* m_longPress = nullptr;
+    QPoint  m_touchPressPos;
+    int     m_pendingSlot = -1;    // empty slot awaiting a long press
+    QString m_pendingEventId;      // existing block awaiting a stationary tap
 
 private:
     // Which horizontal edge of an event the mouse is near (the grab handles).

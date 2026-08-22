@@ -7,6 +7,8 @@
 #include "TrackerService.h"
 
 #include <QMouseEvent>
+#include <QTimer>
+#include <QApplication>
 #include <QPainter>
 #include <QTextLayout>
 #include <QTextOption>
@@ -714,6 +716,51 @@ void AgendaWidget::paintEvent(QPaintEvent*)
 
 void AgendaWidget::mousePressEvent(QMouseEvent* event)
 {
+    // Touch and mouse part company here. See the block comment in the header:
+    // on a touchscreen a press is not yet a decision, because the identical
+    // gesture starts a scroll.
+    const bool touch = event->source() != Qt::MouseEventNotSynthesized;
+    if (touch) {
+        cancelPendingTouch();
+        m_touchPressPos = event->pos();
+
+        // Edge-resize is skipped entirely on touch, which is not a new
+        // decision — the Android addendum already accepted that a drag on the
+        // agenda scrolls rather than resizes, because scrolling is the vastly
+        // more common gesture. Blocks are still adjusted from the block
+        // dialog's nudge buttons.
+        for (const Event* e : m_data->eventsOn(m_date)) {
+            if (eventRect(*e).contains(event->pos())) {
+                m_pendingEventId = e->id; // decided on release
+                return;
+            }
+        }
+        const int touchedSlot = slotAt(event->pos());
+        if (touchedSlot < 0)
+            return;
+        const int startMin =
+            plan::kDayStartMinutes + touchedSlot * plan::kSlotMinutes;
+        if (!m_data->isFree(m_date, startMin, startMin + plan::kSlotMinutes))
+            return;
+        m_pendingSlot = touchedSlot;
+        if (!m_longPress) {
+            m_longPress = new QTimer(this);
+            m_longPress->setSingleShot(true);
+            // 450ms: long enough that a scroll has begun moving by then,
+            // short enough not to feel like a hang. Qt's own tap-and-hold is
+            // 700ms, which for a gesture people repeat all day reads as slow.
+            m_longPress->setInterval(450);
+            connect(m_longPress, &QTimer::timeout, this, [this]() {
+                const int slot = m_pendingSlot;
+                cancelPendingTouch();
+                if (slot >= 0)
+                    emit emptySlotClicked(slot);
+            });
+        }
+        m_longPress->start();
+        return;
+    }
+
     // An edge grab starts a RESIZE and pre-empts everything else — it must win
     // over "open the event", since the edge sits inside the event's rect.
     QString edgeId;
@@ -749,6 +796,13 @@ void AgendaWidget::mousePressEvent(QMouseEvent* event)
 
 void AgendaWidget::mouseMoveEvent(QMouseEvent* event)
 {
+    // Past the platform's drag threshold this is a scroll, not a tap.
+    if ((m_pendingSlot >= 0 || !m_pendingEventId.isEmpty())
+        && (event->pos() - m_touchPressPos).manhattanLength()
+               >= QApplication::startDragDistance()) {
+        cancelPendingTouch();
+    }
+
     // ---- 1) A resize drag in progress: update the clamped preview span -----
     if (m_resizing) {
         const int snapped = minutesAtY(event->pos().y());
@@ -819,8 +873,44 @@ void AgendaWidget::mouseMoveEvent(QMouseEvent* event)
     }
 }
 
-void AgendaWidget::mouseReleaseEvent(QMouseEvent*)
+void AgendaWidget::cancelPendingTouch()
 {
+    if (m_longPress)
+        m_longPress->stop();
+    m_pendingSlot = -1;
+    m_pendingEventId.clear();
+}
+
+bool AgendaWidget::event(QEvent* e)
+{
+    // QScroller announces "I have taken this gesture over to pan" by taking
+    // the mouse grab away. That is the only reliable signal that a press has
+    // become a scroll — without cancelling here, the long-press timer would
+    // still fire in the middle of a flick and plan a block nobody asked for.
+    if (e->type() == QEvent::UngrabMouse)
+        cancelPendingTouch();
+
+    return QWidget::event(e);
+}
+
+void AgendaWidget::mouseReleaseEvent(QMouseEvent* event)
+{
+    // A stationary tap on an existing block opens it. Movement already
+    // cleared the pending id in mouseMoveEvent, so reaching here with one
+    // still set means the finger stayed put.
+    if (!m_pendingEventId.isEmpty()) {
+        const QString id = m_pendingEventId;
+        cancelPendingTouch();
+        emit eventClicked(id);
+        return;
+    }
+    // A short press on an empty slot is NOT a plan: the long press is the
+    // gesture, and letting go early is how you say "no, I was scrolling".
+    if (m_pendingSlot >= 0) {
+        cancelPendingTouch();
+        return;
+    }
+
     if (!m_resizing)
         return;
     m_resizing = false;

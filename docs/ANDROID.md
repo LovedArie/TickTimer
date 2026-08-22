@@ -282,18 +282,34 @@ downloads or installs anything by itself.
 
 ## What to expect on the phone
 
-- **Compact layout — BROKEN ON A REAL PHONE as of 2026-08-22, read this
-  before you file the rest as expected.** The design is: the nav rail starts
-  collapsed (☰ opens it), the tagline and glance panel yield, Pomodoro
-  settings stack, decided by *screen size* and not by platform, so a tablet
-  gets the desktop layout. What actually happens on a Galaxy S21 Ultra
-  (1080x2400, density 480) is that `isCompactScreen()` returns false, the rail
-  starts EXPANDED at roughly half the width, and the content pane is clipped
-  off the right edge. **Tap ☰ once** and it collapses, the content takes the
-  full width, and the app is properly usable — the choice persists per device.
-  Symptom, evidence and the measurement still owed are in
-  `docs/TROUBLESHOOTING.md`. This bullet claimed the working behaviour for as
-  long as it existed, which was until the first phone ran it.
+- **Compact layout — fixed in v30.5, and verified on the phone this time.**
+  The layout mode is decided by how much width a page was actually handed, not
+  by the screen and not by the platform, and it is re-evaluated whenever that
+  width changes — so a tablet gets the desktop layout and a rotation is
+  noticed. On a Galaxy S21 Ultra (360x800 logical, dpr 3.0) the whole app now
+  fits: the rail starts collapsed, the tagline and account name yield, the
+  Pomodoro page scrolls, the agenda subtitle wraps instead of running off the
+  edge. `docs/design-addendum-responsive.md` has the decisions;
+  `docs/TROUBLESHOOTING.md` has the two traps only a real phone could teach.
+
+  **One thing is still wrong, deliberately left for the next pass:** the nav
+  rail is still *in flow*, so **tapping ☰ pushes the content off the right
+  edge again**. Tap it a second time to get back. Making the rail an overlay
+  drawer on compact screens is the next piece of work, and it is required
+  rather than polish.
+
+- **Plan a block with a PRESS AND HOLD, not a tap** (v30.5.2). A tap is how
+  you scroll the day, so tapping a free slot no longer opens anything — hold it
+  for a moment instead. Tapping an existing block still opens it. The agenda's
+  own caption says which gesture applies on the device you are holding.
+
+- **Dialogs fill the screen and Back closes them** (v30.5.1). Quick capture is
+  the exception: it takes the full width but only the height it needs (v30.5.2),
+  since a one-line command palette has no use for the whole page. Quick capture,
+  the block picker, Sync and the login screen are each their own window, so the
+  page layout work did not reach them; they now take the whole screen on a
+  phone, and Android's Back gesture dismisses any of them.
+
 - **Finger scrolling** everywhere there's a list or the agenda
   (kinetic/flick, via `QScroller`).
 - **Your data is local, and it syncs**: Android gives the app its own private
@@ -328,6 +344,7 @@ downloads or installs anything by itself.
 | Login says *"Can't reach the server"* but the server is up | OpenSSL is missing from the APK — see §2b. Plain HTTP works and HTTPS cannot start, so it looks like a network fault and is not one. |
 | APK will not install, no useful error | It is the `-unsigned.apk`. A CMake re-configure clears *Sign package*; re-tick it (§"Point Qt Creator at it"). |
 | Download sticks at 100% and never installs | The phone's download manager, not your server. Use `adb install -r <apk>` instead (§3). |
-| Nav rail fills half the screen; content clipped at the right edge | Known, 2026-08-22: `isCompactScreen()` returns false on a phone. **Tap ☰** — it collapses and the choice persists per device. |
-| Stuck in the Sync screen, nothing responds, Back does nothing | Known, 2026-08-22: `SyncDialog` is modal and renders frameless over the page. `adb shell am force-stop org.ticktimer.app`. Sync runs automatically regardless. |
+| Content clipped at the right edge with the rail CLOSED | Fixed in v30.5. If you see it again, the phone-width budget test in `test_ui` has been broken — run it. |
+| Content clipped at the right edge with the rail OPEN | Known and expected: the rail is still in-flow and adds 190 logical px. **Tap ☰** to close it. The overlay-drawer rework is the next stage. |
+| Stuck in a dialog, Back does nothing | Fixed in v30.5.1 — Back dismisses any dialog. On older builds: | Known, 2026-08-22: `SyncDialog` is modal and renders frameless over the page. `adb shell am force-stop org.ticktimer.app`. Sync runs automatically regardless. |
 | Installs a *second* TickTimer | The package name changed between builds. It's pinned in CMakeLists (`org.ticktimer.app`) — don't edit it. |

@@ -60,8 +60,29 @@ inline QColor deep(const QColor& c)
     return QColor::fromHslF(h, qMin(s, 0.55f), 0.30f);
 }
 
-inline QString appStyleSheet()
+// The stylesheet, optionally in its NARROW variant.
+//
+// `compact` does one job and is not the touch-density pass: it takes padding
+// OFF the controls whose padding is width-critical, so a row of them fits a
+// phone. `UpcomingPage`'s four filter chips carried 112px of horizontal
+// padding between them — a third of the page's whole minimum width — which is
+// generous on a desktop and unaffordable at 360px.
+//
+// Worth naming the tension now, because the two pulls are opposite: the
+// touch-target work still owed wants controls BIGGER (≈48dp is a thumb), while
+// this wants a crowded row NARROWER. Reconciling them is that stage's real
+// problem — probably fewer controls visible at once rather than smaller ones —
+// and this flag is not an answer to it.
+inline QString appStyleSheet(bool compact = false)
 {
+    // The narrow overrides are appended, not interleaved: later rules win in
+    // QSS, so the base sheet stays exactly one readable thing and the diff
+    // between desktop and phone is a short list you can read in one go.
+    const QString narrow = compact ? QStringLiteral(R"CSS(
+        QToolButton#nav { padding: 9px 6px; }
+        QPushButton     { padding: 7px 9px; }
+    )CSS") : QString();
+
     return QStringLiteral(R"CSS(
         QMainWindow, QDialog { background: #F1F4F0; }
         QWidget { color: #272C33; font-size: 13px; }
@@ -211,7 +232,7 @@ inline QString appStyleSheet()
         QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
             background: transparent;
         }
-    )CSS");
+    )CSS") + narrow;
     // R"CSS(...)CSS" is a C++11 raw string literal: no escaping of quotes
     // or newlines — ideal for embedding a stylesheet.
 }

@@ -25,6 +25,8 @@
 #include <QColor>
 #include <QSet>
 #include <QTreeWidget> // subclassed below (CategoryTree) — needs the full type
+#include "Responsive.h"
+
 #include <QWidget>
 
 class AppData;
@@ -97,7 +99,12 @@ private slots:
     void updateTaskViewHeight();               // fit the list to its rows
     void updateQuickAddPreview();              // live parse of the task input
 
+protected:
+    bool event(QEvent* e) override; // the container's size class arrives here
+
 private:
+    void applyLayoutMode(responsive::Mode mode);
+
     void rebuildRail();
     void buildDetailPane();  // ONCE, in the ctor — the persistent skeleton
     void refreshDetail();    // update in place: header + task model + activities
@@ -112,6 +119,11 @@ private:
     AppData*     m_data;
     CategoryTree* m_rail  = nullptr;
     QScrollArea* m_detail = nullptr;
+    // Held so applyLayoutMode() can narrow it. NOTE this page is still a
+    // permanent two-column split, which is wrong on a phone however narrow
+    // the rail gets — the master/detail rework is a later stage. Its minimum
+    // is already inside the phone budget, so the core does not force it.
+    class QFrame* m_railPanel = nullptr;
     QString      m_selectedCategoryId;   // domain selection: rebuild-proof id
     QSet<QString> m_collapsedFolders;    // presentation: session-only, unsaved
     bool         m_rebuilding = false;   // guards collapse tracking during rebuild

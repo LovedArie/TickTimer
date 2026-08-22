@@ -55,11 +55,13 @@
 #include "PomodoroMiniWindow.h"
 #include "NeedsBlockCard.h"
 #include "SlidePanel.h"
+#include "PickActivityDialog.h"
 #include "MainWindow.h"
 #include "PlannerPage.h"
 #include "PomodoroPage.h"
 #include "Prefs.h"
 #include "Widgets.h"
+#include "ResponsiveWatcher.h"
 #include "LlmProvider.h"
 #include "SettingsDialog.h"
 #include "SettingsPages.h"
@@ -87,6 +89,8 @@
 #include <QDialogButtonBox>
 #include <QScrollArea>
 #include <QStackedWidget>
+#include <QFontDatabase>
+#include <QScreen>
 #include <QSettings>
 #include <QToolButton>
 #include <QListWidget>
@@ -1941,6 +1945,395 @@ private slots:
         s.sync();
     }
 
+    // ---- the phone width budget -------------------------------------------
+    //
+    // THE GATE. This is the test whose absence let the window's minimum width
+    // drift from 318px back to 522px over four versions, until an APK on a
+    // real phone clipped a third of every page off the right edge with no
+    // scrollbar, no warning and no error anywhere.
+    //
+    // The numbers are measured, not chosen. A Galaxy S21 Ultra reports
+    // 1080x2400 physical at density 480, and Qt's device pixel ratio there is
+    // 2.81 — established by rendering a widget declared setFixedWidth(34) and
+    // measuring it at 96 physical px in an adb screencap. 1080 / 2.81 = 384
+    // logical px, which is the whole width a page gets.
+    void everyPageFitsAPhoneScreen()
+    {
+        // These live INSIDE the function, and that is a moc constraint rather
+        // than a style choice: everything after `private slots:` is parsed as
+        // a signal or slot declaration, and a `static constexpr int` there
+        // fails the whole file with "Not a signal or slot declaration" — which
+        // surfaces later and much less helpfully as a missing test_ui.moc.
+        // MEASURED ON THE DEVICE, not estimated from a screencap. An earlier
+        // draft said 384, derived by measuring a setFixedWidth(34) widget at
+        // ~96 physical px and inferring dpr 2.81; the widget's border was in
+        // that measurement. The phone itself reports dpr 3.00 and a
+        // 360x800 logical screen, so 384 was 24px of budget that did not
+        // exist. Ask the device, not a picture of it.
+        constexpr int kPhoneWidthPx  = 360;
+        constexpr int kPhoneHeightPx = 800;
+
+        // KNOWN GAP, recorded rather than rounded away: the real target is
+        // 320, which is what an iPhone SE gives the WebAssembly build
+        // (docs/WEB.md — the same C++ in a canvas). Today the narrowest page
+        // is 376, held there by UpcomingPage's four filter chips, whose width
+        // is padding from the theme. Lowering this to 320 is the touch-density
+        // stage's job.
+        constexpr int kPageBudgetPx = kPhoneWidthPx;
+
+        // Widths are meaningless without real font metrics, and the offscreen
+        // platform brings no fonts of its own: with Qt's substitute the same
+        // window measures 1051px where the truth is 522. CMakeLists.txt
+        // points QT_QPA_FONTDIR at the OS font directory to fix that, and
+        // this is the check that the pointing WORKED — measuring the budget
+        // against fallback metrics would fail for a reason that has nothing
+        // to do with the layout.
+        if (QFontDatabase::families().isEmpty()) {
+#ifdef Q_OS_WIN
+            QFAIL("No fonts: C:/Windows/Fonts exists on every Windows machine, "
+                  "so this is a build-configuration fault (QT_QPA_FONTDIR in "
+                  "CMakeLists.txt), not a missing dependency. Skipping here "
+                  "would let the width budget rot silently, which is exactly "
+                  "how it rotted before.");
+#else
+            QSKIP("No fonts on this platform — set QT_QPA_FONTDIR. The budget "
+                  "cannot be measured against Qt's fallback metrics. Check by "
+                  "hand with TICKTIMER_PROBE=1 on the screenshot tool.");
+#endif
+        }
+
+        clearWindowPrefs();
+
+        // RAII, deliberately, and not just tidiness: QVERIFY2 RETURNS from the
+        // test on failure, so a trailing qunsetenv() is skipped exactly when
+        // it matters most. The first draft of this test did that, failed on
+        // its real assertion, and then leaked TICKTIMER_COMPACT=1 into four
+        // later tests which failed for reasons that had nothing to do with
+        // them. A destructor runs on every path out.
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode()
+            {
+                qunsetenv("TICKTIMER_COMPACT");
+                clearWindowPrefs();
+            }
+        } compactMode;
+
+        // A USERNAME, deliberately. A bare MainWindow builds no "Welcome, x"
+        // label, and the header is where this bug actually ended up hiding
+        // once every page was under budget — 386px of chrome on a 360px
+        // screen. A test that constructs a window no real user ever sees can
+        // certify a layout no real user can use.
+        MainWindow w(QStringLiteral("phanp"));
+
+        // SIZED BEFORE SHOWN, and this is not a shortcut — it is the only
+        // faithful reproduction of a phone. Android hands the app a window
+        // that is already 360px; it never starts wide and shrinks.
+        //
+        // The distinction matters because Qt clamps a top-level window UP to
+        // its minimumSizeHint and never back down. A window born wide lays
+        // out in Expanded, acquires the minimum that mode implies, and then
+        // cannot shrink past it — so it settles in an equilibrium at Medium
+        // and Compact becomes unreachable by resizing alone. That is real
+        // behaviour worth knowing (it is why MainWindow's constructor sizes
+        // itself to the screen on a compact device), but it is not what this
+        // test is about.
+        w.resize(kPhoneWidthPx, kPhoneHeightPx);
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+
+        // Re-offer the phone size a few times. Not a retry-until-it-works
+        // loop: Qt clamps a window UP to its current minimum and never back
+        // down, so each round is "the platform hands us 360 again, now that
+        // the last mode change has lowered what we need". Android does
+        // exactly this on every relayout. Convergence takes two rounds —
+        // Expanded to Medium to Compact — and four is slack.
+        for (int i = 0; i < 4; ++i) {
+            w.resize(kPhoneWidthPx, kPhoneHeightPx);
+            QTest::qWait(5); // the mode dispatch is queued; let it land
+        }
+
+        auto* stack = w.findChild<QStackedWidget*>();
+        QVERIFY(stack);
+
+        // Is the rail in the layout? It is 190px and the single biggest lever
+        // on the window's minimum, so its state belongs in any failure here.
+        QString railState = QStringLiteral("no 190px rail found");
+        for (QWidget* c : w.findChildren<QWidget*>())
+            if (c->maximumWidth() == 190 && c->minimumWidth() == 190)
+                railState = QStringLiteral("rail hidden=%1 w=%2")
+                                .arg(c->isHidden()).arg(c->width());
+
+        QStringList over;
+        QStringList all;
+        for (int i = 0; i < stack->count(); ++i) {
+            QWidget* page = stack->widget(i);
+            const int min = page->minimumSizeHint().width();
+            const QString name =
+                QString::fromLatin1(page->metaObject()->className());
+            all << QStringLiteral("%1=%2").arg(name).arg(min);
+            if (min > kPageBudgetPx)
+                over << QStringLiteral("%1 (%2px)").arg(name).arg(min);
+        }
+        // EVERY offender, not just the first. QVERIFY2 returns on failure, so
+        // a per-page assert inside the loop reports page 2 and hides page 6 —
+        // and during this work the hidden one was repeatedly the interesting
+        // one. One assertion, the whole list.
+        // If the WINDOW is over budget while its pages are not, the culprit
+        // is chrome — and chrome is exactly where this bug hid last. Name it
+        // here rather than making the next reader go widget-hunting.
+        QStringList chrome;
+        for (QWidget* c : w.findChildren<QWidget*>()) {
+            if (c->isHidden() || stack->isAncestorOf(c) || c == stack)
+                continue;
+            if (c->minimumSizeHint().width() > kPageBudgetPx)
+                chrome << QStringLiteral("%1#%2[min%3,max%4,w%5]%6")
+                              .arg(QString::fromLatin1(
+                                       c->metaObject()->className()))
+                              .arg(c->objectName())
+                              .arg(c->minimumSizeHint().width())
+                              .arg(c->maximumWidth())
+                              .arg(c->width())
+                              .arg(c->property("text").toString().left(24));
+        }
+
+        QVERIFY2(over.isEmpty(),
+                 qPrintable(QStringLiteral(
+                     "over the %1px phone budget: %2  |  all pages: %3"
+                     "  |  window %4 (min %5), stack %6, mode %7"
+                     "  |  chrome: %8  |  %9"
+                     "  |  probe: TICKTIMER_PROBE=1 TICKTIMER_COMPACT=1 "
+                     "screenshot-tool out.png 0 360 800")
+                     .arg(kPageBudgetPx).arg(over.join(QStringLiteral(", ")))
+                     .arg(all.join(QStringLiteral(" ")))
+                     .arg(w.width()).arg(w.minimumSizeHint().width())
+                     .arg(stack->width())
+                     .arg(QLatin1String(responsive::name(
+                         static_cast<responsive::Mode>(
+                             stack->property(responsive::kModeProperty)
+                                 .toInt()))))
+                     .arg(chrome.isEmpty() ? QStringLiteral("(none)")
+                                           : chrome.join(QStringLiteral(", ")))
+                     .arg(railState)));
+
+        // THE WINDOW, not just its pages — and this assertion exists because
+        // the page-only version passed while the app was still visibly broken
+        // on the phone. Every page was under budget; the HEADER was not, and
+        // nothing was looking at it. A QStackedWidget's pages are the usual
+        // suspects, not the only ones.
+        QVERIFY2(w.minimumSizeHint().width() <= kPageBudgetPx,
+                 qPrintable(QStringLiteral(
+                     "the WINDOW's minimum width is %1px, over the %2px phone "
+                     "budget, even though every page fits. Look at the chrome: "
+                     "header, status bar, anything outside the page stack.")
+                     .arg(w.minimumSizeHint().width()).arg(kPageBudgetPx)));
+
+        // And the symptom itself, not a proxy for it. Qt honours a minimum it
+        // cannot fit by letting the surplus hang off the screen, so on a phone
+        // the bug LOOKS like clipping and MEASURES as a resize that did not
+        // take. Asking for a phone-sized window and being given a wider one is
+        // the failure, stated in the same terms the user experiences it.
+        QCOMPARE(w.width(), kPhoneWidthPx);
+    }
+
+    // A DIALOG IS ITS OWN TOP-LEVEL WINDOW with its own minimum, so
+    // everyPageFitsAPhoneScreen() — which measures MainWindow — says nothing
+    // about any of these. That gap was not theoretical: with every page under
+    // budget, the phone still clipped the quick-capture bar, the "what are you
+    // doing?" picker and the login screen, because each is a separate surface
+    // nothing was measuring.
+    void dialogsFitAPhoneScreen()
+    {
+        constexpr int kPhoneWidthPx = 360;
+
+        if (QFontDatabase::families().isEmpty()) {
+#ifdef Q_OS_WIN
+            QFAIL("No fonts — see everyPageFitsAPhoneScreen().");
+#else
+            QSKIP("No fonts on this platform; set QT_QPA_FONTDIR.");
+#endif
+        }
+
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+        } compactMode;
+
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        data.addActivity("Study", cat);
+
+        LoginDialog login(QStringLiteral("http://localhost:8080"));
+        QuickCaptureOverlay capture(&data);
+        PickActivityDialog pick(&data, QDate(2026, 7, 15), 2);
+
+        const QVector<QPair<QString, QWidget*>> surfaces = {
+            {QStringLiteral("LoginDialog"), &login},
+            {QStringLiteral("QuickCaptureOverlay"), &capture},
+            {QStringLiteral("PickActivityDialog"), &pick},
+        };
+
+        QStringList over;
+        QStringList all;
+        for (const auto& s : surfaces) {
+            const int min = s.second->minimumSizeHint().width();
+            all << QStringLiteral("%1=%2").arg(s.first).arg(min);
+            if (min > kPhoneWidthPx)
+                over << QStringLiteral("%1 (%2px)").arg(s.first).arg(min);
+        }
+
+        QVERIFY2(over.isEmpty(),
+                 qPrintable(QStringLiteral(
+                     "dialogs over the %1px phone budget: %2  |  all: %3")
+                     .arg(kPhoneWidthPx)
+                     .arg(over.join(QStringLiteral(", ")))
+                     .arg(all.join(QStringLiteral(" ")))));
+
+        // Fitting inside the screen is necessary but not sufficient: the
+        // LOGIN dialog's minimum was only 234px and it was still reported as
+        // "not sized to the screen", because a dialog that merely FITS is a
+        // small floating panel adrift on a phone. installCompactDialogFitter()
+        // gives it the screen instead, and this is that mechanism under test —
+        // the login screen itself cannot be reached from a signed-in device.
+        responsive::installCompactDialogFitter(qApp);
+        LoginDialog fitted(QStringLiteral("http://localhost:8080"));
+        fitted.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&fitted));
+        // The fit is QUEUED (it has to run after the dialog is polished, or
+        // stylesheet padding is missing from every size hint), so let the loop
+        // turn before measuring. qWaitForWindowExposed happens to spin it too,
+        // but relying on that would make this test pass by luck.
+        QTest::qWait(1);
+        const QRect room = QGuiApplication::primaryScreen()->availableGeometry();
+        QCOMPARE(fitted.size(), room.size());
+        fitted.close();
+    }
+
+    // ---- responsive:: — the layout-mode pipe ------------------------------
+    // These two prove the MACHINE, before any page depends on it: a width
+    // change reaches the stack and is classified. What a page then does with
+    // the answer is asserted separately, page by page.
+
+    void resizingTheWindowChangesThePagesLayoutMode()
+    {
+        clearWindowPrefs();
+        MainWindow w;
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+
+        auto* stack = w.findChild<QStackedWidget*>();
+        QVERIFY(stack);
+
+        // Qt clamps a top-level window UP to its minimum and never back down,
+        // and a mode change is what lowers that minimum — so "ask for a size,
+        // let the loop turn, ask again" is how a width actually takes effect.
+        // The dispatch is queued too (ResponsiveWatcher.cpp), so a test that
+        // resizes and asserts in the same breath reads the previous mode.
+        const auto settleAt = [&](int px) {
+            for (int i = 0; i < 4; ++i) {
+                w.resize(px, 560);
+                QTest::qWait(5);
+            }
+        };
+        const auto modeNow = [&] {
+            return static_cast<responsive::Mode>(
+                stack->property(responsive::kModeProperty).toInt());
+        };
+
+        settleAt(1180);
+        // The property exists at all: the first dispatch happened. Without the
+        // m_everClassified sentinel this is exactly what would be missing,
+        // because the stack's width is 0 when the watcher is installed.
+        QVERIFY(stack->property(responsive::kModeProperty).isValid());
+        // NOT asserted as Expanded: the offscreen platform's virtual screen is
+        // 800px, so a 1180px window is never granted and the stack lands in
+        // Medium. The claim that matters is that a wide window is not Compact
+        // and that the class matches the width the container actually got.
+        QVERIFY2(modeNow() != responsive::Mode::Compact,
+                 qPrintable(QStringLiteral("wide window gave %1 at stack %2")
+                                .arg(QLatin1String(responsive::name(modeNow())))
+                                .arg(stack->width())));
+        const responsive::Mode wide = modeNow();
+
+        settleAt(360);
+        // Not a hard-coded width: whatever the window settled on, the class
+        // must be the one the pure judgement gives for the width the
+        // CONTAINER actually got.
+        QCOMPARE(modeNow(), responsive::modeFor(stack->width()));
+        QCOMPARE(modeNow(), responsive::Mode::Compact);
+        QVERIFY(modeNow() != wide); // the width change actually crossed
+
+        clearWindowPrefs();
+    }
+
+    // The test that says why this is container-driven rather than
+    // screen-driven, and the one that would have caught the phone bug's
+    // cousin: pressing the rail toggle hides 190px, which changes the PAGE's
+    // width by 190px and the WINDOW's width by nothing at all. A watcher on
+    // the window — or a mode sampled once from the screen — sees no event
+    // here and keeps a layout that no longer fits.
+    void togglingTheRailRelayoutsWithoutResizingTheWindow()
+    {
+        clearWindowPrefs();
+        MainWindow w;
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+
+        auto* stack = w.findChild<QStackedWidget*>();
+        QVERIFY(stack);
+        const auto modeNow = [&] {
+            return static_cast<responsive::Mode>(
+                stack->property(responsive::kModeProperty).toInt());
+        };
+
+        // Width chosen to clear the DEADBAND on both sides, not merely the
+        // breakpoint. The window comes DOWN from Expanded, so leaving Medium
+        // needs < 600-24 and re-entering it needs >= 600+24. At 700 with the
+        // rail showing the stack is ~510 (Compact); hiding the rail makes it
+        // ~700 (Medium). Both are outside the sticky band, so the crossing is
+        // unambiguous in both directions.
+        for (int i = 0; i < 4; ++i) {
+            w.resize(700, 560);
+            QTest::qWait(5);
+        }
+
+        QPushButton* railToggle = nullptr;
+        for (QPushButton* b : w.findChildren<QPushButton*>())
+            if (b->text() == QStringLiteral("≡"))
+                railToggle = b;
+        QVERIFY2(railToggle, "the hamburger toggle should exist");
+        QVERIFY2(!w.findChild<QStackedWidget*>()->parentWidget()
+                      ->isHidden(), "body should be visible");
+
+        const int windowWidthBefore = w.width();
+        const int stackWidthBefore  = stack->width();
+        const responsive::Mode before = modeNow();
+
+        // Pressed directly rather than through its Ctrl+B shortcut: on the
+        // offscreen platform nothing activates a window, and a QPushButton
+        // shortcut only fires for an ACTIVE window — the same trap the
+        // EventDialog focus tests document above. The shortcut is not what
+        // this test is about; the relayout is.
+        railToggle->click();
+        QTest::qWait(5);
+
+        QCOMPARE(w.width(), windowWidthBefore);      // the window did NOT move
+        QVERIFY2(stack->width() != stackWidthBefore, // the page did
+                 qPrintable(QStringLiteral("stack stayed %1").arg(stackWidthBefore)));
+        QVERIFY2(modeNow() != before,
+                 qPrintable(QStringLiteral(
+                     "hiding the rail must cross the %1px breakpoint: window "
+                     "%2, stack %3 -> %4, mode %5 -> %6")
+                     .arg(responsive::kMediumMin)
+                     .arg(w.width())
+                     .arg(stackWidthBefore)
+                     .arg(stack->width())
+                     .arg(QLatin1String(responsive::name(before)))
+                     .arg(QLatin1String(responsive::name(modeNow())))));
+
+        clearWindowPrefs();
+    }
+
     // ---- the pure policy --------------------------------------------------
 
     void reachableWindowOverlapsAScreen()
@@ -2097,14 +2490,24 @@ private slots:
             // test tried to pin the width and all three lost, each to a
             // different owner: 870 was clamped by restoreGeometry() to the
             // offscreen screen (800x600); 780 was pushed back UP by the
-            // next layout pass, because with Qt's no-fonts fallback
-            // metrics this window's layout computes a ~1166 minimum; and
-            // the restored window measures 798 only because the ctor's
-            // restore runs BEFORE its first layout pass enforces that
-            // minimum. Pre-layout clamps, post-layout minimums, screen
-            // fitting — three owners of "width" on this platform, none of
-            // them the code under test. So the width is nobody's claim
-            // here; the test asserts only what its NAME says, below.
+            // next layout pass, because the window's layout enforces a
+            // minimum wider than that; and the restored window measures
+            // 798 only because the ctor's restore runs BEFORE its first
+            // layout pass enforces that minimum. Pre-layout clamps,
+            // post-layout minimums, screen fitting — three owners of
+            // "width" on this platform, none of them the code under test.
+            // So the width is nobody's claim here; the test asserts only
+            // what its NAME says, below.
+            //
+            // This comment used to blame that minimum on "Qt's no-fonts
+            // fallback metrics (~1166)", and that WAS true: the offscreen
+            // plugin found no fonts and substituted a much wider one, so
+            // every width in this suite was roughly double life size. The
+            // suite now runs with QT_QPA_FONTDIR pointing at the OS fonts
+            // (see CMakeLists.txt), which brings it within ~1% of a native
+            // run — that is what makes everyPageFitsAPhoneScreen() able to
+            // assert a width budget at all. The three-owners lesson above
+            // survives the fix unchanged; only the number moved.
             w.resize(780, 560);
             QTest::qWait(1300); // debounce writes
             w.close();          // close writes again (the courtesy pass)

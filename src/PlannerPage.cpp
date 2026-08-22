@@ -16,6 +16,7 @@
 #include "Event.h"
 #include "Task.h"
 #include "TrackerService.h"
+#include "ResponsiveWatcher.h"
 #include "Widgets.h"
 
 #include <QFrame>
@@ -132,18 +133,19 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     auto* agendaLayout = new QVBoxLayout(agendaPanel);
     agendaLayout->setContentsMargins(16, 14, 16, 14);
     agendaLayout->setSpacing(6);
+    m_agendaLayout = agendaLayout;
     auto* agendaTitle = new QLabel(tr("Your day"), agendaPanel);
     agendaTitle->setObjectName("h2");
-    auto* agendaSub = new QLabel(
+    m_agendaSub = new QLabel(
         tr("6 AM to midnight · 30-minute slots · click a free slot to say "
            "what you're doing"),
         agendaPanel);
-    agendaSub->setObjectName("sub");
+    m_agendaSub->setObjectName("sub");
     // Word wrap changes a QLabel's CONTRACT with the layout: without it the
     // label's minimum width is its full text width (~500px here — wider than
     // a phone), with it the label can fold and stops dictating the window's
     // minimum. On desktop nothing visibly changes; it still fits one line.
-    agendaSub->setWordWrap(true);
+    m_agendaSub->setWordWrap(true);
 
     // The "Due today" strip: tasks whose due date is the viewed day, shown
     // read-only above the timeline. Built empty and hidden; rebuildDueStrip()
@@ -164,6 +166,7 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     agendaScroll->setWidgetResizable(true);
     agendaScroll->setWidget(m_agenda);
     makeTouchScrollable(agendaScroll); // finger-flick on Android/touchscreens
+    m_agendaScroll = agendaScroll;
 
     // "Your day" on the left, the Task-notes toggle hugging the right —
     // the toggle sits directly ON the thing it changes (owner request),
@@ -175,7 +178,7 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     agendaHead->addStretch(1);
     agendaHead->addWidget(taskNotes);
     agendaLayout->addLayout(agendaHead);
-    agendaLayout->addWidget(agendaSub);
+    agendaLayout->addWidget(m_agendaSub);
 
     // ---- the placing banner (needs-a-block part 3) ------------------------
     // Lives above the due strip, hidden until "Find time" starts a
@@ -211,12 +214,9 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
 
     m_glance = new GlancePanel(m_data, m_tracker, dayView);
     m_glance->setFixedWidth(320);
-    // A fixed 320px sidebar on a ~400px phone leaves the agenda a sliver —
-    // on compact screens the glance panel yields entirely. Nothing is lost
-    // for good: every number it shows is DERIVED (never stored), and the
-    // Week/Month reviews recompute the same truths on demand.
-    if (isCompactScreen())
-        m_glance->hide();
+    // Whether it SHOWS is decided in applyLayoutMode(), not here: a fixed
+    // 320px sidebar is affordable or it is not, and that depends on the width
+    // this page was handed, which changes while the app runs.
 
     dayLayout->addWidget(agendaPanel, 1);
     dayLayout->addWidget(m_glance);
@@ -334,6 +334,65 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
 
     applyDisplayPrefs(); // initial read — ends with updateViewSwitcher()
     rebuildDueStrip();
+}
+
+// ---- responding to the container's size class --------------------------------
+
+bool PlannerPage::event(QEvent* e)
+{
+    if (e->type() == ResponsiveModeEvent::type())
+        applyLayoutMode(static_cast<ResponsiveModeEvent*>(e)->mode());
+
+    return QWidget::event(e);
+}
+
+void PlannerPage::applyLayoutMode(responsive::Mode mode)
+{
+    // Expanded ONLY — a sharpening, not just a port. The glance is a fixed
+    // 320px, so at Medium (600-840) it would leave the agenda, the thing this
+    // page is FOR, under 520px. The old screen-based test hid it on phones
+    // and showed it everywhere else, including at window widths where it was
+    // already crowding the agenda out.
+    //
+    // Nothing is lost when it goes: every number on it is DERIVED, never
+    // stored, and the Week and Month reviews recompute the same truths.
+    m_glance->setVisible(mode == responsive::Mode::Expanded);
+
+    // ---- give the agenda its room back --------------------------------------
+    // The day grid is the reason this page exists, and on a phone it was
+    // getting the leftovers: a 64px hour-label gutter and 32px of panel margin
+    // out of 360, with a scrollbar taking a slice of what remained.
+    const bool compact = mode == responsive::Mode::Compact;
+
+    // The gutter only has to fit "12 PM". 64px is generous on a desktop and
+    // 18% of a phone's width.
+    m_agenda->setGutter(compact ? AgendaWidget::kCompactGutter
+                                : AgendaWidget::kDefaultGutter);
+
+    // No scrollbar on a touchscreen. It is not an affordance there — the
+    // gesture is the affordance, and makeTouchScrollable() already provides
+    // it — so the bar is pure width spent on decoration, drawn over the
+    // content it is stealing room from.
+    m_agendaScroll->setVerticalScrollBarPolicy(
+        compact ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
+    m_agendaScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    // The subtitle is an instruction, so it has to tell the truth about the
+    // gesture THIS device uses. On a touchscreen a tap is how you scroll, so
+    // planning moved to a long press (AgendaWidget's header explains why) —
+    // and a caption still saying "click" would be teaching the one gesture
+    // that no longer works.
+    if (m_agendaSub) {
+        m_agendaSub->setText(
+            compact ? tr("6 AM to midnight · 30-minute slots · press and hold "
+                         "a free slot to say what you're doing")
+                    : tr("6 AM to midnight · 30-minute slots · click a free "
+                         "slot to say what you're doing"));
+    }
+
+    if (m_agendaLayout)
+        m_agendaLayout->setContentsMargins(compact ? 8 : 16, compact ? 10 : 14,
+                                           compact ? 8 : 16, compact ? 10 : 14);
 }
 
 void PlannerPage::applyDisplayPrefs()

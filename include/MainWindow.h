@@ -27,6 +27,8 @@
 #include "JsonStore.h"
 #include "TrackerService.h"
 
+#include "Responsive.h"
+
 #include <QMainWindow>
 
 class BlockAlarmService;
@@ -38,6 +40,7 @@ class PlannerPage;
 class PomodoroEngine;
 class PomodoroLink;
 class QStackedWidget;
+class ResponsiveWatcher;
 class QSystemTrayIcon;
 class QTimer;
 class QToolButton;
@@ -97,6 +100,7 @@ public:
     void showPage(int index);
 
 protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     // The window's close is our shutdown hook: commit any live interval,
     // final save, then let the close proceed.
     void closeEvent(QCloseEvent* event) override;
@@ -121,6 +125,13 @@ private:
     // Called at the END of the constructor and from closeEvent respectively —
     // restore AFTER the layout exists (so nothing we set gets overwritten by
     // the chrome being built), save BEFORE the window goes away.
+    void applyChromeMode(responsive::Mode mode);
+
+    // Hand back any width the window is holding beyond its screen. See the
+    // clamp-up-never-down note in the .cpp; called from anything that can
+    // LOWER the window's minimum.
+    void refitToScreen();
+    bool m_refitQueued = false; // at most one queued refit in flight
     void restoreWindowState();
     void saveWindowState();
 
@@ -149,6 +160,14 @@ private:
     TrackerService m_tracker;
 
     QStackedWidget* m_pages = nullptr;
+
+    // Watches the PAGE STACK's width, not the window's — toggling the rail
+    // changes the former by 190px without touching the latter. Parented to
+    // the stack, so it needs no cleanup here.
+    ResponsiveWatcher* m_responsive = nullptr;
+    class QLabel* m_tagline = nullptr; // hidden when the content area is tight
+    class QLabel* m_welcome = nullptr; // ditto — chrome yields before content
+    class QHBoxLayout* m_headerLayout = nullptr; // margins tighten when narrow
     PlannerPage*  m_planner = nullptr; // typed: Settings re-applies prefs here
     PomodoroEngine* m_pomodoro     = nullptr; // app-lifetime, like m_tracker
     PomodoroLink*   m_pomodoroLink = nullptr; // engine→tracker adapter

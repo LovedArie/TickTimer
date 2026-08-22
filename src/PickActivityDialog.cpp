@@ -5,6 +5,7 @@
 #include "AppData.h"
 
 #include <QHBoxLayout>
+#include <QScrollArea>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -19,7 +20,10 @@ PickActivityDialog::PickActivityDialog(const AppData* data, QDate date,
     , m_slotIndex(slotIndex)
 {
     setWindowTitle(tr("Plan a block"));
-    setMinimumWidth(400);
+    // Same reasoning as QuickCaptureOverlay's input: 400 is a good desktop
+    // shape and an impossible one on a 360px phone, where it pushed the
+    // duration chips and the "What exactly?" field off the right edge.
+    setMinimumWidth(isCompactScreen() ? 0 : 400);
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(20, 18, 20, 18);
@@ -33,9 +37,33 @@ PickActivityDialog::PickActivityDialog(const AppData* data, QDate date,
         tr("Pick how long, then choose an activity or a task — "
            "or just type what you're doing."), this);
     sub->setObjectName("sub");
+    // An unwrapped QLabel's minimum width IS its text width, and this sentence
+    // is ~330px of it. Wrapping is right on every screen; it only became
+    // VISIBLE as a bug on a phone, where it pushed the whole dialog off the
+    // right edge.
+    sub->setWordWrap(true);
 
-    auto* pillHost = new QWidget(this);
-    buildDurationPills(pillHost);
+    // The duration pills are one per free slot, so the row is as wide as the
+    // day is empty — up to eight or more of them. That is a width this dialog
+    // cannot promise on a phone, and shortening the list would remove real
+    // choices. A scroll area SEVERS the promise instead: the row keeps every
+    // pill and simply scrolls when there is no room, which on a touchscreen is
+    // a gesture people already have.
+    auto* pillRow = new QWidget(this);
+    buildDurationPills(pillRow);
+    auto* pillHost = new QScrollArea(this);
+    pillHost->setWidget(pillRow);
+    pillHost->setWidgetResizable(true);
+    pillHost->setFrameShape(QFrame::NoFrame);
+    pillHost->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    pillHost->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    // setWidget() turns on the child's autoFillBackground behind your back —
+    // the mechanism that once painted the agenda black (Theme.h).
+    pillRow->setAutoFillBackground(false);
+    // A scroll area's sizeHint is a cached guess; pin the height to the row it
+    // carries so the dialog does not grow a tall empty band.
+    pillHost->setFixedHeight(pillRow->sizeHint().height());
+    makeTouchScrollable(pillHost);
 
     // ONE text field, two jobs — deliberately (block-labels addendum):
     //   type + click an activity  ->  activity block WITH that label

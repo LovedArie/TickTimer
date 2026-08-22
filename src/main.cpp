@@ -9,6 +9,7 @@
 
 #include "LlmProvider.h"
 #include "LoginDialog.h"
+#include "ResponsiveWatcher.h"
 #include "SessionStore.h"
 #include "MainWindow.h"
 #include "Theme.h"
@@ -59,6 +60,12 @@ int main(int argc, char* argv[])
     // stylesheet and inherited the palette from the OS, which painted the
     // calendar black on dark-mode Windows (the story is in Theme.h).
     theme::applyTheme(app);
+
+    // Phones: a QDialog is its own top-level window, so none of the
+    // container-driven layout machinery reaches it. This gives every dialog
+    // the screen on a compact device and maps Android's Back key to reject().
+    // Installed before the login dialog, which is the first one shown.
+    responsive::installCompactDialogFitter(&app);
 
     // The server address lives in QSettings (a preference, not domain data —
     // same rule as everything else): localhost by default, editable to a

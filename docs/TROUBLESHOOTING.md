@@ -1296,10 +1296,40 @@ directly, not through `run-tests.bat`. Then rewrite the literal with
 ordinary escapes (`"^#define\\s+AppVersion\\s+\"([^\"]+)\""`), and clear
 `build-release/test_domain_autogen/` to break the stale-stamp loop. v29.2.
 
+**A SECOND CAUSE, same symptom (v30.5): a non-slot declaration after
+`private slots:`.**
+
+`moc` treats *everything* following `private slots:` as a signal or slot
+declaration, to the end of the access section. Adding what looks like an
+ordinary member —
+
+```cpp
+private slots:
+    static constexpr int kPhoneWidthPx = 384;   // <-- moc stops here
+    void everyPageFitsAPhoneScreen();
+```
+
+— aborts moc with `error: Not a signal or slot declaration`, no `.moc` is
+written, and the compiler once again blames the `#include` line. The
+constant is perfectly legal C++; it is only illegal *there*.
+
+Fix: move it into the function that uses it, or above the class. Diagnose it
+the same way as the raw-string case — run `moc` yourself, which prints the
+real line:
+
+```sh
+moc.exe -I include tests/test_ui.cpp -o /tmp/out.moc
+```
+
 **PREVENT**
 Don't use raw string literals in a file that carries `Q_OBJECT`. The
 regex in `installerVersionMatchesTheHeader()` carries a comment saying so,
 because the escaped version looks strictly worse and invites tidying.
+
+Declare constants, types and helper structs BEFORE `private slots:`, never
+inside it. The general rule behind both causes: **when a `.moc` goes missing,
+moc failed and something swallowed its message** — never start by suspecting
+the build system.
 
 ### A test's own fixture data silently doesn't exist — a query over it returns the empty/default answer
 
@@ -1432,69 +1462,352 @@ has opened it in a browser". Write that sentence when it is true.
 
 ---
 
-### On a real Android phone the nav rail does NOT start collapsed — it eats half the screen, and a dialog on top of it swallows every tap
+### Widths measured headlessly are roughly DOUBLE the real ones
 
 **SYMPTOM**
-First run of the release APK on a phone (measured: Galaxy S21 Ultra,
-`wm size` 1080x2400, `wm density` 480):
+A layout measurement taken under `QT_QPA_PLATFORM=offscreen` disagrees wildly
+with the same measurement on a real desktop run. Measured on this project:
+`MainWindow::minimumSizeHint()` reports **1051 px** offscreen and **522 px**
+natively — and per page, `PomodoroPage` 1051 vs 522, `ChatPage` 715 vs 415.
+Not a constant factor either, so it cannot be scaled away.
 
-- the nav rail is fully expanded, about 470 of 1080 px wide
-- the content pane starts around x=540 and is CLIPPED at the right edge —
-  "6 AM to midnight · 30-m…", "Every dated, unfinished task across all your
-  life areas — de…"
-- opening Sync leaves you stuck: `SyncDialog` renders frameless and
-  background-less over the main window, so it reads as part of the page, and
-  because it is modal every tap on the visible nav behind it does nothing.
-  `KEYCODE_BACK` does not dismiss it either. The only way out found was
-  `adb shell am force-stop org.ticktimer.app`.
+Usually accompanied, if anything is printing warnings, by:
 
-`docs/ANDROID.md` promised the opposite: *"Compact layout, automatically: the
-nav rail starts collapsed (☰ opens it)"*.
-
-**CAUSE**
-`isCompactScreen()` (`include/Widgets.h`) returned **false** on a phone:
-
-```cpp
-const QRect g = screen->availableGeometry();
-return qMin(g.width(), g.height()) < 600;
+```
+QFontDatabase: Cannot find font directory C:/Qt/6.11.1/mingw_64/lib/fonts.
+Note that Qt no longer ships fonts.
 ```
 
-1080x2400 at density 480 is 360x800 in device-independent pixels, which is far
-under the threshold. A fresh install has no saved preference, so
-`prefs::sidebarVisible(!isCompactScreen())` fell back to the default and the
-default said "not compact" — meaning `availableGeometry()` reported PHYSICAL
-pixels (short side 1080), not logical ones.
+**CAUSE**
+The offscreen platform plugin brings no fonts and, with no fontconfig, finds
+none: `QFontDatabase::families()` is **empty**. Qt falls back to a substitute
+whose metrics are far wider than any real UI font. Since a `QLabel`'s minimum
+width *is* its text width, every text-derived width in the process inflates.
 
-**NOT YET CONFIRMED, and stated that way on purpose:** nothing has printed
-`availableGeometry()` and `devicePixelRatio()` from inside the running app.
-The reasoning above is inference from a fresh-install default, not a
-measurement. Measure before fixing — a `qWarning` in `isCompactScreen()`,
-read back with `adb logcat --pid=$(adb shell pidof org.ticktimer.app)`, settles
-it in one build. This repo has been wrong before by writing down the reasonable
-guess.
+This is why `tests/test_ui.cpp` spent several versions documenting that widths
+were unassertable, and therefore why the phone-width regression above went
+unnoticed: **the one platform CI could measure on was the one platform whose
+numbers were meaningless.**
 
 **FIX**
-Workaround, and it is a good one — **tap ☰**. The rail collapses, the content
-pane takes the full width, and the app becomes properly usable. The choice
-persists per device in `QSettings`, so it is a one-time tap.
+Point Qt at the OS fonts. `CMakeLists.txt` now does this for the `ui` suite:
 
-The real fix depends on the measurement. If Qt reports physical pixels, the
-threshold cannot stay a raw pixel count — the question `isCompactScreen()` asks
-("how much room is there?") has to be asked in units that mean the same thing
-on every platform, i.e. divided by `devicePixelRatio()`, or asked of
-`QScreen::physicalSize()` in millimetres.
+```cmake
+set_tests_properties(ui PROPERTIES ENVIRONMENT
+    "QT_QPA_PLATFORM=offscreen;QT_QPA_FONTDIR=${TICKTIMER_TEST_FONTDIR}")
+```
 
-`SyncDialog` needs its own fix regardless: a modal that cannot be dismissed is
-a soft-lock, and neither its close affordance nor Back reached the user.
+With it, offscreen lands within ~1% of native (528 vs 522) and
+`QFontDatabase::families()` goes from 0 to 56.
+
+Sharp edge: `QT_QPA_FONTDIR` **replaces** the font source rather than adding
+to it, so a wrong path is worse than no path. Never trust that it worked —
+`everyPageFitsAPhoneScreen()` checks `QFontDatabase::families().isEmpty()`
+before asserting anything, and fails loudly on Windows (where the directory
+provably exists, so an empty list means a build-configuration fault) while
+skipping elsewhere.
+
+---
+
+### On a real Android phone a third of every page hangs off the right edge
+
+**SYMPTOM**
+The release APK on a phone (measured: Galaxy S21 Ultra, `wm size` 1080x2400,
+`wm density` 480): the content pane is CLIPPED at the right edge — "6 AM to
+midnight · 30-m…", "+ Captu…", "Yest…" — with no horizontal scrollbar, no
+error, and no way to reach the missing third. Opening the nav rail makes it
+worse: the rail takes ~190 logical px of a 384 px screen.
+
+**CAUSE — and note what the earlier version of this entry got wrong**
+
+This entry used to blame `isCompactScreen()`, reasoning that
+`availableGeometry()` must be reporting PHYSICAL pixels because a fresh
+install came up with the rail expanded. It said, correctly, that this was an
+inference and not a measurement. **The inference was wrong**, and the
+measurement is now done:
+
+- the running app printed its own numbers to `logcat`: **dpr 3.00**, screen
+  **360 x 800** logical.
+- Qt therefore reports **logical** pixels, and `isCompactScreen()`
+  (threshold `< 600`) returned **true** all along.
+
+  *A draft of this entry said dpr 2.81 and 384px, measured off a screencap by
+  sizing a `setFixedWidth(34)` widget at ~96 physical px — the widget's border
+  was inside that measurement. Ask the device, not a picture of it.*
+
+The real cause was a minimum size. `MainWindow`'s `minimumSizeHint()` in
+compact mode was **522 x 706** against a 384 x 780 screen, and **Qt honours a
+minimum it cannot fit by letting the surplus overflow the screen.** There is
+no scrollbar and no diagnostic because, as far as Qt is concerned, nothing
+went wrong.
+
+A `QStackedWidget`'s minimum is the **max over all its pages**, so any one
+page holds the whole window hostage — including pages nobody is looking at.
+The culprit was one `QCheckBox` on `PomodoroPage` labelled *"Drive the tracked
+block (focus → focus, break → break, paused → distracted)"*. A `QCheckBox`
+cannot word-wrap, so **its label IS its minimum width**: 476 px on its own,
+clipping the Planner.
+
+**FIX**
+Fixed in v30.5 (`docs/design-addendum-responsive.md`). Three kinds of fix,
+because there were three kinds of broken promise: the checkbox label was
+shortened (the parenthetical was already in the tooltip and narrated live by
+`m_linkStatus`), `PomodoroPage` was wrapped in a `QScrollArea` so no future
+long label can pin the window again, `ChatPage`'s header row stacks when
+narrow, and `UpcomingPage` tightens 96 px of nested margins, and the header's slogan and
+account name yield. Window minimum: **522 → 356**, against a 360px screen.
+
+The layout mode is now **container-driven** (`include/Responsive.h`,
+`include/ResponsiveWatcher.h`): a page reacts to the width it was handed,
+re-evaluated on every resize, instead of asking once about the screen.
+
+**STILL OPEN, and confirmed on the device:** the nav rail is still *in flow*,
+so opening it adds its 190 px to the window's minimum and the clipping returns
+— verified by tapping ☰ on the phone and screenshotting the result. The rail
+must become an overlay drawer on compact screens; until then, leave it
+collapsed on a phone.
 
 **PREVENT**
-**A layout claim about a device is worth nothing until it has run on that
-device.** `TICKTIMER_COMPACT=1` renders the compact layout on a desktop and is
-what the screenshot tool uses — genuinely useful, and it verified a code path,
-not a phone. The forced mode proved `isCompactScreen()`'s CONSEQUENCES were
-right while the real phone proved its INPUT was wrong, and a test that supplies
-its own input can never catch that.
+`everyPageFitsAPhoneScreen()` in `tests/test_ui.cpp` asserts every page's
+minimum width against the phone budget and names the offending page in the
+failure message. **It could not have existed before**: the offscreen platform
+ships no fonts and substitutes a much wider one, so the same window measured
+1051 px there against a true 522 — see the `QT_QPA_FONTDIR` entry below.
 
-Same family as the OpenSSL entry: both are things only a real Android run could
-find, and both were shipped as documentation before anyone had one.
+The deeper lesson is that this had already been fixed once. The Android
+addendum §3.32 records driving the same number from 550 down to 318, verified
+by hand. It was 522 again four versions later, because `ChatPage` and
+`UpcomingPage` arrived afterwards and nothing measured them. **A layout budget
+that is checked by hand is a layout budget that regresses**; the hand-check
+told you the number was good the day you looked, and nothing told you the day
+it stopped being.
+
+---
+
+### A dialog is desktop-sized on the phone even though every page fits
+
+**SYMPTOM**
+The pages are fine, and then quick capture, the "what are you doing?" block
+picker, or the login screen appears at desktop proportions — content off the
+right edge, or a small panel adrift in the middle of the screen.
+
+**CAUSE**
+**A `QDialog` is its own top-level window with its own minimum**, so none of
+the container-driven layout machinery reaches it: `MainWindow`'s watcher governs
+`MainWindow`'s page stack and nothing else. `everyPageFitsAPhoneScreen()`
+measures exactly that, so three whole surfaces had nothing measuring them.
+
+Two different faults hid behind one symptom, and both had to be answered:
+- **too wide** — `QuickCaptureOverlay`'s input had `setMinimumWidth(520)` and
+  `PickActivityDialog` had `setMinimumWidth(400)`, plus an unwrapped subtitle
+  and a duration-pill row with one pill per free slot. Promises a 360px screen
+  cannot keep.
+- **fits but adrift** — `LoginDialog`'s minimum was only 234px. It fit, and was
+  still wrong, because a dialog that merely fits is a small floating panel on a
+  phone rather than a screen.
+
+**FIX**
+`responsive::installCompactDialogFitter()` (installed in `main()` before the
+login dialog) gives every `QDialog` the screen on a compact device and maps
+`Qt::Key_Back` to `reject()`. Per-dialog, the hard width floors are relaxed when
+compact, the subtitle wraps, and the pill row moved into a `QScrollArea` — which
+severs the width promise instead of removing choices.
+
+Opt out for something that should stay small on a phone:
+`setProperty("noCompactFit", true)`.
+
+**PREVENT**
+`dialogsFitAPhoneScreen()` in `test_ui.cpp` measures the dialogs the way
+`everyPageFitsAPhoneScreen()` measures the pages, and asserts that the fitter
+actually resizes one to the screen. **Add new dialogs to it** — the page test
+will never notice them.
+
+---
+
+### Trying to SCROLL a touch widget opens whatever was under the finger
+
+**SYMPTOM**
+On the phone, dragging the agenda to scroll the day opens the "what are you
+doing at…?" dialog instead. Every time. The list still scrolls underneath, so
+it reads as the app fighting you.
+
+**CAUSE**
+The widget acted on `mousePressEvent`. On a desktop a press is a decision; on a
+touchscreen it is the **first frame of an ambiguous gesture** — a tap and a
+scroll start identically and can only be told apart by what happens next. Qt
+synthesises a mouse press from the first touch, so the press arrives and the
+widget commits before the finger has said anything.
+
+**FIX**
+Defer the decision (`AgendaWidget`, v30.5.2), and split it by what the gesture
+COSTS:
+- creating (empty slot → plan a block) needs a **long press**, 450ms;
+- opening (an existing block) acts on **release**, if the finger did not move.
+
+Movement past `QApplication::startDragDistance()` cancels both — that is a
+scroll. Use `QMouseEvent::source() != Qt::MouseEventNotSynthesized` to keep a
+real mouse on the old immediate behaviour; a hold-to-click desktop would be a
+regression.
+
+**The non-obvious half:** also cancel on `QEvent::UngrabMouse`. That is how
+`QScroller` announces it has taken the gesture over to pan, and it is the only
+reliable signal. Without it the long-press timer still fires in the middle of a
+flick and plans a block nobody asked for.
+
+**PREVENT**
+If a widget lives inside a `makeTouchScrollable()` scroll area, it may not act
+on press. And when the gesture changes, **change the words**: the agenda's
+caption says "click a free slot" on a desktop and "press and hold a free slot"
+on a phone, because an instruction naming the one gesture that no longer works
+is worse than no instruction.
+
+---
+
+### A dialog pinned to the top of the screen ends up under the status bar
+
+**SYMPTOM**
+Android only. A dialog positioned at `availableGeometry().y()` has its top
+strip hidden behind the system status bar — for a short sheet that can mean the
+text field is sliced in half.
+
+**CAUSE**
+**Qt reports `availableGeometry().y()` as 0 on this device**, and the parent
+window's `geometry()` as 0 too, while Android actually draws its status bar
+over that strip. Qt Widgets has no safe-area / display-cutout API to ask, so
+there is no supported way to find the real inset.
+
+**FIX**
+Do not pretend to know where the top is. `installCompactDialogFitter()` takes
+the **width** for a `compactTopSheet` and leaves the caller's `y` alone — and
+the caller already had a good answer (`QuickCaptureOverlay::popup()` puts it in
+the parent's upper third, clear of any system bar). Full-screen dialogs are
+unaffected: their content starts far enough down that the overlay is harmless.
+
+**PREVENT**
+Treat "where is the top of the usable screen?" as a question this toolkit
+cannot answer on Android. Anchor to something the app already owns, or to
+nothing at all.
+
+---
+
+### The layout is correct, the minimum is small — and the window STAYS too wide
+
+**SYMPTOM**
+Android only. Every page measures under budget, `minimumSizeHint()` reports a
+width that fits the screen, the size class is correct — and the window is still
+hundreds of pixels too wide with content off the right edge. Measured during
+the v30.5 work: `topMin=386` while `topW=571` on a 360px screen.
+
+**CAUSE**
+**Qt clamps a top-level window UP to its `minimumSizeHint` and never clamps it
+back DOWN.** A desktop hides this, because the window manager and the user keep
+offering new sizes; Android offers one, at startup.
+
+The app was born at the 1150px desktop default, so its first layout ran in
+Expanded — glance panel showing, minimum ~571. Android then handed it the 360px
+screen and Qt refused, clamping to 571. The size class immediately became
+Compact and the minimum fell to 386, but nothing re-offered a size, so the
+window sat at 571 forever.
+
+**FIX**
+Both ends, in `src/MainWindow.cpp`:
+- the constructor sizes to `availableGeometry()` on a compact **device**, so
+  the first layout is already Compact and the inflation never happens;
+- `applyChromeMode()` hands back width beyond the screen after a mode change
+  lowers the minimum — **fenced to compact devices**, because unfenced it
+  silently shrinks a legitimate 1150px desktop window (the suite caught this
+  within one run).
+
+**PREVENT**
+A test that resizes a window once and asserts is testing your optimism. In
+`test_ui.cpp` the phone-budget test sizes the window BEFORE showing it and then
+re-offers that size a few times, which is what Android actually does. If a
+layout only converges when the platform keeps asking, say so in the test.
+
+---
+
+### A size class is unreachable — the layout never becomes Compact no matter how narrow
+
+**SYMPTOM**
+Every page is under budget, the window's minimum is healthy, and the mode sits
+at Medium forever. Narrowing further does nothing: the window settles at some
+width above the Compact threshold and stops.
+
+**CAUSE**
+**A mode ladder has to be DESCENDABLE.** The layout at one mode must be able to
+shrink past the breakpoint that enters the mode below, or that mode can never
+be entered.
+
+The v30.5 case: the header's tagline is 236 px of unwrappable `QLabel`, and the
+first draft hid it only at Compact. With it showing, Medium's floor was 644 px
+— above the 576 px a window must get *under* to become Compact. The window
+settled at 644, stayed Medium, and Compact was unreachable. Every page passed
+its budget and the app was still broken on the phone.
+
+**FIX**
+Make the offending widget yield one mode EARLIER: the slogan now hides at
+Medium, not at Compact. `src/MainWindow.cpp` carries a comment saying so,
+because `!compact` is the obvious-looking simplification and re-breaks it.
+
+**PREVENT**
+Whenever a widget is hidden or shrunk at mode N+1, ask whether mode N can still
+get small enough to REACH N+1 without it. A breakpoint is a claim about widths
+the layout must actually be able to produce — not just a number to compare
+against.
+
+---
+
+### Stuck in the Sync screen on Android, nothing responds, Back does nothing
+
+**SYMPTOM**
+Opening Sync on the phone leaves you trapped: `SyncDialog` renders frameless
+and background-less over the main window, so it reads as part of the page, and
+because it is modal every tap on the visible nav behind it does nothing.
+`KEYCODE_BACK` does not dismiss it either. The only way out is
+`adb shell am force-stop org.ticktimer.app`.
+
+**CAUSE**
+`src/SyncDialog.cpp` sets `setModal(true)` and nothing else — no window flags,
+no close button, no `reject()` path. On a desktop the window manager's title
+bar supplies the ✕, and `QDialog` maps `Esc` to `reject()` for you. Android
+has no title bar, and its Back key arrives as **`Qt::Key_Back`**, which
+`QDialog` does not map to anything.
+
+**This is NOT a sizing bug and a layout fix does not clear it.** At a perfect
+384 px the dialog still has no way out. It needs a dialog *presentation*
+policy: on a compact screen a dialog should fill the screen, carry a visible
+close affordance, and treat `Qt::Key_Back` the way it treats `Qt::Key_Escape`.
+`SlidePanel` (`include/SlidePanel.h`) is the right vehicle — it is already a
+scrim-plus-sheet that is a CHILD of its host rather than a window, so it
+cannot render off-screen the way a frameless `QDialog` does.
+
+**FIXED in v30.5.1** — `responsive::installCompactDialogFitter()` maps
+`Qt::Key_Back` to `reject()` for every `QDialog` on a compact device, so
+Android's Back gesture now dismisses this dialog. Verified on the phone. The
+same filter gives dialogs the whole screen, which is why Back had to be part of
+it: a full-screen modal with no visible way out is worse than a small one.
+
+**A SECOND, INDEPENDENT DIALOG FAULT: they were also too WIDE.**
+`PickActivityDialog` on the phone runs its duration chips and its "What
+exactly?" field off the right edge — the same overflow the pages had, on a
+surface the page fix does not reach. `everyPageFitsAPhoneScreen()` measures
+`MainWindow`; a dialog is its own top-level window with its own minimum, and
+**nothing measures it**. Whoever builds the sheet presentation owes a width
+budget over the 11 `QDialog` subclasses as well as a way out of them.
+
+**FIX**
+v30.5.1, as above. If you are on an older build:
+`adb shell am force-stop org.ticktimer.app`; sync runs automatically regardless,
+so nothing is lost by never opening the dialog.
+
+**PREVENT**
+**A layout or dialog claim about a device is worth nothing until it has run on
+that device.** `TICKTIMER_COMPACT=1` renders the compact layout on a desktop
+and is genuinely useful — but it verified a code path, not a phone. It proved
+`isCompactScreen()`'s CONSEQUENCES were right while the real phone proved its
+INPUT was wrong, and a test that supplies its own input can never catch that.
+
+Same family as the OpenSSL entry: both are things only a real Android run
+could find, and both were shipped as documentation before anyone had one.
+
 

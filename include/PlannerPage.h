@@ -20,6 +20,8 @@
 #include "Reschedule.h" // reschedule::Option — the accepted proposal
 
 #include <QDate>
+#include "Responsive.h"
+
 #include <QWidget>
 
 class AppData;
@@ -93,7 +95,14 @@ private slots:
     void onCuShowDay(QDate date);
     void onCuResolveAll(const QStringList& eventIds, BlockOutcome outcome);
 
+protected:
+    // The container's size class reaches the page here. See
+    // ResponsiveWatcher.h; the handler only shows and hides.
+    bool event(QEvent* e) override;
+
 private:
+    void applyLayoutMode(responsive::Mode mode);
+
     // Push m_date into every sub-view and re-derive the label and strips.
     // Extracted from shiftPeriod() the moment goToToday() became a second
     // caller: one "the date moved" routine, so a new navigation gesture can
@@ -132,6 +141,10 @@ private:
     AgendaWidget*   m_agenda      = nullptr;
     WeekAgendaView* m_weekAgenda  = nullptr;
     GlancePanel*    m_glance      = nullptr;
+    // Held so applyLayoutMode() can give the agenda its room back on a phone.
+    class QScrollArea* m_agendaScroll = nullptr;
+    class QVBoxLayout* m_agendaLayout = nullptr;
+    class QLabel*      m_agendaSub    = nullptr; // names the tap-or-hold gesture
     WeekReviewPage* m_week        = nullptr;
     MonthReviewPage* m_month      = nullptr;
 };

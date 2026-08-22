@@ -165,6 +165,9 @@ set(UI_SOURCES
     include/WeekAgendaView.h
     include/Theme.h
     include/Widgets.h
+    include/Responsive.h
+    include/ResponsiveWatcher.h
+    src/ResponsiveWatcher.cpp
     src/ActivitiesPage.cpp
     src/AgendaWidget.cpp
     src/DueDateDialog.cpp
@@ -528,6 +531,11 @@ qt_add_executable(test_nlp
     # in this Core-only suite without dragging the disk in behind it.
     include/Memory.h
     src/Memory.cpp
+    # v30.5 — the layout size class. Header-only with NO Qt includes at all,
+    # which is precisely why it belongs in the Core-only suite: a layout
+    # judgement that compiles without Gui or Widgets cannot have learned
+    # anything about widgets. Same admission rule as LlmProvider above.
+    include/Responsive.h
     tests/test_nlp.cpp
 )
 target_include_directories(test_nlp PRIVATE include)
@@ -553,8 +561,29 @@ target_link_libraries(test_ui PRIVATE Qt6::Widgets Qt6::Test Qt6::Network
 # code — setupNotifications bails on the headless tray guard — and if a
 # desktop run ever did, empty resource bytes fall back to the beep.)
 
+# The "offscreen" platform plugin brings no fonts of its own, and on a machine
+# with no fontconfig it substitutes a fallback far wider than any real UI font.
+# The cost is not cosmetic — it is that WIDTHS BECOME UNASSERTABLE. Measured on
+# this project: the layout probe reports a 1051px window minimum where the real
+# one is 522. Pointing Qt at the OS font directory brings the headless numbers
+# within ~1% of a native run (528 vs 522), which is the whole reason the phone
+# width budget in test_ui can be a test at all instead of a manual probe.
+#
+# Note QT_QPA_FONTDIR REPLACES the font source rather than adding to it, so a
+# wrong path here is worse than no path. everyPageFitsAPhoneScreen() therefore
+# measures a known string before trusting it, and says so when it looks wrong.
+if(WIN32)
+    set(TICKTIMER_TEST_FONTDIR "$ENV{SystemRoot}/Fonts")
+elseif(APPLE)
+    set(TICKTIMER_TEST_FONTDIR "/System/Library/Fonts")
+else()
+    set(TICKTIMER_TEST_FONTDIR "/usr/share/fonts")
+endif()
+
 add_test(NAME ui COMMAND test_ui)
-set_tests_properties(ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# ENVIRONMENT is a CMake list, so the ";" separates two VAR=VALUE entries.
+set_tests_properties(ui PROPERTIES ENVIRONMENT
+    "QT_QPA_PLATFORM=offscreen;QT_QPA_FONTDIR=${TICKTIMER_TEST_FONTDIR}")
 
 # ---- optional developer tools --------------------------------------------------
 # Off by default so a normal build stays lean. `option()` declares a switch

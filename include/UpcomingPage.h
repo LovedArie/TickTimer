@@ -38,6 +38,8 @@
 //
 // ---------------------------------------------------------------------------
 
+#include "Responsive.h"
+
 #include <QWidget>
 
 class AppData;
@@ -63,11 +65,21 @@ private slots:
     // the view — see the .cpp for the double-free that rule prevents.
     void editTask(const QString& taskId);
 
+protected:
+    bool event(QEvent* e) override; // the container's size class arrives here
+
 private:
+    void applyLayoutMode(responsive::Mode mode);
+
     AppData*          m_data;
     TaskListModel*    m_model    = nullptr;
     TaskFilterProxy*  m_proxy    = nullptr;
     TaskCardDelegate* m_delegate = nullptr;
+    // The two nested margin boxes and the filter row: all four are held so a
+    // narrow container can tighten them. 26+26 of page margin plus 22+22 of
+    // panel margin is 96px of a phone's 384 spent on whitespace.
+    class QVBoxLayout* m_outerLayout = nullptr;
+    class QVBoxLayout* m_panelLayout = nullptr;
     QListView*        m_view     = nullptr;
     QStackedWidget*   m_stack    = nullptr; // [0] = list, [1] = empty message
     QLabel*           m_empty    = nullptr;

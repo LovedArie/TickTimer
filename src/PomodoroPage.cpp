@@ -8,9 +8,11 @@
 #include "Stats.h"
 #include "Theme.h"
 #include "TrackerService.h"
+#include "ResponsiveWatcher.h"
 #include "Widgets.h"
 
 #include <QCheckBox>
+#include <QScrollArea>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
@@ -56,16 +58,19 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
     m_engine->setDurations(focusMin, shortMin, longMin);
     m_link->setEnabled(prefs::pomodoroDrivesTracker());
 
-    auto* layout = new QVBoxLayout(this);
+    // The page's content lives on an inner widget so the page itself can be
+    // a QScrollArea. See the wrap at the end of this constructor for why.
+    auto* content = new QWidget;
+    auto* layout = new QVBoxLayout(content);
     layout->setContentsMargins(26, 40, 26, 26);
     layout->setSpacing(16);
     layout->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
 
-    m_phaseLabel = new QLabel(this);
+    m_phaseLabel = new QLabel(content);
     m_phaseLabel->setStyleSheet("font-size:17px; font-weight:800;");
     m_phaseLabel->setAlignment(Qt::AlignCenter);
 
-    m_ring = new PomodoroRing(this);
+    m_ring = new PomodoroRing(content);
 
     // The four round dots.
     auto* dotsRow = new QHBoxLayout;
@@ -125,9 +130,16 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
     // three pairs stack vertically instead. Same widgets, different QBoxLayout
     // DIRECTION — QBoxLayout's constructor argument is the whole difference,
     // which is why both cases share every line below it.
-    auto* settingsRow = new QBoxLayout(isCompactScreen()
-                                           ? QBoxLayout::TopToBottom
-                                           : QBoxLayout::LeftToRight);
+    //
+    // v30.5 — this is THE reference conversion from the responsive addendum.
+    // It used to read isCompactScreen(), asked once, about the SCREEN. Now the
+    // direction is a function of the width this page was actually handed, and
+    // it can change while the app runs: rotate the phone, or open the nav rail
+    // on a narrow desktop window, and the strip folds or unfolds to match.
+    // Nothing is rebuilt to do it — one call to setDirection() moves the same
+    // three pairs, which is why the handler is allowed to run at any moment.
+    auto* settingsRow = new QBoxLayout(QBoxLayout::LeftToRight);
+    m_settingsRow = settingsRow;
     settingsRow->setSpacing(6);
     const auto addPair = [&](const QString& text, QWidget* spin) {
         auto* pair = new QHBoxLayout;
@@ -171,10 +183,19 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
     connect(notifyCheck, &QCheckBox::toggled, this,
             [](bool on) { prefs::setPomodoroNotify(on); });
 
-    auto* linkCheck = new QCheckBox(
-        tr("Drive the tracked block (focus → focus, break → break, "
-           "paused → distracted)"),
-        this);
+    // The label is SHORT on purpose, and this is a width fix as much as a
+    // copy one. A QCheckBox cannot word-wrap, so its label is a hard promise
+    // about width: the old sentence — "(focus → focus, break → break, paused
+    // → distracted)" — measured 476px on its own and, because a
+    // QStackedWidget's minimum is the max over all its pages, single-handedly
+    // stopped the WHOLE WINDOW from fitting on a phone, even while the
+    // Planner was the page on screen.
+    //
+    // Nothing is lost by cutting it. That parenthetical is still in the
+    // tooltip below, and m_linkStatus narrates the live mapping in a
+    // word-wrapped label a few lines further down. It was a width contract
+    // paying for information the page already gave twice.
+    auto* linkCheck = new QCheckBox(tr("Drive the tracked block"), content);
     linkCheck->setToolTip(
         tr("While you're tracking a block on the agenda, the Pomodoro's "
            "phases switch that block's timer kind for you. It never picks "
@@ -238,6 +259,33 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
     connect(miniBtn, &QPushButton::clicked, this, &PomodoroPage::showMini);
     connect(m_engine, &PomodoroEngine::changed,
             this, &PomodoroPage::refresh);
+
+    // ---- the wrap ---------------------------------------------------------
+    // A QScrollArea's minimum IGNORES its content, which is the only
+    // construction that makes a page's width promise structurally safe: no
+    // future long label here can pin the window again, the way the link
+    // checkbox above did. It is the same recipe SpecialDaysPage and
+    // ArchivePage already use, and it earns its keep vertically too — the
+    // ring, the buttons, the three duration rows and two checkboxes do not
+    // fit in a landscape phone's 384px of height, and now they scroll.
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    // Vertical only. Horizontal scrolling would HIDE a width overflow rather
+    // than fix it, and hiding it is how 522px went unnoticed for four
+    // versions.
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setWidget(content);
+    // setWidget() silently turns on the child's autoFillBackground — the
+    // exact mechanism that once painted the agenda black (Theme.h). Undo it
+    // AFTER setWidget, or the page gets a slab of palette colour over the
+    // themed background.
+    content->setAutoFillBackground(false);
+    makeTouchScrollable(scroll);
+
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->addWidget(scroll);
 
     refreshHint();
     refreshLinkStatus();
@@ -363,12 +411,50 @@ void PomodoroPage::refresh()
     m_startBtn->setText(m_engine->running() ? tr("Pause") : tr("Start"));
 }
 
+// ---- responding to the container's size class --------------------------------
+
+bool PomodoroPage::event(QEvent* e)
+{
+    // registerEventType() picks its value at RUNTIME, so this can never be a
+    // switch case — see ResponsiveWatcher.h.
+    if (e->type() == ResponsiveModeEvent::type())
+        applyLayoutMode(static_cast<ResponsiveModeEvent*>(e)->mode());
+
+    return QWidget::event(e); // always chain: Qt still needs every other event
+}
+
+void PomodoroPage::applyLayoutMode(responsive::Mode mode)
+{
+    const bool compact = mode == responsive::Mode::Compact;
+
+    m_settingsRow->setDirection(compact ? QBoxLayout::TopToBottom
+                                        : QBoxLayout::LeftToRight);
+
+    // The ring was a hard 230px square in every mode — 230 of a phone's 384
+    // logical px, before the page's own 26px margins. It is the one item here
+    // whose size is purely decorative, so it is also the one that should
+    // yield first.
+    m_ring->setDiameter(compact ? 160
+                                : mode == responsive::Mode::Medium ? 200
+                                                                   : 230);
+}
+
 // ---- PomodoroRing ------------------------------------------------------------
 
 PomodoroRing::PomodoroRing(QWidget* parent)
     : QWidget(parent)
 {
     setFixedSize(sizeHint());
+}
+
+void PomodoroRing::setDiameter(int px)
+{
+    // The ring paints into whatever square it is given (see paintEvent), so
+    // resizing it needs no other change. Kept as a setter rather than an
+    // event handler on purpose: the RING should not know that layout modes
+    // exist — the page it belongs to does, and tells it. Glass decides
+    // nothing, one layer down as well as one layer up.
+    setFixedSize(px, px);
 }
 
 void PomodoroRing::setState(double progress, const QString& timeText,

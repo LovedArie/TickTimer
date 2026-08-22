@@ -30,6 +30,7 @@
 #include <QPainter>
 #include <QRect>
 #include <QResizeEvent>
+#include <QMetaObject>
 #include <QScreen>
 #include <QTimer>
 
@@ -68,6 +69,7 @@
 #include "UpdateBanner.h"
 #include "UpdateClient.h"
 #include "Version.h"
+#include "ResponsiveWatcher.h"
 #include "SyncDialog.h"
 #include "SyncService.h"
 
@@ -104,7 +106,30 @@ MainWindow::MainWindow(const QString& username)
     // constructor and may replace it; setting it here first means every path
     // out of that function — no memory, rejected blob, unreachable screen —
     // lands on a sane window without needing to say so.
-    resize(kDefaultWidth, kDefaultHeight);
+    //
+    // ON A COMPACT DEVICE THIS MUST NOT BE THE DESKTOP DEFAULT, and the
+    // reason is a Qt-on-Android trap that cost a full measurement round:
+    // a top-level window is clamped UP to its minimumSizeHint and is never
+    // clamped back DOWN. Born 1150 wide, the window laid out in Expanded, so
+    // the glance panel was showing and the minimum was ~571. Android then
+    // sized the window to the screen (360) — Qt refused, clamping to 571 —
+    // and although the size class immediately became Compact and the minimum
+    // fell to 386, NOTHING asked the window to shrink again. It sat at 571 on
+    // a 360px screen with a third of every page off the edge.
+    //
+    // Being born the right size means the first layout is already Compact and
+    // the inflation never happens. isCompactScreen() is the correct question
+    // here: this runs before any layout exists, so no container has a width
+    // to ask about yet, and "how big is this machine's screen" is exactly
+    // what is being decided.
+    if (isCompactScreen()) {
+        if (const QScreen* s = QGuiApplication::primaryScreen())
+            resize(s->availableGeometry().size());
+        else
+            resize(kDefaultWidth, kDefaultHeight);
+    } else {
+        resize(kDefaultWidth, kDefaultHeight);
+    }
 
     // ---- THE autosave line (wired FIRST, before any data exists) ----------
     // Every changed() — one keystroke in a note, one committed segment,
@@ -151,6 +176,7 @@ MainWindow::MainWindow(const QString& username)
         "background: white; border-bottom: 1px solid #E2E6E0;");
     auto* headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(24, 14, 24, 14);
+    m_headerLayout = headerLayout;
 
     // U+2261 "identical to" as the hamburger glyph — deliberately boring.
     // The prettier U+2630 trigram is missing from many fonts and renders
@@ -179,9 +205,9 @@ MainWindow::MainWindow(const QString& username)
     headerLayout->addWidget(tag);
     // A QLabel's minimum width IS its text width — this tagline alone is
     // wider than half a phone screen and would force the whole window past
-    // it. On compact screens the brand stays, the slogan yields.
-    if (isCompactScreen())
-        tag->hide();
+    // it. When room is tight the brand stays and the slogan yields; the
+    // decision now lives on the watcher's signal, below.
+    m_tagline = tag;
     headerLayout->addStretch(1);
 
     // ---- global quick-add (v21.1): one shortcut, from anywhere -------------
@@ -231,6 +257,7 @@ MainWindow::MainWindow(const QString& username)
         welcome->setObjectName("sub");
         welcome->setStyleSheet("border: none; color:#616974;");
         headerLayout->addWidget(welcome);
+        m_welcome = welcome;
     }
 
     auto* body = new QWidget(central);
@@ -355,6 +382,26 @@ MainWindow::MainWindow(const QString& username)
     // identity is the stack's.
     m_chat = new ChatPage(&m_data, m_pages);
     m_pages->addWidget(m_chat);
+
+    // Every page is built; from here on the stack's width is what decides how
+    // they arrange themselves. Attached AFTER the pages so that the first
+    // dispatch reaches all of them, and to the STACK rather than to the
+    // window because hiding the rail resizes the stack alone.
+    m_responsive = new ResponsiveWatcher(m_pages);
+    central->installEventFilter(this); // see refitToScreen()
+
+    // The header is a SIBLING of the page stack, not a descendant, so it
+    // never receives the event — it listens to the signal instead. Signal for
+    // the watcher's owner, events for its subtree.
+    //
+    // Note what this makes true: the chrome follows the CONTENT AREA's size
+    // class, not the window's. Open the rail on a 700px window and the stack
+    // drops to ~510px, so the tagline yields with it. That is the right
+    // answer anyway — the slogan is the first thing that should go when the
+    // part of the window doing actual work gets cramped.
+    connect(m_responsive, &ResponsiveWatcher::modeChanged, this,
+            [this](responsive::Mode mode) { applyChromeMode(mode); });
+    applyChromeMode(responsive::modeOf(m_pages)); // pull at birth
 
     const char* navNames[] = {"Calendar", "Upcoming", "Activities",
                               "Special days", "Pomodoro"};
@@ -588,6 +635,107 @@ MainWindow::MainWindow(const QString& username)
     // flag that must be set on every path out of a function belongs after
     // the call, not copy-pasted before each return.
     m_windowStateRestored = true;
+}
+
+void MainWindow::applyChromeMode(responsive::Mode mode)
+{
+    const bool compact = mode == responsive::Mode::Compact;
+
+    // The header was the LAST thing over the phone budget, and by a margin
+    // that surprised: 386px against a 360px screen, while every page had
+    // already been brought under 361. Nothing in it is individually large —
+    // it is four small things and 48px of margin in a row.
+    //
+    // Both labels that yield here are chrome ABOUT the session rather than
+    // content in it. The slogan is decoration. The account name answers "am I
+    // about to plan in someone else's calendar?", which is a real question on
+    // a shared desktop and a much quieter one on a phone that holds exactly
+    // one signed-in account — and the answer is still in Settings and on the
+    // Sync screen.
+    // THE TAGLINE YIELDS AT MEDIUM, NOT MERELY AT COMPACT, and the reason is
+    // structural rather than aesthetic — it is the one rule here that a
+    // reader must not "tidy" back to `!compact`.
+    //
+    // A mode ladder has to be DESCENDABLE: the layout at one mode must be
+    // able to shrink past the breakpoint that enters the next one, or that
+    // next mode is unreachable. The slogan is 236px of unwrappable QLabel, so
+    // with it showing, Medium's floor was 644px — comfortably above the 576px
+    // a window must get under to become Compact. The window settled at 644,
+    // stayed Medium, and Compact could never be entered by narrowing at all.
+    // Every page was under budget and the app was still broken.
+    if (m_tagline)
+        m_tagline->setVisible(mode == responsive::Mode::Expanded);
+    if (m_welcome)
+        m_welcome->setVisible(!compact);
+    if (m_headerLayout)
+        m_headerLayout->setContentsMargins(compact ? 10 : 24, 14,
+                                           compact ? 10 : 24, 14);
+
+    // Density, through the ONE place that owns how this app looks. Re-applying
+    // the sheet re-polishes every widget, which is why it is done here — on an
+    // actual mode CHANGE, which is rare by construction — and not from
+    // anything that fires per resize.
+    if (auto* app = qobject_cast<QApplication*>(QCoreApplication::instance()))
+        app->setStyleSheet(theme::appStyleSheet(compact));
+
+    refitToScreen();
+}
+
+// The safety net for the clamp-up-never-down trap described at the top of the
+// constructor: Qt grows a window to its minimum and never shrinks it again
+// when that minimum later falls, and on Android nothing re-offers a size.
+//
+// WHY MODE CHANGES ALONE ARE NOT ENOUGH — the bug that taught it: open the
+// rail, switch page, close the rail. Opening the rail adds its 190px to the
+// window's minimum, so the window inflates. Closing it drops the minimum again
+// WITHOUT changing the size class, so a mode-change hook never runs and the
+// window stays wide with a third of the page off the edge. Any layout change
+// can lower the minimum, so any layout change is a chance to give width back.
+//
+// FENCED TO COMPACT DEVICES, and the fence is the difference between fixing a
+// platform bug and inventing a policy. On a desktop a window wider than the
+// screen is the window manager's business and the user's choice; taking it
+// upon ourselves to shrink it broke the documented 1150px default the moment
+// the test suite's virtual screen was narrower than that.
+void MainWindow::refitToScreen()
+{
+    if (!isCompactScreen() || m_refitQueued)
+        return;
+    m_refitQueued = true;
+
+    // QUEUED, and this is the whole reason the first attempt did not work.
+    // LayoutRequest arrives while the layout is being INVALIDATED, so
+    // minimumSizeHint() still reports the old, larger value — the test is
+    // "has the minimum dropped below the screen?" and asking mid-invalidation
+    // always answers no. One hop through the event loop and the layout engine
+    // has recomputed. (Same lesson as ResponsiveWatcher's queued dispatch: do
+    // the reading when the event loop owns the stack, not the layout engine.)
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            m_refitQueued = false;
+            const QScreen* screen = QGuiApplication::primaryScreen();
+            if (!screen)
+                return;
+            const QSize room = screen->availableGeometry().size();
+            if (width() > room.width()
+                && minimumSizeHint().width() <= room.width())
+                resize(room.width(), height());
+        },
+        Qt::QueuedConnection);
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    // LayoutRequest is Qt's own "a layout below me has been invalidated"
+    // notification — the general form of "the minimum may just have changed".
+    // Watching it rather than each individual cause (the rail toggle, a page
+    // switch, a widget hidden by a mode handler) means a future cause is
+    // covered without anyone remembering to add a hook.
+    if (event->type() == QEvent::LayoutRequest)
+        refitToScreen();
+
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::restoreWindowState()

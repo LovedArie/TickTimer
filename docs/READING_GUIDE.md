@@ -286,7 +286,57 @@ Deliberate simplifications (candidates for your first solo features):
   regression test in `tests/test_ui.cpp`).
 - On the offscreen platform, focus events only flow in an ACTIVE window —
   `setFocus()` silently no-ops until `activateWindow()` +
-  `qWaitForWindowActive` (`tests/test_ui.cpp`).
+  `qWaitForWindowActive` (`tests/test_ui.cpp`). Same platform, second lie:
+  it ships **no fonts**, so every text-derived width is roughly DOUBLE the
+  real one (`minimumSizeHint` 1051 where the truth is 522) until
+  `QT_QPA_FONTDIR` points it at the OS fonts — which is what makes the phone
+  width budget assertable at all (`CMakeLists.txt`, the `ui` test).
+- `moc` reads **everything** after `private slots:` as a signal or slot
+  declaration. A `static constexpr` or a helper `struct` there aborts it with
+  "Not a signal or slot declaration", and the only thing you see is a missing
+  `test_*.moc` on an `#include` you never touched. Declare them above the
+  class or inside the function (`tests/test_ui.cpp`).
+- **A top-level window is clamped UP to its `minimumSizeHint` and never back
+  DOWN.** Invisible on a desktop, where the window manager keeps offering new
+  sizes; on Android the platform offers one, at startup. A window born at the
+  desktop default laid out wide, took the minimum that implied, and then would
+  not shrink when the minimum later fell — 571px on a 360px screen
+  (`MainWindow.cpp`, the constructor's compact-device size and the re-fit in
+  `applyChromeMode`).
+- **A touch widget must not act on `mousePressEvent`.** A tap and a scroll
+  start identically, so acting on press means every attempt to scroll opens
+  something. Defer: long-press to create, release-without-movement to open, and
+  cancel on `QEvent::UngrabMouse` — which is how `QScroller` says it has taken
+  the gesture to pan (`AgendaWidget`).
+- **Qt reports `availableGeometry().y()` as 0 on Android** while the status bar
+  is drawn over that strip, and there is no safe-area API to ask. Anything
+  pinned to the screen's top lands underneath it
+  (`installCompactDialogFitter`).
+- **Read sizes after the event loop turns, not during layout.** `QEvent::Show`
+  precedes polish, so stylesheet padding is missing from every size hint;
+  `QEvent::LayoutRequest` arrives mid-invalidation, so minimums are still the
+  old ones. This project has now paid for the same mistake three times — the
+  mode dispatch, the window refit, and the dialog fit are all queued.
+- **A `QDialog` is its own top-level window**, so container-driven layout does
+  not reach it — `MainWindow`'s watcher governs `MainWindow`. Dialogs are a
+  separate surface with a separate budget and a separate test
+  (`installCompactDialogFitter`, `dialogsFitAPhoneScreen`).
+- **A mode ladder must be DESCENDABLE**: the layout at one size class has to be
+  able to shrink PAST the breakpoint that enters the class below, or that class
+  is unreachable. A 236px unwrappable tagline hidden only at Compact kept
+  Medium's floor above the threshold for entering Compact, so Compact never
+  happened (`MainWindow.cpp::applyChromeMode`).
+- Qt takes the app font from the system, and **Android's default is 19pt**
+  against a desktop's ~9pt. It moves only what the stylesheet does not size in
+  `px` — which is the chrome, and therefore the last place anyone looks
+  (`TICKTIMER_FONTPT` on the screenshot tool reproduces it).
+- **A minimum size is a promise the layout will keep even when it cannot.**
+  Qt honours a `minimumSizeHint` wider than the screen by letting the surplus
+  hang off the edge — no scrollbar, no warning. And a `QStackedWidget`'s
+  minimum is the MAX over all its pages, so one unwrappable `QCheckBox` label
+  on the Pomodoro page clipped the *Planner* on a phone. A `QScrollArea`
+  severs the promise entirely, which is why the pages that scroll are the
+  pages that fit (`Responsive.h`, `docs/design-addendum-responsive.md`).
 - A header that only forward-declares a class can't inline-call its
   members — bodies touching the type go in the .cpp (`WeekAgendaView.h`).
 - `QSettings` with no organizationName files preferences under

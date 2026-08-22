@@ -16,6 +16,8 @@
 // gets setEnabled(); neither ever sees a QSettings.
 // ---------------------------------------------------------------------------
 
+#include "Responsive.h"
+
 #include <QWidget>
 
 class AppData;
@@ -24,6 +26,7 @@ class PomodoroLink;
 class TrackerService;
 class PomodoroMiniWindow;
 class QLabel;
+class QBoxLayout;
 class QPushButton;
 class PomodoroRing;
 
@@ -40,7 +43,17 @@ public:
                  QWidget* parent = nullptr);
     ~PomodoroPage() override; // deletes the parentless mini card (v19.5.1)
 
+protected:
+    // How this page hears that its container changed size class. See
+    // ResponsiveWatcher.h: pull at birth, push on change. The handler only
+    // flips a layout DIRECTION and a fixed size — no widget is created or
+    // destroyed, which is the contract that keeps this safe to run while the
+    // layout engine is unwinding.
+    bool event(QEvent* e) override;
+
 private:
+    void applyLayoutMode(responsive::Mode mode);
+
     void refresh();        // repaint every control from the engine's state
     void refreshHint();    // the durations sentence under the controls
     void refreshLinkStatus(); // the one line that makes the link VISIBLE
@@ -61,6 +74,12 @@ private:
     QPushButton*  m_startBtn   = nullptr;
     QLabel*       m_hint       = nullptr;
     QLabel*       m_linkStatus = nullptr;
+
+    // Held as a member for exactly one reason: a mode change flips its
+    // DIRECTION. Same three label+spin pairs either way — the QBoxLayout
+    // constructor argument is the entire difference between the desktop
+    // strip and the phone stack.
+    QBoxLayout*   m_settingsRow = nullptr;
 };
 
 // The countdown ring: progress arc, mm:ss, and the round number — one more
@@ -71,6 +90,11 @@ public:
     explicit PomodoroRing(QWidget* parent = nullptr);
     void setState(double progress, const QString& timeText,
                   const QString& roundText, const QColor& color);
+
+    // Told, never asks. The ring has no Q_OBJECT and no knowledge of layout
+    // modes; PomodoroPage decides how big it should be and says so. Keeping
+    // it this way is why a plain painted widget stays a plain painted widget.
+    void setDiameter(int px);
 
 protected:
     void paintEvent(QPaintEvent* event) override;

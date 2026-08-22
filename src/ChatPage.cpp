@@ -11,6 +11,7 @@
 #include "DayBriefing.h"
 #include "Prefs.h"
 #include "LlmProvider.h"
+#include "ResponsiveWatcher.h"
 #include "Theme.h"
 #include "Widgets.h"
 
@@ -101,7 +102,8 @@ ChatPage::ChatPage(AppData* data, QWidget* parent)
     layout->setSpacing(10);
 
     // ---- header -----------------------------------------------------------
-    auto* headerRow = new QHBoxLayout;
+    auto* headerRow = new QBoxLayout(QBoxLayout::LeftToRight);
+    m_headerRow = headerRow;
     auto* titles = new QVBoxLayout;
     auto* title = new QLabel(tr("Assistant"), this);
     title->setObjectName(QStringLiteral("h1"));
@@ -119,19 +121,29 @@ ChatPage::ChatPage(AppData* data, QWidget* parent)
     // "What can it see?" — the transparency button. An LLM feature that
     // quietly ships your data somewhere should be able to show you exactly
     // what it sent, in one click, without a build flag.
+    // The two actions share a row of their own rather than sitting directly
+    // in the header. That nesting is what lets applyLayoutMode() flip ONE
+    // direction and have the buttons move as a pair, below the titles,
+    // instead of each having to be repositioned.
+    auto* actions = new QHBoxLayout;
+    actions->setSpacing(8);
+
     auto* contextBtn = new QPushButton(tr("What can it see?"), this);
     contextBtn->setObjectName(QStringLiteral("chatContext"));
     contextBtn->setCursor(Qt::PointingHandCursor);
     connect(contextBtn, &QPushButton::clicked, this,
             &ChatPage::showContextDialog);
-    headerRow->addWidget(contextBtn, 0, Qt::AlignTop);
+    actions->addWidget(contextBtn);
 
     auto* newBtn = new QPushButton(tr("New conversation"), this);
     newBtn->setObjectName(QStringLiteral("chatNew"));
     newBtn->setCursor(Qt::PointingHandCursor);
     connect(newBtn, &QPushButton::clicked, this,
             &ChatPage::startNewConversation);
-    headerRow->addWidget(newBtn, 0, Qt::AlignTop);
+    actions->addWidget(newBtn);
+    actions->addStretch(1);
+
+    headerRow->addLayout(actions, 0);
     layout->addLayout(headerRow);
 
     // ---- the log ----------------------------------------------------------
@@ -796,6 +808,31 @@ void ChatPage::scrollToBottom()
         m_scroll->verticalScrollBar()->setValue(
             m_scroll->verticalScrollBar()->maximum());
     });
+}
+
+// ---- responding to the container's size class --------------------------------
+
+bool ChatPage::event(QEvent* e)
+{
+    if (e->type() == ResponsiveModeEvent::type())
+        applyLayoutMode(static_cast<ResponsiveModeEvent*>(e)->mode());
+
+    return QWidget::event(e);
+}
+
+void ChatPage::applyLayoutMode(responsive::Mode mode)
+{
+    const bool compact = mode == responsive::Mode::Compact;
+
+    // Titles beside the actions costs 428px of minimum width; titles ABOVE
+    // them costs whatever the wider row needs, which is 276. One direction
+    // flip, no widget touched.
+    m_headerRow->setDirection(compact ? QBoxLayout::TopToBottom
+                                      : QBoxLayout::LeftToRight);
+
+    // "Send" does not need a 96px floor when the row it sits in is 384px
+    // wide; the label decides its own width from there.
+    m_send->setMinimumWidth(compact ? 0 : 96);
 }
 
 void ChatPage::showContextDialog()

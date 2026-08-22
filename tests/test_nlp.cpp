@@ -18,6 +18,7 @@
 #include "Memory.h"
 #include "LlmQuickAdd.h"
 #include "QuickAddParser.h"
+#include "Responsive.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -1410,6 +1411,104 @@ private slots:
         QVERIFY(p.contains(QStringLiteral("the app decides which move")));
         // And still bound by the tap, in words it must echo.
         QVERIFY(p.contains(QStringLiteral("never \"I've put it back\"")));
+    }
+
+    // ---- responsive:: — the layout size class -----------------------------
+    // Here rather than in test_ui for one reason: Responsive.h has no Qt
+    // includes at all, and this is the Core-only suite. A layout judgement
+    // that compiles into a target linking neither Widgets nor Gui is the
+    // strongest available proof that it carries no widget knowledge — the
+    // same argument that admitted LlmProvider and chat:: to this file.
+
+    void layoutModeClassifiesByWidth()
+    {
+        using namespace responsive;
+
+        // The phone this work exists for: 1080 physical px at dpr 2.81.
+        QCOMPARE(modeFor(384), Mode::Compact);
+
+        // The boundaries, from both sides. Breakpoints are inclusive lower
+        // bounds, so the threshold value itself belongs to the WIDER class.
+        QCOMPARE(modeFor(kMediumMin - 1), Mode::Compact);
+        QCOMPARE(modeFor(kMediumMin), Mode::Medium);
+        QCOMPARE(modeFor(kExpandedMin - 1), Mode::Medium);
+        QCOMPARE(modeFor(kExpandedMin), Mode::Expanded);
+
+        // A widget before its first layout pass. Not a special case: no room
+        // really is Compact, and callers that must not act on a pre-layout
+        // width guard that themselves.
+        QCOMPARE(modeFor(0), Mode::Compact);
+
+        // Desktop default (1150 wide, minus a 190px rail) stays Expanded —
+        // the promise that this change moves nothing on a desktop.
+        QCOMPARE(modeFor(1150 - 190), Mode::Expanded);
+    }
+
+    void layoutModeIsStickyNearABreakpoint()
+    {
+        using namespace responsive;
+
+        // Inside the deadband, the answer is whatever you already were.
+        // This is the whole point: the SAME width yields two different
+        // answers depending on history, and that is correct.
+        QCOMPARE(modeFor(610, Mode::Compact), Mode::Compact);
+        QCOMPARE(modeFor(610, Mode::Medium), Mode::Medium);
+
+        // Widening only counts once the width clears threshold + kStickyPx.
+        QCOMPARE(modeFor(kMediumMin + kStickyPx - 1, Mode::Compact),
+                 Mode::Compact);
+        QCOMPARE(modeFor(kMediumMin + kStickyPx, Mode::Compact), Mode::Medium);
+
+        // Narrowing only counts once it falls below threshold - kStickyPx.
+        QCOMPARE(modeFor(kMediumMin - kStickyPx, Mode::Medium), Mode::Medium);
+        QCOMPARE(modeFor(kMediumMin - kStickyPx - 1, Mode::Medium),
+                 Mode::Compact);
+        QCOMPARE(modeFor(kExpandedMin - kStickyPx - 1, Mode::Expanded),
+                 Mode::Medium);
+
+        // A jump big enough to skip a class still skips it — hysteresis
+        // damps jitter, it does not cap how far one resize may travel.
+        QCOMPARE(modeFor(2000, Mode::Compact), Mode::Expanded);
+        QCOMPARE(modeFor(100, Mode::Expanded), Mode::Compact);
+    }
+
+    // The assertion that actually protects the user, stated as a property
+    // rather than as examples: drag a window edge slowly across the whole
+    // range and the layout must not rattle. Two classes are crossed, so at
+    // most two changes may happen; a deadband-free implementation would
+    // pass every example above and still fail this.
+    void layoutModeDoesNotThrashAcrossASweep()
+    {
+        using namespace responsive;
+
+        const auto countChanges = [](int from, int to, int step) {
+            Mode m = modeFor(from);
+            int changes = 0;
+            for (int w = from; step > 0 ? w <= to : w >= to; w += step) {
+                const Mode next = modeFor(w, m);
+                if (next != m) {
+                    ++changes;
+                    m = next;
+                }
+            }
+            return changes;
+        };
+
+        QCOMPARE(countChanges(300, 1000, 1), 2);  // widening
+        QCOMPARE(countChanges(1000, 300, -1), 2); // narrowing
+
+        // And the pathological case the deadband exists for: a hand resting
+        // on a breakpoint, twitching by a pixel, forever.
+        Mode m = modeFor(kMediumMin);
+        int changes = 0;
+        for (int i = 0; i < 500; ++i) {
+            const Mode next = modeFor(kMediumMin + (i % 2 ? 1 : -1), m);
+            if (next != m) {
+                ++changes;
+                m = next;
+            }
+        }
+        QCOMPARE(changes, 0);
     }
 };
 

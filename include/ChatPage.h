@@ -40,6 +40,8 @@
 
 #include <QDateTime>
 #include <QPlainTextEdit>
+#include "Responsive.h"
+
 #include <QWidget>
 
 #include <functional>
@@ -162,7 +164,12 @@ public slots:
     void sendCurrentInput();
     void startNewConversation();
 
+protected:
+    bool event(QEvent* e) override; // the container's size class arrives here
+
 private:
+    void applyLayoutMode(responsive::Mode mode);
+
     void addBubble(const chat::Turn& turn);
     void rebuildLog();
     void setBusy(bool busy);
@@ -212,6 +219,10 @@ private:
     QVBoxLayout* m_logLayout = nullptr; // bubbles live here, above a stretch
     QWidget*     m_emptyHint = nullptr; // the suggestion chips; hidden on send
     ChatInput*   m_input     = nullptr;
+    // Held so a narrow container can stack the header instead of spreading
+    // it: the two action buttons side by side with the titles measured 428px,
+    // which was the whole window's minimum once Pomodoro stopped being it.
+    class QBoxLayout* m_headerRow = nullptr;
     QPushButton* m_send      = nullptr;
     QLabel*      m_status    = nullptr;
 };

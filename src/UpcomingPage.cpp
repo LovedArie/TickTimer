@@ -5,6 +5,7 @@
 #include "TaskDetailDialog.h"
 #include "TaskFilterProxy.h"
 #include "TaskListModel.h"
+#include "ResponsiveWatcher.h"
 #include "Theme.h"
 #include "Widgets.h"
 
@@ -24,6 +25,7 @@ UpcomingPage::UpcomingPage(AppData* data, QWidget* parent)
 {
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(26, 22, 26, 22);
+    m_outerLayout = outer;
 
     // Everything lives in one left-aligned, width-capped panel — the same
     // wrapLeft + maxWidth framing the page had before, so the visual home of
@@ -40,6 +42,7 @@ UpcomingPage::UpcomingPage(AppData* data, QWidget* parent)
     auto* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(22, 20, 22, 20);
     layout->setSpacing(8);
+    m_panelLayout = layout;
 
     auto* title = new QLabel(tr("Upcoming"), panel);
     title->setObjectName("h2");
@@ -151,6 +154,33 @@ UpcomingPage::UpcomingPage(AppData* data, QWidget* parent)
     connect(m_proxy, &QAbstractItemModel::layoutChanged,
             this, &UpcomingPage::refreshEmptyState);
     refreshEmptyState();
+}
+
+// ---- responding to the container's size class --------------------------------
+
+bool UpcomingPage::event(QEvent* e)
+{
+    if (e->type() == ResponsiveModeEvent::type())
+        applyLayoutMode(static_cast<ResponsiveModeEvent*>(e)->mode());
+
+    return QWidget::event(e);
+}
+
+void UpcomingPage::applyLayoutMode(responsive::Mode mode)
+{
+    // Margins, not content. This page's minimum was 408px and its widest
+    // single widget was 89px — nothing here is individually too big. What
+    // made it the last page over the phone budget was two nested margin
+    // boxes (26+26 outer, 22+22 panel) spending 96px of a 384px screen on
+    // whitespace before the four filter chips had said anything.
+    //
+    // Generous margins are right on a desktop, where the space is free. They
+    // are the first thing that should yield when it is not.
+    const bool compact = mode == responsive::Mode::Compact;
+    m_outerLayout->setContentsMargins(compact ? 10 : 26, compact ? 12 : 22,
+                                      compact ? 10 : 26, compact ? 12 : 22);
+    m_panelLayout->setContentsMargins(compact ? 12 : 22, compact ? 14 : 20,
+                                      compact ? 12 : 22, compact ? 14 : 20);
 }
 
 void UpcomingPage::refreshEmptyState()

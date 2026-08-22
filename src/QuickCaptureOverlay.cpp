@@ -1,5 +1,7 @@
 #include "QuickCaptureOverlay.h"
 
+#include "Widgets.h"
+
 #include "AppData.h"
 #include "LlmQuickAddClient.h"
 #include "QuickAddParser.h"
@@ -24,6 +26,9 @@ QuickCaptureOverlay::QuickCaptureOverlay(AppData* data, QWidget* parent)
     // click is now our dismiss gesture. The deactivate handler below is what
     // keeps capture a beat instead of a lingering mode.
     setObjectName("quickCapture");
+    // A command palette is a line of text, not a screen. On a phone it takes
+    // the full width (it needs it) and only the height it actually uses.
+    setProperty("compactTopSheet", true);
     setStyleSheet(
         "#quickCapture { background: white; border: 1px solid #D8DDD6; "
         "border-radius: 12px; }");
@@ -35,7 +40,12 @@ QuickCaptureOverlay::QuickCaptureOverlay(AppData* data, QWidget* parent)
     m_input = new QLineEdit(this);
     m_input->setPlaceholderText(
         tr("Capture a task…  (\"call dentist tomorrow #health\")"));
-    m_input->setMinimumWidth(520);
+    // 520 is a comfortable command-palette width on a desktop and simply
+    // wider than a phone: a 360px screen cannot honour it, so the bar was
+    // rendered off the edge with its right-hand side unreachable. A minimum
+    // width is a PROMISE, and a promise this widget cannot keep on the device
+    // it is running on is the bug, not the screen.
+    m_input->setMinimumWidth(isCompactScreen() ? 0 : 520);
     m_input->setStyleSheet(
         "font-size: 15px; padding: 8px 10px; border: 1px solid #D8DDD6; "
         "border-radius: 8px;");

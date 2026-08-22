@@ -8,6 +8,7 @@
 #include "QuickAddPreview.h"
 #include "TaskDetailDialog.h"
 #include "Theme.h"
+#include "ResponsiveWatcher.h"
 #include "Widgets.h"
 
 #include <QAbstractItemView>
@@ -118,7 +119,8 @@ ActivitiesPage::ActivitiesPage(AppData* data, QWidget* parent)
     // ---- the master: category rail, now a tree -----------------------------
     auto* railPanel = new QFrame(this);
     railPanel->setObjectName("panel");
-    railPanel->setFixedWidth(isCompactScreen() ? 168 : 250);
+    railPanel->setFixedWidth(250); // narrowed by applyLayoutMode() when tight
+    m_railPanel = railPanel;
     auto* railLayout = new QVBoxLayout(railPanel);
     railLayout->setContentsMargins(12, 12, 12, 12);
     railLayout->setSpacing(8);
@@ -252,6 +254,26 @@ void ActivitiesPage::rebuild()
     }
     rebuildRail();
     refreshDetail();
+}
+
+// ---- responding to the container's size class --------------------------------
+
+bool ActivitiesPage::event(QEvent* e)
+{
+    if (e->type() == ResponsiveModeEvent::type())
+        applyLayoutMode(static_cast<ResponsiveModeEvent*>(e)->mode());
+
+    return QWidget::event(e);
+}
+
+void ActivitiesPage::applyLayoutMode(responsive::Mode mode)
+{
+    // Narrowing the rail buys the detail pane 82px. Worth having, and NOT a
+    // fix: this page is a permanent two-column split, and two columns on a
+    // 384px screen is the wrong shape no matter how the width is divided. The
+    // master/detail rework belongs to the phone-navigation stage; the honest
+    // thing to record here is that this line is a mitigation.
+    m_railPanel->setFixedWidth(mode == responsive::Mode::Compact ? 168 : 250);
 }
 
 void ActivitiesPage::rebuildRail()
