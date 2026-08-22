@@ -371,6 +371,62 @@ if(ANDROID)
         # new enough that Qt 6 doesn't have to carry compatibility shims.
         QT_ANDROID_MIN_SDK_VERSION "28"
     )
+
+    # ---- OpenSSL, which Qt for Android does NOT ship ---------------------
+    #
+    # THE BUG THIS PREVENTS, because it cost an evening and looked like four
+    # different problems: Qt packages its TLS BACKEND plugin
+    # (libplugins_tls_qopensslbackend) automatically, but not the OpenSSL
+    # libraries that plugin exists to call. The resulting APK builds clean,
+    # installs, launches, renders, and talks plain HTTP perfectly — and every
+    # https:// request fails before it gets an HTTP status code, which the
+    # client can only report as "Can't reach the server. Is it running, and is
+    # the address correct?" Both of which are true and neither of which is the
+    # problem. The server was fine; the phone had no TLS at all.
+    #
+    # WHY THIS HARD-FAILS INSTEAD OF WARNING. A warning scrolls past in a
+    # Gradle build and the punishment arrives days later on somebody else's
+    # phone, wearing a network error's clothes. The whole deployment is HTTPS
+    # (docs/SERVER.md: Caddy terminates TLS, and the WebAssembly client
+    # REQUIRES it), so an Android build without OpenSSL is not a degraded
+    # build, it is a broken one. Refusing to configure is the cheapest place
+    # to say so.
+    #
+    # Get the libraries with Qt Creator's Preferences → Devices → Android →
+    # "Download OpenSSL", or clone https://github.com/KDAB/android_openssl.
+    # Point at them explicitly with -DTICKTIMER_ANDROID_OPENSSL=<path> when
+    # they live somewhere the guesses below do not cover.
+    set(TICKTIMER_ANDROID_OPENSSL "" CACHE PATH
+        "Path to the android_openssl checkout (contains android_openssl.cmake)")
+
+    if(NOT TICKTIMER_ANDROID_OPENSSL)
+        foreach(_guess
+                "$ENV{ANDROID_SDK_ROOT}/android_openssl"
+                "$ENV{ANDROID_HOME}/android_openssl"
+                "$ENV{LOCALAPPDATA}/Android/Sdk/android_openssl"
+                "$ENV{HOME}/Android/Sdk/android_openssl")
+            if(EXISTS "${_guess}/android_openssl.cmake")
+                set(TICKTIMER_ANDROID_OPENSSL "${_guess}")
+                break()
+            endif()
+        endforeach()
+    endif()
+
+    if(NOT EXISTS "${TICKTIMER_ANDROID_OPENSSL}/android_openssl.cmake")
+        message(FATAL_ERROR
+            "Android build needs OpenSSL, and it was not found.\n"
+            "Qt ships the TLS backend plugin but NOT OpenSSL itself, so "
+            "without this the APK builds and installs and then cannot make a "
+            "single https:// request — it fails as a network error, which is "
+            "a lie about where the problem is.\n"
+            "Fix: Qt Creator → Preferences → Devices → Android → Download "
+            "OpenSSL, or clone https://github.com/KDAB/android_openssl, then "
+            "re-configure with -DTICKTIMER_ANDROID_OPENSSL=<that path>.")
+    endif()
+
+    include("${TICKTIMER_ANDROID_OPENSSL}/android_openssl.cmake")
+    add_android_openssl_libraries(ticktimer)
+    message(STATUS "Android OpenSSL: ${TICKTIMER_ANDROID_OPENSSL}")
 endif()
 
 # ---- tests -------------------------------------------------------------------
