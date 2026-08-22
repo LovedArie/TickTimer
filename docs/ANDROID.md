@@ -204,9 +204,18 @@ downloads or installs anything by itself.
 
 ## What to expect on the phone
 
-- **Compact layout, automatically**: the nav rail starts collapsed (☰ opens
-  it), the tagline and glance panel yield, Pomodoro settings stack. Decided
-  by *screen size*, not by platform — a tablet gets the desktop layout.
+- **Compact layout — BROKEN ON A REAL PHONE as of 2026-08-22, read this
+  before you file the rest as expected.** The design is: the nav rail starts
+  collapsed (☰ opens it), the tagline and glance panel yield, Pomodoro
+  settings stack, decided by *screen size* and not by platform, so a tablet
+  gets the desktop layout. What actually happens on a Galaxy S21 Ultra
+  (1080x2400, density 480) is that `isCompactScreen()` returns false, the rail
+  starts EXPANDED at roughly half the width, and the content pane is clipped
+  off the right edge. **Tap ☰ once** and it collapses, the content takes the
+  full width, and the app is properly usable — the choice persists per device.
+  Symptom, evidence and the measurement still owed are in
+  `docs/TROUBLESHOOTING.md`. This bullet claimed the working behaviour for as
+  long as it existed, which was until the first phone ran it.
 - **Finger scrolling** everywhere there's a list or the agenda
   (kinetic/flick, via `QScroller`).
 - **Your data is local, and it syncs**: Android gives the app its own private

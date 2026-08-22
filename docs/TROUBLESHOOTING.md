@@ -1430,3 +1430,71 @@ this class at all, so a platform that has never compiled the code is not
 had the same gap for WebAssembly and *said so* at the top of `WEB.md` — "nobody
 has opened it in a browser". Write that sentence when it is true.
 
+---
+
+### On a real Android phone the nav rail does NOT start collapsed — it eats half the screen, and a dialog on top of it swallows every tap
+
+**SYMPTOM**
+First run of the release APK on a phone (measured: Galaxy S21 Ultra,
+`wm size` 1080x2400, `wm density` 480):
+
+- the nav rail is fully expanded, about 470 of 1080 px wide
+- the content pane starts around x=540 and is CLIPPED at the right edge —
+  "6 AM to midnight · 30-m…", "Every dated, unfinished task across all your
+  life areas — de…"
+- opening Sync leaves you stuck: `SyncDialog` renders frameless and
+  background-less over the main window, so it reads as part of the page, and
+  because it is modal every tap on the visible nav behind it does nothing.
+  `KEYCODE_BACK` does not dismiss it either. The only way out found was
+  `adb shell am force-stop org.ticktimer.app`.
+
+`docs/ANDROID.md` promised the opposite: *"Compact layout, automatically: the
+nav rail starts collapsed (☰ opens it)"*.
+
+**CAUSE**
+`isCompactScreen()` (`include/Widgets.h`) returned **false** on a phone:
+
+```cpp
+const QRect g = screen->availableGeometry();
+return qMin(g.width(), g.height()) < 600;
+```
+
+1080x2400 at density 480 is 360x800 in device-independent pixels, which is far
+under the threshold. A fresh install has no saved preference, so
+`prefs::sidebarVisible(!isCompactScreen())` fell back to the default and the
+default said "not compact" — meaning `availableGeometry()` reported PHYSICAL
+pixels (short side 1080), not logical ones.
+
+**NOT YET CONFIRMED, and stated that way on purpose:** nothing has printed
+`availableGeometry()` and `devicePixelRatio()` from inside the running app.
+The reasoning above is inference from a fresh-install default, not a
+measurement. Measure before fixing — a `qWarning` in `isCompactScreen()`,
+read back with `adb logcat --pid=$(adb shell pidof org.ticktimer.app)`, settles
+it in one build. This repo has been wrong before by writing down the reasonable
+guess.
+
+**FIX**
+Workaround, and it is a good one — **tap ☰**. The rail collapses, the content
+pane takes the full width, and the app becomes properly usable. The choice
+persists per device in `QSettings`, so it is a one-time tap.
+
+The real fix depends on the measurement. If Qt reports physical pixels, the
+threshold cannot stay a raw pixel count — the question `isCompactScreen()` asks
+("how much room is there?") has to be asked in units that mean the same thing
+on every platform, i.e. divided by `devicePixelRatio()`, or asked of
+`QScreen::physicalSize()` in millimetres.
+
+`SyncDialog` needs its own fix regardless: a modal that cannot be dismissed is
+a soft-lock, and neither its close affordance nor Back reached the user.
+
+**PREVENT**
+**A layout claim about a device is worth nothing until it has run on that
+device.** `TICKTIMER_COMPACT=1` renders the compact layout on a desktop and is
+what the screenshot tool uses — genuinely useful, and it verified a code path,
+not a phone. The forced mode proved `isCompactScreen()`'s CONSEQUENCES were
+right while the real phone proved its INPUT was wrong, and a test that supplies
+its own input can never catch that.
+
+Same family as the OpenSSL entry: both are things only a real Android run could
+find, and both were shipped as documentation before anyone had one.
+
