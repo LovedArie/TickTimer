@@ -34,6 +34,40 @@ the compact-screen layout kicks in automatically on a phone. Nothing to edit.
    platform tools to a folder it manages. Accept the licenses when asked.
 4. Wait for all four status lights on that page to go green.
 
+## 2b. OpenSSL (one time) — without it the app cannot reach your server
+
+**Qt for Android ships the TLS *backend plugin* and not OpenSSL itself.** The
+resulting APK builds clean, installs, launches, renders, and does plain HTTP
+perfectly — and every `https://` request fails before it even gets an HTTP
+status code, which the app can only report as *"Can't reach the server. Is it
+running, and is the address correct?"* Both true; neither the problem.
+
+1. Qt Creator → **Preferences → Devices → Android** → **Download OpenSSL**
+   (or clone <https://github.com/KDAB/android_openssl>).
+2. That is all. `CMakeLists.txt` finds it automatically, checking
+   `ANDROID_SDK_ROOT`, `ANDROID_HOME`, and the default SDK location on Windows
+   and Linux. Point at it explicitly if it lives elsewhere:
+   `-DTICKTIMER_ANDROID_OPENSSL=<path>`.
+
+**The configure HARD-FAILS if OpenSSL is missing**, deliberately: the whole
+deployment is HTTPS, so an Android build without TLS is not a degraded build,
+it is a broken one, and a warning would scroll past in a Gradle log and collect
+its debt later on somebody else's phone. Watch the configure output for:
+
+```
+-- Android OpenSSL: C:/Users/you/AppData/Local/Android/Sdk/android_openssl
+```
+
+To check a built APK yourself — it is a zip, and it must contain **both**:
+
+```
+lib/arm64-v8a/libssl_3.so
+lib/arm64-v8a/libcrypto_3.so
+```
+
+If you only see `libplugins_tls_qopensslbackend_*.so`, that is the plugin
+without the library, and HTTPS will not work.
+
 ## 3. Put your phone in developer mode (one time)
 
 1. Phone: **Settings → About phone** → tap **Build number** 7 times
@@ -97,6 +131,36 @@ Any file transfer works — pick your favourite:
 
 ### 3. Install it
 
+**Fastest route for YOUR OWN phone: skip the browser entirely.** USB debugging
+is already on from §3, and this upgrades in place, keeping the app's data:
+
+```sh
+adb install -r <path>/android-build-ticktimer-release-signed.apk
+```
+
+Worth preferring, and not only for speed: on the first real run the phone's
+download manager stuck at 100% and never finished, while the server was serving
+the file perfectly (verified byte-for-byte against the local build). The
+browser route below is how everyone ELSE installs it, so it still has to work
+— it is just the slow way to iterate on the phone in your hand.
+
+Useful companions when something looks wrong, none of which need a debug build:
+
+```sh
+adb devices -l                                    # is the phone even there
+adb shell pidof org.ticktimer.app                 # is the app running
+adb logcat --pid=<that pid>                       # ONLY the app's log
+adb shell dumpsys package org.ticktimer.app | grep version
+adb shell am force-stop org.ticktimer.app         # the way out of a soft-lock
+adb shell screencap -p /sdcard/s.png && adb pull /sdcard/s.png
+```
+
+That last pair is worth knowing: a screenshot pulled off the phone is how the
+frameless-`SyncDialog` soft-lock was identified, and it settled in one look
+what several rounds of description could not.
+
+### 3b. Through the browser (how anyone else installs it)
+
 Tap the APK in the phone's file manager. Android will ask to allow
 **"Install unknown apps"** for that file manager — allow it (this is
 Android's normal gate for anything not from the Play Store; the app is
@@ -154,6 +218,20 @@ Application Signature** → browse to the `.jks`, enter the passwords, tick
 **Sign package**. Switch the build to **Release** while you are there.
 
 Build, and the APK lands under `android-build/build/outputs/apk/release/`.
+
+**RE-CONFIGURING CMAKE CLEARS THIS.** After any change that re-runs CMake —
+including editing `CMakeLists.txt`, which you will do for OpenSSL — the *Sign
+package* tick comes back OFF, silently, and the build output becomes
+`…-release-unsigned.apk`. An unsigned APK will not install, and the error
+Android gives says nothing about signing. **Check the filename says `signed`
+before you copy it anywhere.** Verify properly with:
+
+```sh
+apksigner verify --verbose <apk>
+```
+
+`Verified using v3 scheme: true` is enough — v3 covers Android 9+, which is
+this project's `QT_ANDROID_MIN_SDK_VERSION`.
 
 ### 3. The version stamps itself
 
@@ -245,4 +323,11 @@ downloads or installs anything by itself.
 | Kit has a red/yellow icon | Preferences → Devices → Android: one of the four lights is off; re-run **Set Up SDK**. |
 | Phone not in device list | Re-plug; check the USB-debugging prompt on the phone; try another cable (charge-only cables exist). |
 | Gradle errors on first build | Almost always a blocked download — check internet/proxy, press Run again. |
+| `error: redefinition of 'sync' as different kind of symbol` | A namespace collided with a POSIX function bionic declares and MinGW does not. Ours was renamed to `syncplan`; see `docs/TROUBLESHOOTING.md`. |
+| Login says *"the server answered, but not in a way this app understands"* | The Server field has no scheme, so the app prepended `http://` and got Caddy's empty 308. Type the full `https://your-domain`. |
+| Login says *"Can't reach the server"* but the server is up | OpenSSL is missing from the APK — see §2b. Plain HTTP works and HTTPS cannot start, so it looks like a network fault and is not one. |
+| APK will not install, no useful error | It is the `-unsigned.apk`. A CMake re-configure clears *Sign package*; re-tick it (§"Point Qt Creator at it"). |
+| Download sticks at 100% and never installs | The phone's download manager, not your server. Use `adb install -r <apk>` instead (§3). |
+| Nav rail fills half the screen; content clipped at the right edge | Known, 2026-08-22: `isCompactScreen()` returns false on a phone. **Tap ☰** — it collapses and the choice persists per device. |
+| Stuck in the Sync screen, nothing responds, Back does nothing | Known, 2026-08-22: `SyncDialog` is modal and renders frameless over the page. `adb shell am force-stop org.ticktimer.app`. Sync runs automatically regardless. |
 | Installs a *second* TickTimer | The package name changed between builds. It's pinned in CMakeLists (`org.ticktimer.app`) — don't edit it. |

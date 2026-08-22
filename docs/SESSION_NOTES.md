@@ -4485,3 +4485,89 @@ remembered device with no password, and Sync answered **"Already in sync."**
 
 Versions ×2 → 30.4.6. 448 measured, unchanged — this fixes a failure mode the
 suites never exercised.
+
+---
+
+## Stage 3 — the first Android compile, and four bugs a desktop can't have
+
+TickTimer is on a phone: installed, signed in, device remembered, synced, and
+showing the real planner pulled from the VPS. The runbook estimated "~40
+minutes, mostly downloads". It took an evening, and **not one of the four
+blockers was a mistake by the person following the runbook** — each was
+something only a real device could reveal, and each wore the wrong diagnosis.
+
+**1. It did not compile.** `namespace sync` versus POSIX `sync(2)`, which
+bionic declares in `<unistd.h>` and MinGW does not:
+
+```
+SyncPlan.h:27: error: redefinition of 'sync' as different kind of symbol
+unistd.h:290: note: previous definition is here
+```
+
+`SyncService.cpp` had not changed since v29.1, which is the whole finding:
+this error was always going to be the first thing an Android compile hit, so
+**v30.3 shipped "Android distribution" without an APK ever reaching the
+compiler.** Same gap as v30.4's WebAssembly, which at least *said so* at the
+top of `WEB.md`. The honest sentence for v30.3 would have been "nobody has
+compiled it", and it was not written. Renamed to `syncplan`; nesting it as
+`ticktimer::sync` was rejected because every namespace here is bare.
+
+**2. "The server answered, but not in a way this app understands."** The
+Server field lacked a scheme, so `LoginDialog::serverUrl()` prepended `http://`
+per a comment written when the server was a laptop on a LAN. Caddy answers
+plain HTTP with a 308 whose body is **empty**, which parses to an empty object,
+which has no `error` key, which falls through to `UnknownServerReply`. The
+message then advises checking an address that looks perfectly correct. Still to
+fix: that default should prefer `https://` for anything non-local.
+
+**3. "Can't reach the server. Is it running, and is the address correct?"**
+Both true, neither the problem. The APK contained
+`libplugins_tls_qopensslbackend_*.so` — Qt's TLS backend — and **no OpenSSL at
+all**, because Qt for Android ships the plugin and not the library. Plain HTTP
+worked, HTTPS could not start, and a request that never produces an HTTP status
+is indistinguishable from a dead network at the `AuthClient` layer. Three
+plausible wrong diagnoses stacked on one missing file, which is why
+`CMakeLists.txt` now **hard-fails** rather than warning: the whole deployment is
+HTTPS, so an Android build without TLS is broken rather than degraded, and a
+warning would scroll past in a Gradle log to be repaid later on somebody else's
+phone.
+
+**4. It worked, and the layout did not.** `isCompactScreen()` returns false on
+a 1080x2400 phone at density 480 — 360x800 device-independent, far under its
+`< 600` threshold. The rail starts expanded at roughly half the width with the
+content pane clipped off the right edge, and `ANDROID.md` had promised
+"Compact layout, automatically" for as long as the sentence had existed.
+Recorded as **suspected, not measured**: the inference is that
+`availableGeometry()` reports physical pixels, but nothing has printed it from
+inside the running app, and this repo has been wrong before by writing down the
+reasonable guess. Second bug beside it: `SyncDialog` is modal while rendering
+frameless and background-less over the main window, so it reads as part of the
+page while swallowing every tap, and `KEYCODE_BACK` does not dismiss it. A
+modal whose dismissal is unreachable is a soft-lock however it looks.
+
+**The lesson that generalises past Android.** `TICKTIMER_COMPACT=1` renders the
+compact layout on a desktop and the screenshot tool uses it — genuinely useful,
+and it verified a code path rather than a phone. The forced mode proved
+`isCompactScreen()`'s CONSEQUENCES right while the real device proved its INPUT
+wrong, and **a test that supplies its own input can never catch that.** A
+platform that has never run the code is not "probably fine", it is unmeasured.
+
+**Two workflow findings worth keeping.** The phone's download manager stuck at
+100% while the server served the file perfectly (verified byte-for-byte), so
+`adb install -r` is the right way to iterate on your own phone; the browser
+route still matters because it is how everyone else installs. And a CMake
+re-configure silently clears Qt Creator's *Sign package* tick, producing
+`-release-unsigned.apk`, which will not install and does not say why.
+
+`adb` earned its place in the docs generally: `screencap` + `pull` is what
+identified the frameless dialog in one look, after several rounds of
+description had not.
+
+Docs corrected rather than appended to: `ANDROID.md`'s compact-layout bullet
+now leads with the fact that it is broken, its version said 6.11.0 where the
+installed kit is 6.11.1, and its troubleshooting table gained all four
+symptoms. `ROLLOUT.md` Stage 3 is ticked with what the run actually cost.
+
+448 passing across six suites throughout — every one of these lives on a
+platform the suites cannot run.
+

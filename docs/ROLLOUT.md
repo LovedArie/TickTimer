@@ -371,25 +371,79 @@ config survives both hops, and app number three stays a five-line edit.
 
 ---
 
-## Stage 3 — Your Android phone *(~40 minutes, mostly downloads)*
+## Stage 3 — Your Android phone *(done 2026-08-22 — took an evening, not 40 minutes)*
 
 Follow **`docs/ANDROID.md`**, which now has the whole path. In short:
 
-- [ ] One-time: install the Qt Android component and let Qt Creator fetch the
+- [x] One-time: install the Qt Android component and let Qt Creator fetch the
       SDK/NDK (§1–4 of that doc).
-- [ ] **Make the release keystore once** (§"Giving it to someone else"), and
+- [x] **Make the release keystore once** (§"Giving it to someone else"), and
       back it up somewhere private. Losing it means everyone must uninstall —
       taking their local planner with them — and there is no recovery.
-- [ ] Build a signed release APK.
-- [ ] Copy it to `/var/www/ticktimer/ticktimer.apk` on the server.
-- [ ] On the phone: open `https://your-domain/download/ticktimer.apk`, tap it,
+- [x] Build a signed release APK.
+- [x] Copy it to `/var/www/ticktimer/ticktimer.apk` on the server.
+- [x] On the phone: open `https://your-domain/download/ticktimer.apk`, tap it,
       allow "install unknown apps" once.
-- [ ] Log in against `https://your-domain`, tick **Remember this device**.
-- [ ] Confirm your planner arrives, and that closing and reopening the app
+- [x] Log in against `https://your-domain`, tick **Remember this device**.
+- [x] Confirm your planner arrives, and that closing and reopening the app
       does **not** ask for a password again.
 
 **STOP IF** it asks for your password on every launch. Remembered devices are
 what makes a phone app tolerable.
+
+### What the first real run actually cost, so the estimate stops lying
+
+"~40 minutes, mostly downloads" was written by someone who had never done it.
+Nothing below was a mistake by the person following the runbook; all four were
+things only a real device could reveal, and each looked like a different
+problem than it was.
+
+1. **It did not compile.** `namespace sync` collides with POSIX `sync(2)`,
+   which bionic declares in `<unistd.h>` and MinGW does not. Renamed to
+   `syncplan`. Meaning: v30.3 shipped "Android distribution" without an APK
+   ever reaching the compiler.
+2. **Login failed with "the server answered, but not in a way this app
+   understands."** The Server field had no `https://`, and
+   `LoginDialog::serverUrl()` prepends `http://` — which Caddy answers with a
+   308 whose body is empty, which parses to nothing, which is
+   `UnknownServerReply`. **Type the scheme.**
+3. **Then it failed with "Can't reach the server."** Qt for Android ships the
+   TLS *backend plugin* and not OpenSSL, so the APK could do plain HTTP and no
+   HTTPS at all. `CMakeLists.txt` now packages OpenSSL or refuses to
+   configure. This one wore a network error's clothes and was neither.
+4. **Then it worked** — and the layout did not. See below.
+
+### Two things worth knowing next time
+
+- **Install over USB, not through the browser.** The phone's download manager
+  stuck at 100% and never finished; the server was serving the file perfectly
+  (verified byte-for-byte). With USB debugging already on from §3, this is one
+  command and it upgrades in place:
+  ```
+  adb install -r <path-to>-release-signed.apk
+  ```
+  The browser route still matters — it is how anyone ELSE installs it — but it
+  is the slow way to iterate on your own phone.
+- **Re-configuring CMake clears the signing settings.** After any change that
+  re-runs CMake, Qt Creator's *Build Android APK → Application Signature* comes
+  back unticked and the output silently becomes
+  `…-release-unsigned.apk`, which will not install. Check the filename says
+  **signed** before you copy it anywhere.
+
+### Known on the phone, as of 2026-08-22
+
+- **Tap ☰ first.** The nav rail does not auto-collapse — `isCompactScreen()`
+  returns false on a 1080x2400 phone — so it starts at about half the width
+  with the content clipped off the right edge. One tap fixes it and the choice
+  persists per device.
+- **Do not open Sync yet.** `SyncDialog` renders frameless over the main
+  window and is modal, so it reads as part of the page while swallowing every
+  tap, and Back does not dismiss it. Exit is `adb shell am force-stop
+  org.ticktimer.app`. Sync happens automatically anyway.
+
+Both are logged with evidence in `docs/TROUBLESHOOTING.md`, and the first is
+recorded as *suspected, not measured* — nothing has yet printed
+`availableGeometry()` from inside the running app.
 
 ---
 
@@ -463,6 +517,16 @@ hour once went into diagnosing "a broken feature" that was a month-old exe.
   `devices.json` on the server.
 - **The web UI is the desktop UI**, drawn in a canvas. Usable, not native.
   Text entry on a touchscreen is its roughest edge.
+
+- **The Android UI has the same shape and two live bugs** (2026-08-22, found
+  on the first real device run). The nav rail does not auto-collapse, so it
+  starts at about half the width with the content pane clipped off the right
+  edge — **tap ☰**, once, and it persists. And `SyncDialog` is modal while
+  rendering frameless over the page, which reads as a frozen app; the exit is
+  `adb shell am force-stop org.ticktimer.app`, and sync runs by itself anyway.
+  Neither is cosmetic-only: the first makes the app look broken on opening,
+  and the second looks like a crash. Evidence in `docs/TROUBLESHOOTING.md`,
+  with the compact-screen cause recorded as suspected rather than measured.
 - **The web app cannot start without the server, at all.** There is no service
   worker in this repo — no `sw.js`, no `navigator.serviceWorker` in
   `web/index.html`, and `manifest.webmanifest` carries no offline story. So
