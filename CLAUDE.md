@@ -139,6 +139,13 @@ that tests already pin — never a second implementation of them.
 story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
 
 - Never name an identifier `slots`, `signals`, or `emit`.
+- **Never name a namespace after a POSIX function.** `namespace sync`
+  built on Windows for a year and failed the first Android compile:
+  bionic's `<unistd.h>` declares `void sync(void)` at global scope, so
+  the namespace is a "redefinition as a different kind of symbol". It is
+  `syncplan` now. MinGW hides this whole class of bug — check a new
+  namespace against POSIX before picking it (`sync`, `link`, `index`,
+  `time`, `read`, `write`, `remove`, `kill`, `wait`, `select`, `stat`).
 - `QVector` reallocates → store **ids**, never pointers into a container.
 - A slot must not `delete` a widget that could be (or contain) the sender —
   rebuilds triggered by `changed()` use `deleteLater()`.

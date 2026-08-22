@@ -15,7 +15,7 @@ class AppData;
 //   - lastSyncedRevision  — the server revision this device last agreed with
 //   - dirty               — has AppData changed since then?
 //
-// Those two feed sync::decide()'s truth table; everything here is the thin
+// Those two feed syncplan::decide()'s truth table; everything here is the thin
 // async wiring around that pure decision. Both are persisted in QSettings —
 // they are DEVICE state ("where does this machine stand relative to the
 // server"), not domain data, exactly the settings-vs-domain split the app

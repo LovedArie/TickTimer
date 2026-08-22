@@ -158,7 +158,7 @@ inline bool isNewer(const QString& candidate, const QString& baseline)
 }
 
 // ---- the banner decision, as a pure function -----------------------------
-// Same pattern as sync::decide and compare::focusVerdict: the feature's one
+// Same pattern as syncplan::decide and compare::focusVerdict: the feature's one
 // real judgement extracted where a table of tiny tests can pin it. The
 // non-nag rule lives HERE, not scattered through widget code:
 //

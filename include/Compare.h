@@ -11,7 +11,7 @@
 // subtract. This header holds the subtraction and the one genuine decision
 // in the feature — when do we call two people "even"?
 //
-// Same rule as sync::decide: pure functions of their inputs, no clock, no
+// Same rule as syncplan::decide: pure functions of their inputs, no clock, no
 // network, no widgets. The CompareDialog is thin glass over these numbers,
 // and the test for the feature's logic is a handful of arithmetic checks in
 // the Widgets-free domain suite.

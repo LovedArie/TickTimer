@@ -114,22 +114,22 @@ void SyncService::onPullFinished(SyncClient::Outcome outcome, int revision,
         return;
     }
 
-    switch (sync::decide(revision, m_lastRevision, m_dirty)) {
-    case sync::Action::Nothing:
+    switch (syncplan::decide(revision, m_lastRevision, m_dirty)) {
+    case syncplan::Action::Nothing:
         m_busy = false;
         recordSuccess();
         emit finished(true, tr("Already in sync (revision %1).")
                                 .arg(revision));
         return;
 
-    case sync::Action::Push:
+    case syncplan::Action::Push:
         emit statusChanged(tr("Uploading your changes…"));
         m_pushedGeneration = m_generation; // what THIS snapshot contains
         m_client->push(JsonStore::toJsonObject(*m_data),
                        /*baseRevision=*/revision, /*force=*/false);
         return;
 
-    case sync::Action::Pull:
+    case syncplan::Action::Pull:
         applyServerData(data, revision);
         m_busy = false;
         recordSuccess();
@@ -137,7 +137,7 @@ void SyncService::onPullFinished(SyncClient::Outcome outcome, int revision,
                                 .arg(revision));
         return;
 
-    case sync::Action::Conflict:
+    case syncplan::Action::Conflict:
         // Hold the server's version so resolveUseServer() doesn't need a
         // second network round-trip, then hand the decision to a human.
         m_heldServerData     = data;

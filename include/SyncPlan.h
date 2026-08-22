@@ -1,7 +1,7 @@
 #pragma once
 
 // ---------------------------------------------------------------------------
-// sync::decide — the ENTIRE sync brain, as a pure function.
+// syncplan::decide — the ENTIRE sync brain, as a pure function.
 //
 // Sync engines have a scary reputation, but with full-document sync the
 // decision reduces to two questions:
@@ -24,7 +24,7 @@
 // around a decision that can never surprise us.
 // ---------------------------------------------------------------------------
 
-namespace sync
+namespace syncplan
 {
 
 enum class Action { Nothing, Push, Pull, Conflict };
@@ -38,4 +38,4 @@ inline Action decide(int serverRevision, int lastSyncedRevision,
     return dirtyLocal ? Action::Conflict : Action::Pull;
 }
 
-} // namespace sync
+} // namespace syncplanplan

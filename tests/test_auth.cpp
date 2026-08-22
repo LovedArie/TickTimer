@@ -169,8 +169,8 @@ private slots:
     {
         // The ENTIRE sync brain, all four rows (see SyncPlan.h). Pure
         // function: no network, no files — the test IS the table.
-        using sync::Action;
-        using sync::decide;
+        using syncplan::Action;
+        using syncplan::decide;
         QCOMPARE(decide(5, 5, false), Action::Nothing);  // nobody moved
         QCOMPARE(decide(5, 5, true),  Action::Push);     // only we did
         QCOMPARE(decide(7, 5, false), Action::Pull);     // only server did
