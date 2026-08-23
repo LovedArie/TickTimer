@@ -27,6 +27,8 @@
 #include "JsonStore.h"
 #include "TrackerService.h"
 
+#include <QMetaObject>
+
 #include "Responsive.h"
 
 #include <QMainWindow>
@@ -34,6 +36,7 @@
 class BlockAlarmService;
 class AffordabilityService;
 class CheckInService;
+class ActivitiesPage;
 class ChatPage;
 class DebugPanel;
 class PlannerPage;
@@ -88,6 +91,14 @@ public:
     // MainWindow — keeps using the legacy global file unchanged.
     explicit MainWindow(const QString& username = QString());
 
+    // Exists for ONE reason, and it is not resource cleanup — Qt's parent
+    // tree handles that. During ~QWidget the children are destroyed one by
+    // one, and the page stack emits currentChanged as it goes. That reaches
+    // reflectCurrentPage(), which then touches header widgets that have
+    // already been deleted: a segfault at the very end of every session, in a
+    // handler that is perfectly correct while the window is alive.
+    ~MainWindow() override;
+
     // Show a page by index (0 Calendar, 1 Upcoming, 2 Activities,
     // 3 Special days, 4 Pomodoro, 5 Archive, 6 Assistant),
     // keeping the nav highlight in sync. Exists mainly for the
@@ -125,6 +136,22 @@ private:
     // Called at the END of the constructor and from closeEvent respectively —
     // restore AFTER the layout exists (so nothing we set gets overwritten by
     // the chrome being built), save BEFORE the window goes away.
+    // ---- one truth for "which page am I on" -------------------------------
+    // The highlight is DERIVED from the stack, never pushed by whoever
+    // happened to fire. Two navigations (the desktop rail and the phone's
+    // bottom bar) would otherwise mean four push sites that must agree; this
+    // is the same "Derive, don't store" rule the Sync glyph already follows.
+    void reflectCurrentPage(int index);
+
+    // The four actions that live in the rail on a desktop and in the profile
+    // menu on a phone. Extracted from their click lambdas so both surfaces
+    // call ONE function each rather than duplicating a dialog invocation.
+    void buildProfileMenu(class QMenu* menu);
+    void openSettings();
+    void openSyncDialog();
+    void openSharingDialog();
+    void promptSignIn();
+
     void applyChromeMode(responsive::Mode mode);
 
     // Hand back any width the window is holding beyond its screen. See the
@@ -165,6 +192,49 @@ private:
     // changes the former by 190px without touching the latter. Parented to
     // the stack, so it needs no cleanup here.
     ResponsiveWatcher* m_responsive = nullptr;
+    // ---- which SHELL this window is ---------------------------------------
+    // Decided ONCE, at construction, from the device — not from the container
+    // width. A desktop user who narrows a window is rearranging a desktop app;
+    // they must not lose Archive, Ctrl+B or the rail because of it. See
+    // docs/design-addendum-mobile-shell.md.
+    bool m_phoneShell = false;
+
+    ActivitiesPage* m_activities = nullptr; // typed: its life-area sheet
+                                            // tells the FAB to step aside
+    class MobileNavBar* m_mobileNav = nullptr; // phone only
+    class QPushButton*  m_profileBtn = nullptr; // phone only: the way to
+                                                // Settings / Sync / Share
+    class QPushButton*  m_captureFab = nullptr; // phone only: the big +
+
+    // The phone header's top-right slot. ONE button, re-labelled and re-aimed
+    // per page — Glance on the calendar, the area switcher on Activities,
+    // nothing elsewhere. A per-page control belongs at the top right of the
+    // SCREEN, which is where a thumb reaches for it; putting it inside the
+    // page's own panel buried it in the content it acts on.
+    class QPushButton*  m_headerAction = nullptr;
+    // Only OUR wiring, so re-aiming the button can undo exactly what it did.
+    // QObject::disconnect() with no arguments severs every connection the
+    // object has — including ones Qt made internally — which is a sledgehammer
+    // that shows up later as a crash somewhere else entirely.
+    QMetaObject::Connection m_headerActionConn;
+    void placeCaptureFab();
+    void updateCaptureFabVisibility();
+    // Two independent reasons the + can be absent, tracked separately so
+    // neither can clobber the other's decision.
+    // Set the moment destruction begins. ~QWidget destroys children one by
+    // one and the page stack emits currentChanged as it goes, so a handler
+    // that is perfectly correct while the window lives will happily touch
+    // widgets that no longer exist.
+    bool m_tearingDown   = false;
+    bool m_fabPageAllows = true;   // this page has no bottom-right action
+    bool m_fabCovered    = false;  // a sheet is over the page
+
+    // The user's INTENT for the rail, which is not the same as whether the
+    // rail is on screen: the phone shell never shows it. Storing visibility
+    // instead would persist `false` from a phone session and fold the rail on
+    // the next desktop launch from the same settings file.
+    bool m_railWanted = true;
+
     class QLabel* m_tagline = nullptr; // hidden when the content area is tight
     class QLabel* m_welcome = nullptr; // ditto — chrome yields before content
     class QHBoxLayout* m_headerLayout = nullptr; // margins tighten when narrow

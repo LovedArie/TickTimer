@@ -144,6 +144,7 @@ inline QWidget* wrapLeft(QWidget* panel)
 
 #include <QGuiApplication>
 #include <QScreen>
+#include <QAbstractItemView>
 #include <QScrollArea>
 #include <QScroller>
 
@@ -228,4 +229,25 @@ inline QList<QRect> availableScreenRects()
 inline void makeTouchScrollable(QScrollArea* area)
 {
     QScroller::grabGesture(area->viewport(), QScroller::TouchGesture);
+}
+
+// The same idea for an ITEM VIEW, which is not a QScrollArea and so could not
+// use the overload above. Promoted from the one-off in UpcomingPage the moment
+// a second consumer appeared (PickActivityDialog's list, which could only be
+// scrolled by dragging its scrollbar — unusable with a thumb).
+//
+// LeftMouseButtonGesture, not TouchGesture, and the difference matters: an
+// item view's own gesture is a CLICK that selects, and QScroller separates the
+// two by the drag threshold, so a stationary tap still reaches itemClicked
+// while a drag pans. ScrollPerPixel is what makes that drag smooth rather than
+// row-by-row.
+//
+// Not universally safe: NeedsBlockCard deliberately does NOT grab, because its
+// content is buttons-first and it sits inside another grabbed scroller, where
+// two scrollers fight over one press. Neither applies to a plain list.
+inline void makeTouchScrollable(QAbstractItemView* view)
+{
+    view->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    QScroller::grabGesture(view->viewport(), QScroller::LeftMouseButtonGesture);
 }

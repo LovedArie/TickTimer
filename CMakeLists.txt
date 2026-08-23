@@ -168,6 +168,8 @@ set(UI_SOURCES
     include/Responsive.h
     include/ResponsiveWatcher.h
     src/ResponsiveWatcher.cpp
+    include/MobileNavBar.h
+    src/MobileNavBar.cpp
     src/ActivitiesPage.cpp
     src/AgendaWidget.cpp
     src/DueDateDialog.cpp

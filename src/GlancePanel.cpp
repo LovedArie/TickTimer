@@ -29,6 +29,7 @@ GlancePanel::GlancePanel(const AppData* data, const TrackerService* tracker,
 
     auto* title = new QLabel(tr("At a glance"), this);
     title->setObjectName("h2");
+    m_title = title;
     m_sub = new QLabel(
         tr("Calculated live from what you tracked — nothing is stored twice."),
         this);
@@ -166,6 +167,24 @@ GlancePanel::GlancePanel(const AppData* data, const TrackerService* tracker,
     // huddling squashed at the top over a void (the owner's screenshot).
 
     refresh();
+}
+
+bool GlancePanel::needsAttention() const
+{
+    return (m_needsBlock && m_needsBlock->hasAnything())
+           || (m_catchUp && m_catchUp->hasAnything());
+}
+
+void GlancePanel::setHeadingVisible(bool on)
+{
+    if (m_title)
+        m_title->setVisible(on);
+}
+
+void GlancePanel::setCardDrawerHost(QWidget* host)
+{
+    m_needsBlock->setDrawerHost(host);
+    m_catchUp->setDrawerHost(host);
 }
 
 void GlancePanel::setDate(QDate date)

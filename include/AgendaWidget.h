@@ -53,6 +53,14 @@ public:
     // single-day agenda pixel-identical — this is purely additive.
     void setGutter(int px);
 
+    // TEST SEAM. Whether a press is touch or mouse is decided by
+    // QMouseEvent::source(), which Qt sets when IT synthesises the event and
+    // which no public API can forge — so a unit test cannot produce a touch
+    // press at all. Same doctrine as TrackerService::nowProvider and
+    // TICKTIMER_COMPACT: a behaviour that cannot be produced on demand is a
+    // behaviour that cannot be verified.
+    void setTouchGesturesForTesting(bool on) { m_forceTouch = on; }
+
     // Display preference: paint the linked task's DESCRIPTION on the block
     // (indented under the task line). The widget is TOLD the preference —
     // it never reads QSettings itself. Settings are the page's business;
@@ -116,9 +124,11 @@ private:
     // the two gestures start identically and can only be told apart by what
     // happens NEXT, so the decision has to be deferred:
     //
-    //   empty slot  -> LONG PRESS. Planning a block is a deliberate,
-    //                  creating act; making it deliberate costs nothing and
-    //                  makes accidental blocks impossible.
+    //   empty slot  -> TWO TAPS, or one long press. The first tap ARMS the
+    //                  slot and says "+ plan · tap again"; the second opens
+    //                  the planner. Planning is a creating act, so it is
+    //                  deliberate either way, and neither gesture can happen
+    //                  by accident while scrolling.
     //   an existing
     //   block       -> tap, decided on RELEASE if the finger did not move.
     //                  Opening something is not creating something, and
@@ -132,9 +142,20 @@ private:
     // exist there, and adding a hold to a desktop click would be a regression.
     void cancelPendingTouch();
 
+    // ARMED, as distinct from hovered. A touchscreen has no hover: the "+ plan"
+    // you see after one tap was an accident of Android synthesising a mouse
+    // MOVE at the touch point, and because leaveEvent never fires on a phone
+    // it never cleared — a stale invitation sat on a slot the finger had left
+    // minutes earlier. Making it a real state fixes that and gives the second
+    // tap something to mean.
+    void disarm();
+
     class QTimer* m_longPress = nullptr;
     QPoint  m_touchPressPos;
     int     m_pendingSlot = -1;    // empty slot awaiting a long press
+    int     m_armedSlot   = -1;    // tapped once; a second tap plans it
+    bool    m_pressWasArmed = false; // this press landed on the armed slot
+    bool    m_forceTouch    = false; // test seam; see setTouchGesturesForTesting
     QString m_pendingEventId;      // existing block awaiting a stationary tap
 
 private:

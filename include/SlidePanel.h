@@ -40,6 +40,12 @@ public:
     explicit SlidePanel(QWidget* host);
 
     void setTitle(const QString& title);
+
+    // Re-purpose the header button. By default it is a ✕ that closes the
+    // sheet; a caller with a better use for that corner can take it, as long
+    // as the sheet stays dismissible some other way — the scrim, Esc/Back, or
+    // the control that opened it. Passing an empty text restores the ✕.
+    void setHeaderButton(const QString& text, const QString& tooltip);
     QVBoxLayout* contentLayout() const { return m_content; }
     void clearContent();
 
@@ -52,6 +58,15 @@ signals:
     // one piece of "is it open" state in one place.
     void closed();
 
+    // Emitted on open AND on close. An owner needs this to move widgets that
+    // must not float above a sheet but live in a DIFFERENT parent, where
+    // raise() cannot reach them — the capture FAB is exactly that case.
+    void openStateChanged(bool open);
+
+    // Only emitted when the header button has been re-purposed; the default
+    // ✕ closes the sheet itself and reports nothing.
+    void headerButtonClicked();
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
@@ -63,6 +78,8 @@ private:
 
     QWidget*  m_host;
     QFrame*   m_sheet   = nullptr;
+    class QPushButton* m_headerBtn = nullptr;
+    bool      m_headerBtnCloses = true;
     QLabel*   m_title   = nullptr;
     QVBoxLayout* m_content = nullptr;
     QPropertyAnimation* m_anim = nullptr;

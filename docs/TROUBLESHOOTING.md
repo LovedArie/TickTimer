@@ -1331,6 +1331,33 @@ inside it. The general rule behind both causes: **when a `.moc` goes missing,
 moc failed and something swallowed its message** — never start by suspecting
 the build system.
 
+**A THIRD relative, and it links rather than fails to compile (v30.6):
+declarations that land in a `signals:` block.** moc GENERATES THE BODY of every
+signal it sees. Put an ordinary member function there by accident —
+
+```cpp
+signals:
+    void somethingHappened();
+    bool needsAttention() const;   // <-- not a signal; moc writes a body anyway
+```
+
+— and you get a definition in `moc_*.cpp` AND your own in the `.cpp`, which the
+linker reports as:
+
+```
+multiple definition of `GlancePanel::needsAttention() const';
+  mocs_compilation.cpp:(.text+0x1b70): first defined here
+```
+
+The pointer at `mocs_compilation.cpp` is the tell: nothing you wrote lives
+there. Move the declaration to a `public:` section.
+
+**Its twin: a header with TWO Q_OBJECT classes.** `ActivitiesPage.h` declares
+`CategoryTree` and `ActivitiesPage`, each with its own `signals:`. A signal
+added to "the signals block" landed in the first class and produced
+`'overlayOpenChanged' is not a member of 'ActivitiesPage'` — correct, unhelpful,
+and confusing until you notice which class you are actually inside.
+
 ### A test's own fixture data silently doesn't exist — a query over it returns the empty/default answer
 
 **SYMPTOM**
@@ -1581,6 +1608,73 @@ by hand. It was 522 again four versions later, because `ChatPage` and
 that is checked by hand is a layout budget that regresses**; the hand-check
 told you the number was good the day you looked, and nothing told you the day
 it stopped being.
+
+---
+
+### A crash at the END of a session, in a handler that is correct while it runs
+
+**SYMPTOM**
+The ui suite segfaults, but only when several tests run in sequence — each one
+passes alone. Somewhere in the output, a warning nobody wrote:
+
+```
+QObject::disconnect: wildcard call disconnects from destroyed signal of
+QPushButton::headerAction
+```
+
+**CAUSE**
+`obj->disconnect()` — the no-argument form — does not mean "undo my wiring". It
+severs **every connection the object has, in both directions, including ones Qt
+made internally.** `MainWindow` re-aimed one shared header button per page and
+called it to clear the previous wiring; it also quietly cut whatever Qt had
+connected to that button, and the wreckage surfaced later as a crash somewhere
+unrelated.
+
+**FIX**
+Keep the handle and undo exactly what you made:
+
+```cpp
+QMetaObject::Connection m_headerActionConn;   // member
+QObject::disconnect(m_headerActionConn);      // undo only ours
+m_headerActionConn = connect(...);            // re-aim
+```
+
+**PREVENT**
+Treat argument-less `disconnect()` as a code smell on any widget you did not
+create every connection for. A second, related habit worth keeping: during
+`~QWidget` the children are destroyed one by one and a `QStackedWidget` emits
+`currentChanged` as it goes, so a handler wired to it will run while its
+siblings are already gone — `MainWindow` sets a `m_tearingDown` flag in its
+destructor and the handler returns early.
+
+---
+
+### A widget in a SlidePanel fills exactly half the sheet
+
+**SYMPTOM**
+Content put into a `SlidePanel` occupies the top half of the sheet with an
+equal expanse of empty grey beneath it, whatever the content is.
+
+**CAUSE**
+`SlidePanel`'s content layout ends with `addStretch(1)` (`src/SlidePanel.cpp`)
+so that a stack of short rows pools its slack at the bottom — right for the
+card-drawer callers it was written for. Insert one widget with stretch 1 and
+there are now **two** stretch-1 items, which split the free space evenly.
+
+**FIX**
+For a panel whose content *is* the sheet rather than a list of rows, hand the
+pooled slack over:
+
+```cpp
+QVBoxLayout* sheet = drawer->contentLayout();
+sheet->insertWidget(0, panel, 1);
+sheet->setStretch(sheet->count() - 1, 0);   // the trailing stretch yields
+```
+
+**PREVENT**
+Also on this panel: **never call `clearContent()`** if you filled it once at
+construction — it *deletes* what it holds, and the established caller idiom
+(`NeedsBlockCard`) is clear-then-refill, so the next reader will reach for it.
 
 ---
 

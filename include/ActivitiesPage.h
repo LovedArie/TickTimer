@@ -69,6 +69,7 @@ public:
     explicit CategoryTree(QWidget* parent = nullptr);
 
 signals:
+
     void categoryDropped(const QString& categoryId, const QString& folderId);
 
 protected:
@@ -80,6 +81,11 @@ class ActivitiesPage : public QWidget
     Q_OBJECT
 
 public:
+    // Opened from the app header's top-right button, not from a control
+    // inside the panel — the switcher belongs to the screen, not to the card.
+    void openAreaDrawer(); // toggles: the ≡ both opens and closes it
+    bool hasAreaDrawer() const { return m_areaDrawer != nullptr; }
+
     explicit ActivitiesPage(AppData* data, QWidget* parent = nullptr);
 
 public slots:
@@ -99,12 +105,18 @@ private slots:
     void updateTaskViewHeight();               // fit the list to its rows
     void updateQuickAddPreview();              // live parse of the task input
 
+signals:
+    // "A sheet is covering me" — MainWindow hides the capture FAB, which
+    // lives in a different parent and so cannot be ordered behind it.
+    void overlayOpenChanged(bool open);
+
 protected:
     bool event(QEvent* e) override; // the container's size class arrives here
 
 private:
     void applyLayoutMode(responsive::Mode mode);
 
+    void archiveSelectedArea();
     void rebuildRail();
     void buildDetailPane();  // ONCE, in the ctor — the persistent skeleton
     void refreshDetail();    // update in place: header + task model + activities
@@ -124,6 +136,23 @@ private:
     // the rail gets — the master/detail rework is a later stage. Its minimum
     // is already inside the phone budget, so the core does not force it.
     class QFrame* m_railPanel = nullptr;
+
+    // ---- the phone's life-area switcher --------------------------------
+    // TickTick's shape, which the owner asked for: the AREA fills the screen
+    // and the list of areas lives behind a button, instead of a permanent
+    // second column that a 360px screen cannot afford.
+    //
+    // Same "decide the home once at construction" rule as the glance drawer:
+    // on a phone the rail is put in the sheet and stays there, so no mode
+    // change ever has to move a widget. NEVER call clearContent() on this
+    // panel — SlidePanel::clearContent() deletes what it holds.
+    bool m_phoneShell = false;
+    class SlidePanel*  m_areaDrawer    = nullptr;
+    class QLabel*      m_railTitle     = nullptr; // the sheet already says it
+    class QHBoxLayout* m_outerLayout   = nullptr; // margins go to 0 on a phone
+    class QFrame*      m_detailPanel   = nullptr; // loses its card when flat
+    class QVBoxLayout* m_detailLayout  = nullptr;
+    class QVBoxLayout* m_contentLayout = nullptr; // the column inside the card
     QString      m_selectedCategoryId;   // domain selection: rebuild-proof id
     QSet<QString> m_collapsedFolders;    // presentation: session-only, unsaved
     bool         m_rebuilding = false;   // guards collapse tracking during rebuild

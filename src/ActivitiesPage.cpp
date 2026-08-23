@@ -1,5 +1,9 @@
 #include "ActivitiesPage.h"
 
+#include "SlidePanel.h"
+
+#include <QStyle>
+
 #include "AppData.h"
 #include "CategoryTaskDelegate.h"
 #include "CategoryTaskModel.h"
@@ -112,8 +116,11 @@ ActivitiesPage::ActivitiesPage(AppData* data, QWidget* parent)
     : QWidget(parent)
     , m_data(data)
 {
+    m_phoneShell = isCompactScreen();
+
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(26, 22, 26, 22);
+    m_outerLayout = layout;
     layout->setSpacing(18);
 
     // ---- the master: category rail, now a tree -----------------------------
@@ -128,6 +135,7 @@ ActivitiesPage::ActivitiesPage(AppData* data, QWidget* parent)
     auto* railHead = new QHBoxLayout;
     auto* railTitle = new QLabel(tr("Life areas"), railPanel);
     railTitle->setObjectName("h2");
+    m_railTitle = railTitle;
     auto* addFolderBtn = new QPushButton(tr("+ Folder"), railPanel);
     addFolderBtn->setObjectName("quiet");
     addFolderBtn->setCursor(Qt::PointingHandCursor);
@@ -230,15 +238,57 @@ ActivitiesPage::ActivitiesPage(AppData* data, QWidget* parent)
     // ---- the detail pane -------------------------------------------------------
     auto* detailPanel = new QFrame(this);
     detailPanel->setObjectName("panel");
+    m_detailPanel = detailPanel;
     auto* detailLayout = new QVBoxLayout(detailPanel);
     detailLayout->setContentsMargins(6, 6, 6, 6);
+    m_detailLayout = detailLayout;
     m_detail = new QScrollArea(detailPanel);
     makeTouchScrollable(m_detail); // finger-flick on touch screens
     m_detail->setWidgetResizable(true);
     detailLayout->addWidget(m_detail);
     buildDetailPane(); // the persistent skeleton — built ONCE, never rebuilt
 
-    layout->addWidget(railPanel);
+    // ---- where the rail LIVES, decided once ---------------------------------
+    // A permanent second column costs 168 of a phone's 360px and leaves the
+    // thing you came for in a sliver. On a phone the AREA fills the screen and
+    // the list of areas becomes a sheet you summon — TickTick's shape, and the
+    // one the owner asked for after living with the split.
+    //
+    // Decided at construction and never revisited, the same rule the glance
+    // drawer follows: nothing moves at a mode change, so there is no
+    // "does it come back?" case to get wrong.
+    if (m_phoneShell) {
+        m_areaDrawer = new SlidePanel(this);
+        m_areaDrawer->setTitle(tr("Life areas"));
+        railPanel->setMinimumWidth(0);
+        railPanel->setMaximumWidth(QWIDGETSIZE_MAX);
+        // Stretch 1, so the list fills the sheet instead of sitting in the
+        // top third with grey below it. SlidePanel's content layout ends in a
+        // trailing stretch, which otherwise eats everything left over.
+        // NEVER clearContent() this panel — it deletes what it holds.
+        QVBoxLayout* sheet = m_areaDrawer->contentLayout();
+        sheet->insertWidget(0, railPanel, 1);
+        // SlidePanel ends its content with addStretch(1) so short rows pool
+        // their slack at the bottom. Two stretch-1 items split the space
+        // evenly, which left the list filling exactly half the sheet with grey
+        // beneath it. This panel is not a stack of rows — it IS the content —
+        // so the pooled slack is given to it.
+        sheet->setStretch(sheet->count() - 1, 0);
+        // The corner is worth more than a second way to close: the ≡ that
+        // opened this sheet closes it again, and the scrim and Back both work.
+        // So it carries the action that belongs WITH a chosen area instead.
+        m_areaDrawer->setHeaderButton(tr("Archive area"),
+                                      tr("Archive the selected life area"));
+        connect(m_areaDrawer, &SlidePanel::headerButtonClicked,
+                this, &ActivitiesPage::archiveSelectedArea);
+        // The sheet's own header already says "Life areas".
+        if (m_railTitle)
+            m_railTitle->hide();
+        connect(m_areaDrawer, &SlidePanel::openStateChanged,
+                this, &ActivitiesPage::overlayOpenChanged);
+    } else {
+        layout->addWidget(railPanel);
+    }
     layout->addWidget(detailPanel, 1);
 
     connect(m_data, &AppData::changed, this, &ActivitiesPage::rebuild);
@@ -273,7 +323,57 @@ void ActivitiesPage::applyLayoutMode(responsive::Mode mode)
     // 384px screen is the wrong shape no matter how the width is divided. The
     // master/detail rework belongs to the phone-navigation stage; the honest
     // thing to record here is that this line is a mitigation.
-    m_railPanel->setFixedWidth(mode == responsive::Mode::Compact ? 168 : 250);
+    // Not on a phone: there the rail is IN A SHEET and must fill it. A fixed
+    // width here would fight that — setFixedWidth pins minimum AND maximum, so
+    // it silently re-squeezed the panel to 168px inside a 336px drawer on
+    // every mode dispatch, truncating every label in it.
+    if (!m_phoneShell)
+        m_railPanel->setFixedWidth(mode == responsive::Mode::Compact ? 168 : 250);
+
+    // ---- edge to edge, same treatment as the calendar -----------------------
+    // With the rail in a sheet, the area IS the screen — so the card around it
+    // is a frame drawn around the whole display, and the nested margins
+    // (26 page + 6 panel + 14 column) were 46px of a 360px width spent on
+    // whitespace three times over.
+    const bool compact = mode == responsive::Mode::Compact;
+    if (m_detailPanel && m_detailPanel->property("flat").toBool() != compact) {
+        m_detailPanel->setProperty("flat", compact);
+        // A QSS property selector never re-evaluates on its own.
+        m_detailPanel->style()->unpolish(m_detailPanel);
+        m_detailPanel->style()->polish(m_detailPanel);
+    }
+    if (m_outerLayout)
+        m_outerLayout->setContentsMargins(compact ? 0 : 26, compact ? 0 : 22,
+                                          compact ? 0 : 26, compact ? 0 : 22);
+    if (m_detailLayout)
+        m_detailLayout->setContentsMargins(compact ? 0 : 6, compact ? 0 : 6,
+                                           compact ? 0 : 6, compact ? 0 : 6);
+    if (m_contentLayout)
+        m_contentLayout->setContentsMargins(compact ? 12 : 14, 12,
+                                            compact ? 12 : 14, 12);
+}
+
+void ActivitiesPage::openAreaDrawer()
+{
+    if (!m_areaDrawer)
+        return;
+    // A toggle, not an opener. The button that summoned the sheet is the
+    // obvious thing to press to dismiss it, which is also why the sheet can
+    // afford to give its ✕ corner away.
+    if (m_areaDrawer->isOpen())
+        m_areaDrawer->closePanel();
+    else
+        m_areaDrawer->open();
+}
+
+void ActivitiesPage::archiveSelectedArea()
+{
+    const Category* category = m_data->categoryById(m_selectedCategoryId);
+    if (!category)
+        return; // nothing chosen; the button has nothing to act on
+    m_data->setCategoryArchived(category->id, true);
+    if (m_areaDrawer)
+        m_areaDrawer->closePanel();
 }
 
 void ActivitiesPage::rebuildRail()
@@ -337,6 +437,12 @@ void ActivitiesPage::rebuildRail()
 
 void ActivitiesPage::onRailItemClicked(QTreeWidgetItem* item, int)
 {
+    // Choosing an area is the whole reason the sheet was open, so it closes
+    // itself. Leaving it up would put the thing you just asked for behind the
+    // thing you asked with.
+    if (m_areaDrawer && m_areaDrawer->isOpen())
+        m_areaDrawer->closePanel();
+
     const QString categoryId = item->data(0, acts::kCategoryIdRole).toString();
     if (categoryId.isEmpty()) {
         // A folder: single click toggles it — friendlier than Qt's
@@ -419,6 +525,7 @@ void ActivitiesPage::buildDetailPane()
     auto* content = new QWidget;
     auto* layout = new QVBoxLayout(content);
     layout->setContentsMargins(14, 12, 14, 12);
+    m_contentLayout = layout;
     layout->setSpacing(8);
 
     // header (dot, name, delete/archive) — refilled in place by refreshHeader()
@@ -626,8 +733,11 @@ void ActivitiesPage::refreshHeader()
         connect(del, &QPushButton::clicked, this,
                 [this, categoryId]() { m_data->removeCategory(categoryId); });
         hl->addWidget(del);
-    } else {
+    } else if (!m_phoneShell) {
         // A life area with content can't be deleted, but it can archive whole.
+        // On a phone this lives in the area sheet's corner instead — one place
+        // for "things you do TO an area", and one less button crowding the
+        // name of the one you are reading.
         auto* arch = new QPushButton(tr("Archive area"), m_headerHost);
         arch->setCursor(Qt::PointingHandCursor);
         arch->setStyleSheet(

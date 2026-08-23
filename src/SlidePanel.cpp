@@ -51,12 +51,21 @@ SlidePanel::SlidePanel(QWidget* host)
     auto* head = new QHBoxLayout;
     m_title = new QLabel(m_sheet);
     m_title->setObjectName("h2");
-    auto* close = new QPushButton(QStringLiteral("✕"), m_sheet);
+    // U+00D7, not U+2715. The prettier multiplication X renders as an empty
+    // box on Android — the same font lottery that ate the rail's ✦ and the
+    // reason the bottom bar's icons are painted. This one is Latin-1.
+    auto* close = new QPushButton(QString(QChar(0x00D7)), m_sheet);
     close->setObjectName("slideClose");
     close->setFlat(true);
     close->setCursor(Qt::PointingHandCursor);
     close->setFixedSize(28, 28);
-    connect(close, &QPushButton::clicked, this, &SlidePanel::closePanel);
+    m_headerBtn = close;
+    connect(close, &QPushButton::clicked, this, [this]() {
+        if (m_headerBtnCloses)
+            closePanel();
+        else
+            emit headerButtonClicked();
+    });
     head->addWidget(m_title, 1);
     head->addWidget(close);
     v->addLayout(head);
@@ -119,6 +128,7 @@ void SlidePanel::open()
     if (m_open)
         return;
     m_open = true;
+    emit openStateChanged(true);
     setGeometry(m_host->rect());
     placeSheet(false);          // start just off the right edge…
     show();
@@ -150,6 +160,7 @@ void SlidePanel::closePanel()
     });
     m_anim->start();
     emit closed();
+    emit openStateChanged(false);
 }
 
 bool SlidePanel::eventFilter(QObject* watched, QEvent* event)
@@ -166,7 +177,13 @@ bool SlidePanel::eventFilter(QObject* watched, QEvent* event)
 
 void SlidePanel::keyPressEvent(QKeyEvent* event)
 {
-    if (event->key() == Qt::Key_Escape) {
+    // Escape on a desktop, Back on Android — the same intent, two keys.
+    //
+    // Key_Back matters more than it looks: this is a plain child widget, not a
+    // QDialog, so the app-wide dialog fitter's Back mapping never reaches it.
+    // Without this line Back fell through to the activity and QUIT THE APP
+    // from an open drawer, which on the phone reads as a crash.
+    if (event->key() == Qt::Key_Escape || event->key() == Qt::Key_Back) {
         closePanel();
         return;
     }
@@ -191,4 +208,16 @@ void SlidePanel::paintEvent(QPaintEvent*)
                             // behind it — the drawer is a glance aside,
                             // not a change of subject
     p.fillRect(rect(), scrim);
+}
+
+void SlidePanel::setHeaderButton(const QString& text, const QString& tooltip)
+{
+    if (!m_headerBtn)
+        return;
+    m_headerBtnCloses = text.isEmpty();
+    m_headerBtn->setText(m_headerBtnCloses ? QString(QChar(0x00D7)) : text);
+    m_headerBtn->setToolTip(tooltip);
+    // A word needs room; the ✕ is a square.
+    m_headerBtn->setFixedSize(m_headerBtnCloses ? QSize(28, 28)
+                                                : QSize(110, 30));
 }

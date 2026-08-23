@@ -16,6 +16,7 @@
 #include "Event.h"
 #include "Task.h"
 #include "TrackerService.h"
+#include "SlidePanel.h"
 #include "ResponsiveWatcher.h"
 #include "Widgets.h"
 
@@ -25,6 +26,8 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QScrollArea>
+#include <QStyle>
+#include <QTimer>
 #include "Prefs.h"
 
 #include <QSettings>
@@ -38,12 +41,16 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     , m_tracker(tracker)
     , m_date(QDate::currentDate())
 {
+    m_phoneShell = isCompactScreen();
+
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(26, 16, 26, 20);
     layout->setSpacing(12);
+    m_outerLayout = layout;
 
     // ---- top bar: ‹ Today ›            [Day | Week | Month] --------------
     auto* topBar = new QHBoxLayout;
+    m_topBarLayout = topBar;
 
     auto* prev = new QPushButton(QStringLiteral("\u2039"), this);
     auto* next = new QPushButton(QStringLiteral("\u203A"), this);
@@ -107,6 +114,8 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     topBar->addWidget(prev);
     topBar->addWidget(m_viewSwitcher);
     topBar->addWidget(next);
+    topBar->addStretch(1);
+
 
     // The Day/Week/Month segmented control used to live here. Removed by
     // the owner's call once the view switcher covered its job — the
@@ -130,6 +139,7 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
 
     auto* agendaPanel = new QFrame(dayView);
     agendaPanel->setObjectName("panel");
+    m_agendaPanel = agendaPanel;
     auto* agendaLayout = new QVBoxLayout(agendaPanel);
     agendaLayout->setContentsMargins(16, 14, 16, 14);
     agendaLayout->setSpacing(6);
@@ -174,6 +184,7 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     // it has nothing to do with. Controls near their effect need no label
     // explaining what they affect; distance is what creates that need.
     auto* agendaHead = new QHBoxLayout;
+    m_agendaHead = agendaHead;
     agendaHead->addWidget(agendaTitle);
     agendaHead->addStretch(1);
     agendaHead->addWidget(taskNotes);
@@ -210,6 +221,26 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     m_placingBanner->hide();
     agendaLayout->addWidget(m_placingBanner);
     agendaLayout->addWidget(m_duePanel);
+    // ---- the strip that SHRINKS the day --------------------------------------
+    // Deliberately a layout child in the banner slot beside m_placingBanner
+    // and m_duePanel, not an overlay: it pushes the timeline down rather than
+    // covering it, so nothing it hides is something you were reading.
+    //
+    // It exists because the needs-a-block gate's whole job is to MAKE you look
+    // at flagged tasks, and on a phone the glance lives behind a tap — a nudge
+    // nobody opens is not a nudge.
+    if (m_phoneShell) {
+        m_attentionStrip = new QPushButton(agendaPanel);
+        m_attentionStrip->setObjectName(QStringLiteral("attentionStrip"));
+        m_attentionStrip->setCursor(Qt::PointingHandCursor);
+        m_attentionStrip->hide(); // shown only when there is something to say
+        connect(m_attentionStrip, &QPushButton::clicked, this, [this]() {
+            if (m_glanceDrawer)
+                m_glanceDrawer->open();
+        });
+        agendaLayout->addWidget(m_attentionStrip);
+    }
+
     agendaLayout->addWidget(agendaScroll, 1);
 
     m_glance = new GlancePanel(m_data, m_tracker, dayView);
@@ -219,7 +250,37 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     // this page was handed, which changes while the app runs.
 
     dayLayout->addWidget(agendaPanel, 1);
-    dayLayout->addWidget(m_glance);
+
+    // ---- where the glance LIVES, decided once --------------------------------
+    // Hosted on `this`, not on dayView: dayView is a page of the inner stack
+    // and is hidden in Week and Month view, and a SlidePanel sizes itself to
+    // its host's rect — a drawer hosted on a hidden widget cannot open. The
+    // Glance button is in the top bar, which is visible in all three views, so
+    // its drawer must be too.
+    if (m_phoneShell) {
+        m_glanceDrawer = new SlidePanel(this);
+        m_glanceDrawer->setTitle(tr("At a glance"));
+        // A fixed 320 would not fit a sheet that is qMin(340, host-24) wide.
+        m_glance->setFixedWidth(QWIDGETSIZE_MAX);
+        m_glance->setMinimumWidth(0);
+        m_glance->setMaximumWidth(QWIDGETSIZE_MAX);
+        // insertWidget, and clearContent() must never be called on this
+        // panel — it deletes what it holds. See the header.
+        m_glanceDrawer->contentLayout()->insertWidget(0, m_glance);
+        // The cards inside the glance open drawers of their own, and their
+        // host used to be the glance panel. Inside this drawer that host is a
+        // widget in another SlidePanel's scroll area, so a sheet sized to it
+        // would be sized to the wrong thing.
+        m_glance->setCardDrawerHost(this);
+        // The sheet's own title already says "At a glance".
+        m_glance->setHeadingVisible(false);
+        // The FAB lives in a different parent (MainWindow's body), so raise()
+        // cannot order it behind this sheet. It has to be told to leave.
+        connect(m_glanceDrawer, &SlidePanel::openStateChanged,
+                this, &PlannerPage::overlayOpenChanged);
+    } else {
+        dayLayout->addWidget(m_glance);
+    }
 
     // ---- needs-a-block: connect the glance card to the deciding slots -----
     // (Named slots, not lambdas, since v21.5: the week tab's card connects
@@ -321,6 +382,16 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
 
     connect(m_data, &AppData::changed, this, &PlannerPage::refresh);
 
+    // The strip is DERIVED from the glance, and at construction the glance has
+    // not computed anything yet — so the first answer has to be asked for
+    // after the event loop turns, or the calendar opens with the nudge
+    // missing until something else happens to change.
+    QTimer::singleShot(0, this, [this]() {
+        if (m_glance)
+            m_glance->refresh();
+        refreshAttentionStrip();
+    });
+
     // The 1-second tick repaints the live numbers. The agenda gets a plain
     // update() (repaint me); the glance re-derives its stats. Cheap enough
     // at once a second — measure before optimizing (and it only ticks
@@ -356,7 +427,12 @@ void PlannerPage::applyLayoutMode(responsive::Mode mode)
     //
     // Nothing is lost when it goes: every number on it is DERIVED, never
     // stored, and the Week and Month reviews recompute the same truths.
-    m_glance->setVisible(mode == responsive::Mode::Expanded);
+    // ONLY when the glance is a COLUMN. On a phone it lives in a drawer, and
+    // the drawer decides when it is seen — driving its visibility from the
+    // size class here hid it inside its own sheet, which rendered as an empty
+    // grey panel with no error anywhere.
+    if (!m_phoneShell)
+        m_glance->setVisible(mode == responsive::Mode::Expanded);
 
     // ---- give the agenda its room back --------------------------------------
     // The day grid is the reason this page exists, and on a phone it was
@@ -391,8 +467,61 @@ void PlannerPage::applyLayoutMode(responsive::Mode mode)
     }
 
     if (m_agendaLayout)
-        m_agendaLayout->setContentsMargins(compact ? 8 : 16, compact ? 10 : 14,
-                                           compact ? 8 : 16, compact ? 10 : 14);
+        m_agendaLayout->setContentsMargins(compact ? 0 : 16, compact ? 10 : 14,
+                                           compact ? 0 : 16, compact ? 10 : 14);
+
+    // ---- edge to edge ---------------------------------------------------
+    // The day grid is what this page is FOR, so on a phone it gets the whole
+    // width: no page margin, no card, no rounded corner between the timeline
+    // and the screen edge.
+    //
+    // A dynamic property, not an objectName swap. objectName is how findChild
+    // and the test suite locate widgets, so renaming one at runtime makes
+    // lookups succeed or fail depending on the window's width. QSS property
+    // selectors are already this project's hook for exactly this
+    // (ResponsiveWatcher's kModeProperty is one).
+    if (m_agendaPanel && m_agendaPanel->property("flat").toBool() != compact) {
+        m_agendaPanel->setProperty("flat", compact);
+        // QSS property selectors DO NOT re-evaluate on their own. Without
+        // this pair the style silently does nothing and there is no warning
+        // anywhere — the failure mode ResponsiveWatcher.h already warns about.
+        m_agendaPanel->style()->unpolish(m_agendaPanel);
+        m_agendaPanel->style()->polish(m_agendaPanel);
+    }
+    if (m_outerLayout)
+        m_outerLayout->setContentsMargins(compact ? 0 : 26, compact ? 8 : 16,
+                                          compact ? 0 : 26, compact ? 0 : 20);
+    // Only the TIMELINE goes edge to edge. The ‹ › chevrons keep their
+    // breathing room, or they sit on the bezel.
+    if (m_topBarLayout)
+        m_topBarLayout->setContentsMargins(compact ? 10 : 0, 0,
+                                           compact ? 10 : 0, 0);
+
+    // "Edge to edge" means the TIMELINE, not the prose. With the panel's own
+    // margins at 0 the heading and the caption ended up flush against the
+    // bezel, which reads as a rendering fault rather than a design. They get
+    // their inset back individually; only the grid runs the full width.
+    const int textInset = compact ? 12 : 0;
+    if (m_agendaHead)
+        m_agendaHead->setContentsMargins(textInset, 0, textInset, 0);
+    if (m_agendaSub)
+        m_agendaSub->setContentsMargins(textInset, 0, textInset, 0);
+}
+
+void PlannerPage::openGlanceDrawer()
+{
+    if (m_glanceDrawer)
+        m_glanceDrawer->open();
+}
+
+void PlannerPage::refreshAttentionStrip()
+{
+    if (!m_attentionStrip)
+        return;
+    const bool wants = m_glance && m_glance->needsAttention();
+    m_attentionStrip->setVisible(wants);
+    if (wants)
+        m_attentionStrip->setText(tr("Some tasks need a block  ·  tap to review"));
 }
 
 void PlannerPage::applyDisplayPrefs()
@@ -445,6 +574,7 @@ void PlannerPage::applyDate()
     m_month->setDate(m_date);
     updateViewSwitcher();
     rebuildDueStrip(); // the viewed day moved — its due tasks changed
+    refreshAttentionStrip(); // a different day flags different work
 }
 
 void PlannerPage::setMode(int mode)
@@ -574,6 +704,7 @@ void PlannerPage::refresh()
         m_weekCard->refresh(QDateTime::currentDateTime());
     refreshPlacing(); // banner + day strip + highlights, all derived
     rebuildDueStrip(); // a task's date/title/done may have changed
+    refreshAttentionStrip(); // derived from the glance, after IT refreshed
     // Week/month pages listen to AppData::changed themselves.
 }
 

@@ -197,6 +197,7 @@ void AgendaWidget::setDate(QDate date)
     if (m_date == date)
         return;
     m_date = date;
+    disarm(); // slot 12 is a different half-hour tomorrow
     syncHeight(); // the shown window is per-date (its events stretch it)
     update();     // schedule a repaint — NEVER paint directly from here
 }
@@ -403,17 +404,35 @@ void AgendaWidget::paintEvent(QPaintEvent*)
         }
     }
 
-    // 2) Hover hint on a free slot — the invitation to plan.
-    if (m_hoverSlot >= 0) {
-        const QRect r(m_gutter, slotTop(m_hoverSlot) + 2,
-                      width() - m_gutter - 4, kSlotHeight - 4);
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(47, 126, 110, 18));
-        p.drawRoundedRect(r, kRadius, kRadius);
-        p.setPen(theme::focus());
-        p.setFont(small);
-        p.drawText(r.adjusted(12, 0, 0, 0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QStringLiteral("+ plan"));
+    // 2) The invitation to plan, from EITHER source. One resolved slot and one
+    //    paint path, so a mouse hover and a phone's armed slot can never drift
+    //    apart visually. Armed is drawn stronger and says what to do next,
+    //    because on a touchscreen there is no hover to explain itself.
+    const int hintSlot = m_hoverSlot >= 0 ? m_hoverSlot : m_armedSlot;
+    if (hintSlot >= 0) {
+        // Guard on the slot still being FREE: a block can arrive underneath an
+        // armed slot from a sync or the assistant, and an invitation left over
+        // occupied time invites a refusal.
+        const int hintStart =
+            plan::kDayStartMinutes + hintSlot * plan::kSlotMinutes;
+        if (m_data->isFree(m_date, hintStart, hintStart + plan::kSlotMinutes)) {
+            // ARMED is about the state, not about the absence of hover:
+            // Android synthesises a mouse move at the touch point, so
+            // m_hoverSlot is set on a phone too and "no hover" would never be
+            // true where the hint matters most.
+            const bool armed = (m_armedSlot == hintSlot);
+            const QRect r(m_gutter, slotTop(hintSlot) + 2,
+                          width() - m_gutter - 4, kSlotHeight - 4);
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor(47, 126, 110, armed ? 34 : 18));
+            p.drawRoundedRect(r, kRadius, kRadius);
+            p.setPen(theme::focus());
+            p.setFont(small);
+            p.drawText(r.adjusted(12, 0, 0, 0),
+                       Qt::AlignLeft | Qt::AlignVCenter,
+                       armed ? tr("+ plan  ·  tap again")
+                             : QStringLiteral("+ plan"));
+        }
     }
 
     // 3) The planned Events, each in its category's colour, with the little
@@ -719,9 +738,14 @@ void AgendaWidget::mousePressEvent(QMouseEvent* event)
     // Touch and mouse part company here. See the block comment in the header:
     // on a touchscreen a press is not yet a decision, because the identical
     // gesture starts a scroll.
-    const bool touch = event->source() != Qt::MouseEventNotSynthesized;
+    const bool touch =
+        m_forceTouch || event->source() != Qt::MouseEventNotSynthesized;
     if (touch) {
+        // Captured BEFORE anything clears it: "was this press on the slot the
+        // last tap armed?" is the whole question the second tap asks.
+        const int wasArmed = m_armedSlot;
         cancelPendingTouch();
+        disarm();
         m_touchPressPos = event->pos();
 
         // Edge-resize is skipped entirely on touch, which is not a new
@@ -743,6 +767,7 @@ void AgendaWidget::mousePressEvent(QMouseEvent* event)
         if (!m_data->isFree(m_date, startMin, startMin + plan::kSlotMinutes))
             return;
         m_pendingSlot = touchedSlot;
+        m_pressWasArmed = (wasArmed == touchedSlot);
         if (!m_longPress) {
             m_longPress = new QTimer(this);
             m_longPress->setSingleShot(true);
@@ -753,6 +778,7 @@ void AgendaWidget::mousePressEvent(QMouseEvent* event)
             connect(m_longPress, &QTimer::timeout, this, [this]() {
                 const int slot = m_pendingSlot;
                 cancelPendingTouch();
+                disarm(); // a hold must not leave an armed slot behind
                 if (slot >= 0)
                     emit emptySlotClicked(slot);
             });
@@ -801,6 +827,7 @@ void AgendaWidget::mouseMoveEvent(QMouseEvent* event)
         && (event->pos() - m_touchPressPos).manhattanLength()
                >= QApplication::startDragDistance()) {
         cancelPendingTouch();
+        disarm(); // a scroll means the finger was never aiming at that slot
     }
 
     // ---- 1) A resize drag in progress: update the clamped preview span -----
@@ -878,7 +905,16 @@ void AgendaWidget::cancelPendingTouch()
     if (m_longPress)
         m_longPress->stop();
     m_pendingSlot = -1;
+    m_pressWasArmed = false;
     m_pendingEventId.clear();
+}
+
+void AgendaWidget::disarm()
+{
+    if (m_armedSlot < 0)
+        return;
+    m_armedSlot = -1;
+    update();
 }
 
 bool AgendaWidget::event(QEvent* e)
@@ -887,8 +923,10 @@ bool AgendaWidget::event(QEvent* e)
     // the mouse grab away. That is the only reliable signal that a press has
     // become a scroll — without cancelling here, the long-press timer would
     // still fire in the middle of a flick and plan a block nobody asked for.
-    if (e->type() == QEvent::UngrabMouse)
+    if (e->type() == QEvent::UngrabMouse) {
         cancelPendingTouch();
+        disarm();
+    }
 
     return QWidget::event(e);
 }
@@ -904,10 +942,23 @@ void AgendaWidget::mouseReleaseEvent(QMouseEvent* event)
         emit eventClicked(id);
         return;
     }
-    // A short press on an empty slot is NOT a plan: the long press is the
-    // gesture, and letting go early is how you say "no, I was scrolling".
+    // An empty slot takes TWO taps, and the decision is made on release so
+    // that a flick which merely started here scrolls instead of planning.
+    //   first tap  -> arm it, and say so ("+ plan · tap again")
+    //   second tap -> open the planner
+    // A long press still short-circuits both (see the timer above); two
+    // gestures, one door.
     if (m_pendingSlot >= 0) {
+        const int slot = m_pendingSlot;
+        const bool secondTap = m_pressWasArmed;
         cancelPendingTouch();
+        if (secondTap) {
+            disarm();
+            emit emptySlotClicked(slot);
+        } else {
+            m_armedSlot = slot;
+            update();
+        }
         return;
     }
 

@@ -317,6 +317,23 @@ Deliberate simplifications (candidates for your first solo features):
   `QEvent::LayoutRequest` arrives mid-invalidation, so minimums are still the
   old ones. This project has now paid for the same mistake three times — the
   mode dispatch, the window refit, and the dialog fit are all queued.
+- **moc writes the BODY of every signal it sees**, so a plain member function
+  that lands in a `signals:` block by accident gets defined twice and fails to
+  LINK, pointing at `mocs_compilation.cpp` — a file you never wrote. Its twin:
+  a header holding two `Q_OBJECT` classes, where "the signals block" is
+  ambiguous (`GlancePanel.h`, `ActivitiesPage.h`).
+- **`obj->disconnect()` severs EVERY connection an object has**, Qt's internal
+  ones included — not just yours. Keep the `QMetaObject::Connection` and
+  disconnect that. The damage surfaces later, as a crash somewhere else
+  (`MainWindow::m_headerActionConn`).
+- **During `~QWidget` the children die one at a time**, and a `QStackedWidget`
+  emits `currentChanged` while it happens — so a handler that is correct for
+  the whole life of the window will run once against half-deleted siblings
+  (`MainWindow::m_tearingDown`).
+- **`SlidePanel` ends its content with `addStretch(1)`**, so a second stretch-1
+  item splits the sheet fifty-fifty; zero the trailing stretch when your widget
+  IS the content. And never `clearContent()` a panel you filled once — it
+  deletes what it holds.
 - **A `QDialog` is its own top-level window**, so container-driven layout does
   not reach it — `MainWindow`'s watcher governs `MainWindow`. Dialogs are a
   separate surface with a separate budget and a separate test

@@ -43,6 +43,13 @@ class PlannerPage : public QWidget
     Q_OBJECT
 
 public:
+    // The phone's header owns the button that opens this; the page owns the
+    // sheet. Keeps the drawer's construction here and its AFFORDANCE where
+    // the user's thumb expects it — the top right of the screen, not the top
+    // right of a panel.
+    void openGlanceDrawer();
+    bool hasGlanceDrawer() const { return m_glanceDrawer != nullptr; }
+
     PlannerPage(AppData* data, TrackerService* tracker,
                 QWidget* parent = nullptr);
 
@@ -54,6 +61,13 @@ public:
     // choke point: only pages read QSettings; widgets are told (§ the
     // task-notes toggle, same file, same rule).
     void applyDisplayPrefs();
+
+signals:
+    // "Something sheet-like is covering me." MainWindow hides the capture FAB
+    // while this is true: a floating + over a modal drawer is a button that
+    // looks tappable and is not what the user meant. They live in different
+    // parents, so z-order cannot separate them.
+    void overlayOpenChanged(bool open);
 
 private slots:
     void shiftPeriod(int direction);   // -1 = previous, +1 = next
@@ -145,6 +159,26 @@ private:
     class QScrollArea* m_agendaScroll = nullptr;
     class QVBoxLayout* m_agendaLayout = nullptr;
     class QLabel*      m_agendaSub    = nullptr; // names the tap-or-hold gesture
+    class QVBoxLayout* m_outerLayout  = nullptr; // page margins go to 0 flat
+    class QHBoxLayout* m_topBarLayout = nullptr; // keeps the ‹ › off the bezel
+    class QFrame*      m_agendaPanel  = nullptr; // loses its card when flat
+    class QHBoxLayout* m_agendaHead   = nullptr; // text keeps its inset when
+                                                 // the TIMELINE goes flush
+
+    // ---- the phone's glance ------------------------------------------------
+    // On a phone the panel lives in a drawer instead of a 320px column, and
+    // that home is chosen ONCE at construction. Nothing moves at a mode
+    // change, so the "does it come back on a tablet?" problem never arises —
+    // the desktop shell simply never put it in a drawer.
+    //
+    // NEVER call clearContent() on this panel: SlidePanel::clearContent()
+    // DELETES what it holds, and the established caller idiom is
+    // clear-then-refill. This one is fill-once.
+    bool m_phoneShell = false;
+    class SlidePanel*  m_glanceDrawer = nullptr;
+    class QPushButton* m_attentionStrip = nullptr; // shrinks the day, never
+                                                   // covers it
+    void refreshAttentionStrip();
     WeekReviewPage* m_week        = nullptr;
     MonthReviewPage* m_month      = nullptr;
 };

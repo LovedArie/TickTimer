@@ -69,6 +69,8 @@
 #include "UpdateBanner.h"
 #include "UpdateClient.h"
 #include "Version.h"
+#include "MobileNavBar.h"
+#include <QMenu>
 #include "ResponsiveWatcher.h"
 #include "SyncDialog.h"
 #include "SyncService.h"
@@ -102,6 +104,11 @@ MainWindow::MainWindow(const QString& username)
     , m_tracker(&m_data)
 {
     setWindowTitle(tr("TickTimer"));
+
+    // THE SHELL DECISION, made once and never revisited. Everything that is
+    // "a phone is a different product" hangs off this line; everything that is
+    // "this container got narrower" still goes through applyLayoutMode().
+    m_phoneShell = isCompactScreen();
     // The FALLBACK size. restoreWindowState() runs at the end of this
     // constructor and may replace it; setting it here first means every path
     // out of that function — no memory, rejected blob, unreachable screen —
@@ -183,6 +190,10 @@ MainWindow::MainWindow(const QString& username)
     // as an empty button (caught in testing): Unicode-as-icon is a font
     // lottery, so either ship a real QIcon or pick a glyph every font has.
     auto* navToggle = new QPushButton(QStringLiteral("\u2261"), header);
+    // Named, because "≡" is no longer unique: the phone's life-area
+    // switcher uses the same glyph, and a test that finds chrome by its
+    // TEXT found both of them.
+    navToggle->setObjectName(QStringLiteral("railToggle"));
     navToggle->setFixedSize(34, 34);
     navToggle->setCursor(Qt::PointingHandCursor);
     navToggle->setToolTip(tr("Show or hide the sidebar (Ctrl+B)"));
@@ -191,6 +202,42 @@ MainWindow::MainWindow(const QString& username)
     // advertises it (a shortcut nobody can discover doesn't exist).
     navToggle->setShortcut(QKeySequence(QStringLiteral("Ctrl+B")));
     headerLayout->addWidget(navToggle);
+    navToggle->setVisible(!m_phoneShell);
+
+    // The phone's top-left. Both buttons are built and exactly one is shown,
+    // so Ctrl+B keeps working on a desktop and the ≡ lookup in the test suite
+    // keeps finding its button.
+    //
+    // A LETTER, not a glyph: every font has A-Z, and this project has already
+    // shipped one icon (✦) that renders as an empty box on Android. The
+    // initial also answers "whose planner is this?", which is otherwise
+    // unanswerable on a phone once the welcome label is hidden.
+    m_profileBtn = new QPushButton(header);
+    m_profileBtn->setObjectName(QStringLiteral("profileBtn"));
+    m_profileBtn->setFixedSize(34, 34);
+    m_profileBtn->setCursor(Qt::PointingHandCursor);
+    m_profileBtn->setToolTip(tr("Account, settings and sync"));
+    m_profileBtn->setText(m_username.isEmpty()
+                              ? QStringLiteral("?")
+                              : m_username.left(1).toUpper());
+    // 17 is exactly half of 34 — QSS silently drops a larger radius.
+    m_profileBtn->setStyleSheet(
+        "#profileBtn { background:#2F7E6E; color:#FFFFFF; border:none; "
+        "border-radius:17px; font-weight:700; }"
+        // setMenu() gives a QPushButton a drop-down arrow, which turns a
+        // round avatar into a lopsided badge. The button IS the affordance.
+        "#profileBtn::menu-indicator { image: none; width: 0; }");
+    m_profileBtn->setVisible(m_phoneShell);
+    {
+        auto* menu = new QMenu(m_profileBtn);
+        // Rebuilt on every popup so it reads m_sync / m_shareClient AS THEY
+        // ARE NOW. That is why this is a menu and not a panel: enableSync()
+        // needs no third place to remember to append to.
+        connect(menu, &QMenu::aboutToShow, this,
+                [this, menu]() { buildProfileMenu(menu); });
+        m_profileBtn->setMenu(menu);
+    }
+    headerLayout->addWidget(m_profileBtn);
     headerLayout->addSpacing(14);
 
     auto* brand = new QLabel(tr("TickTimer"), header);
@@ -237,7 +284,21 @@ MainWindow::MainWindow(const QString& username)
         "color:#2F7E6E; font-weight:600;");
     connect(captureBtn, &QPushButton::clicked, this,
             [this]() { m_capture->popup(); });
+    // The phone's per-page action, far right of the header. Built before the
+    // capture button so it sits at the end of the row on the desktop too
+    // (where it is never shown).
+    m_headerAction = new QPushButton(header);
+    m_headerAction->setObjectName(QStringLiteral("headerAction"));
+    m_headerAction->setCursor(Qt::PointingHandCursor);
+    m_headerAction->hide();
+    headerLayout->addWidget(m_headerAction);
+    headerLayout->addSpacing(10);
+
     headerLayout->addWidget(captureBtn);
+    // On a phone this is the floating + at the bottom right instead: two
+    // capture entry points competing for a 360px header is exactly the
+    // clutter the phone shell exists to remove. Ctrl+N still works.
+    captureBtn->setVisible(!m_phoneShell);
     headerLayout->addSpacing(10);
     // ApplicationShortcut: fires with focus on ANY page — that is the point.
     auto* captureShortcut =
@@ -284,7 +345,8 @@ MainWindow::MainWindow(const QString& username)
     m_planner = new PlannerPage(&m_data, &m_tracker, m_pages);
     m_pages->addWidget(m_planner);
     m_pages->addWidget(new UpcomingPage(&m_data, m_pages));
-    m_pages->addWidget(new ActivitiesPage(&m_data, m_pages));
+    m_activities = new ActivitiesPage(&m_data, m_pages);
+    m_pages->addWidget(m_activities);
     m_pages->addWidget(new SpecialDaysPage(&m_data, m_pages));
     // The Pomodoro machine is app-lifetime state, exactly like m_tracker
     // (the page is just its biggest face). Built here so the link adapter
@@ -387,6 +449,12 @@ MainWindow::MainWindow(const QString& username)
     // they arrange themselves. Attached AFTER the pages so that the first
     // dispatch reaches all of them, and to the STACK rather than to the
     // window because hiding the rail resizes the stack alone.
+    // Wired BEFORE anything can change the page — a late connect leaves the
+    // very first highlight stale, which looks like "the rail forgot where I
+    // am" and is invisible in code review.
+    connect(m_pages, &QStackedWidget::currentChanged,
+            this, &MainWindow::reflectCurrentPage);
+
     m_responsive = new ResponsiveWatcher(m_pages);
     central->installEventFilter(this); // see refitToScreen()
 
@@ -473,20 +541,55 @@ MainWindow::MainWindow(const QString& username)
     settingsBtn->setText(tr("⚙  Settings"));
     settingsBtn->setCursor(Qt::PointingHandCursor);
     settingsBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    connect(settingsBtn, &QToolButton::clicked, this, [this]() {
-        SettingsDialog dialog(this, MemoryStore::pathForUser(m_username));
-        if (dialog.exec() != QDialog::Accepted)
-            return;
-        // The dialog wrote QSettings; now the pages re-read and re-tell
-        // their widgets. Pull, not push: the dialog stays ignorant of who
-        // listens, and adding a future pref-consumer touches only this
-        // line's callee, never the dialog.
-        m_planner->applyDisplayPrefs();
-    });
+    connect(settingsBtn, &QToolButton::clicked, this,
+            &MainWindow::openSettings);
     navLayout->addWidget(settingsBtn);
 
     bodyLayout->addWidget(nav);
     bodyLayout->addWidget(m_pages, 1);
+
+    // ---- the capture button, on a phone -----------------------------------
+    // Parented to `body` and NOT in bodyLayout: it floats over the page
+    // instead of reserving space, the same construction TaskDetailPanel uses
+    // below. Parenting it to `body` specifically is what makes "keep clear of
+    // the bottom bar" free — body's rect ENDS where the bar begins, because
+    // the bar is body's sibling in rootLayout. A hard-coded offset would drift
+    // the day the bar's height changes.
+    //
+    // Created BEFORE TaskDetailPanel on purpose: child order decides z-order
+    // among unlayouted siblings, and the detail drawer calls raise() when it
+    // opens. Reversed, the + would float over a drawer that is meant to be
+    // covering everything — a bug that is invisible in review and obvious in
+    // the hand.
+    if (m_phoneShell) {
+        m_captureFab = new QPushButton(QStringLiteral("+"), body);
+        m_captureFab->setObjectName(QStringLiteral("captureFab"));
+        m_captureFab->setFixedSize(56, 56); // 168 physical at dpr 3, against
+                                            // a 144 minimum thumb target
+        m_captureFab->setCursor(Qt::PointingHandCursor);
+        m_captureFab->setToolTip(tr("Capture a task (Ctrl+N)"));
+        // 28 is EXACTLY half of 56. QSS silently drops a border-radius larger
+        // than half the height, so 29 would quietly give a square.
+        m_captureFab->setStyleSheet(
+            "#captureFab { background:#2F7E6E; color:#FFFFFF; border:none; "
+            "border-radius:28px; font-size:28px; font-weight:600; }"
+            "#captureFab:pressed { background:#276B5D; }");
+        connect(m_captureFab, &QPushButton::clicked, this,
+                [this]() { m_capture->popup(); });
+        body->installEventFilter(this); // reposition on resize
+
+        // A + floating over a modal sheet is a button that looks tappable and
+        // is not what the user meant. The FAB and the sheet live in different
+        // parents, so z-order cannot separate them — the FAB simply leaves.
+        const auto hideFabWhileCovered = [this](bool open) {
+            m_fabCovered = open;
+            updateCaptureFabVisibility();
+        };
+        connect(m_planner, &PlannerPage::overlayOpenChanged, this,
+                hideFabWhileCovered);
+        connect(m_activities, &ActivitiesPage::overlayOpenChanged, this,
+                hideFabWhileCovered);
+    }
     // v28.6.1 — the task-detail OVERLAY. Deliberately NOT in bodyLayout:
     // the v28.6.0 docked version squeezed the pages and read as part of
     // the Activities panel (owner feedback, first session). As an overlay
@@ -501,7 +604,8 @@ MainWindow::MainWindow(const QString& username)
     // Layouts reflow; they don't reserve. (Remembering this state across
     // restarts is a QSettings exercise for later.)
     connect(navToggle, &QPushButton::clicked, this, [this]() {
-        const bool showing = !m_nav->isVisible();
+        m_railWanted = !m_nav->isVisible();
+        const bool showing = m_railWanted;
         m_nav->setVisible(showing);
         // Written HERE, not at close. The asymmetry with the geometry (saved
         // once, in closeEvent) is deliberate and worth naming: write
@@ -516,6 +620,34 @@ MainWindow::MainWindow(const QString& username)
 
     rootLayout->addWidget(header);
     rootLayout->addWidget(body, 1);
+
+    // ---- the phone's navigation -------------------------------------------
+    // A LAYOUT child, below the body, so it reserves its height and no page
+    // ever paints underneath it. (The capture FAB is the opposite: it floats,
+    // so it is positioned by geometry instead. That is the whole distinction.)
+    //
+    // The tab order is the PHONE's order — Calendar, Upcoming, Assistant,
+    // Activities, Pomodoro — which is stack indices 0, 1, 6, 2, 4. Each tab
+    // carries the page it opens, so the two orders never have to agree.
+    // Special days and Archive have no tab, by decision.
+    if (m_phoneShell) {
+        m_mobileNav = new MobileNavBar(central);
+        m_mobileNav->addTab(0, NavIcon::Calendar,   tr("Calendar"));
+        m_mobileNav->addTab(1, NavIcon::Upcoming,   tr("Upcoming"));
+        m_mobileNav->addTab(6, NavIcon::Assistant,  tr("Assistant"));
+        m_mobileNav->addTab(2, NavIcon::Activities, tr("Life areas"));
+        m_mobileNav->addTab(4, NavIcon::Pomodoro,   tr("Pomodoro"));
+        connect(m_mobileNav, &MobileNavBar::pageRequested,
+                this, &MainWindow::showPage);
+        rootLayout->addWidget(m_mobileNav);
+    }
+
+    // The initial page never emits currentChanged — it was already current
+    // when the connection was made — so the very first state has to be pushed
+    // by hand. Without this the app opens on the Calendar with no Glance
+    // button until you visit another page and come back, which is the kind of
+    // "only wrong once, at the start" bug that survives a lot of testing.
+    reflectCurrentPage(m_pages->currentIndex());
     setCentralWidget(central);
 
     QString startupNote = tr("Data file: %1").arg(m_store.filePath());
@@ -697,6 +829,28 @@ void MainWindow::applyChromeMode(responsive::Mode mode)
 // screen is the window manager's business and the user's choice; taking it
 // upon ourselves to shrink it broke the documented 1150px default the moment
 // the test suite's virtual screen was narrower than that.
+void MainWindow::updateCaptureFabVisibility()
+{
+    if (m_captureFab)
+        m_captureFab->setVisible(m_fabPageAllows && !m_fabCovered);
+}
+
+void MainWindow::placeCaptureFab()
+{
+    if (!m_captureFab)
+        return;
+    QWidget* host = m_captureFab->parentWidget();
+    if (!host)
+        return;
+    // 24, not 16: the bar's rightmost tab sits directly below this circle, and
+    // the extra clearance is what stops the two becoming one fat-finger
+    // target. See the risks section of the mobile-shell addendum.
+    const int margin = 24;
+    m_captureFab->move(host->width() - m_captureFab->width() - margin,
+                       host->height() - m_captureFab->height() - margin);
+    m_captureFab->raise();
+}
+
 void MainWindow::refitToScreen()
 {
     if (!isCompactScreen() || m_refitQueued)
@@ -735,6 +889,11 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     if (event->type() == QEvent::LayoutRequest)
         refitToScreen();
 
+    // The FAB is unlayouted, so nothing moves it for us.
+    if (event->type() == QEvent::Resize && m_captureFab
+        && watched == m_captureFab->parentWidget())
+        placeCaptureFab();
+
     return QMainWindow::eventFilter(watched, event);
 }
 
@@ -747,7 +906,11 @@ void MainWindow::restoreWindowState()
     // per-machine, a compact device gets the compact default on its first run
     // and its OWN choice ever after — a laptop's preference can never leak
     // onto a phone.
-    m_nav->setVisible(prefs::sidebarVisible(!isCompactScreen()));
+    // The user's INTENT, remembered; whether it is on screen is a separate
+    // question the shell answers. Conflating the two persists `false` from a
+    // phone session and folds the rail on the next desktop launch.
+    m_railWanted = prefs::sidebarVisible(!isCompactScreen());
+    m_nav->setVisible(m_railWanted && !m_phoneShell);
 
     // ---- the window -------------------------------------------------------
     // Compact screens take whatever the window manager hands them (on Android
@@ -786,7 +949,10 @@ void MainWindow::saveWindowState()
     // The rail is already written on every toggle (see the ☰ handler); this
     // is the belt-and-braces pass, and it also covers any future code path
     // that hides the rail without going through the button.
-    prefs::setSidebarVisible(m_nav->isVisible());
+    // The INTENT, not the visibility — see restoreWindowState(). On a phone
+    // m_nav is never visible, and writing that would record a preference the
+    // user never expressed.
+    prefs::setSidebarVisible(m_railWanted);
 
     // Mirror of the restore-side skip. saveGeometry() on a compact device
     // would store a phone-shaped rectangle that a later desktop session on
@@ -1053,13 +1219,174 @@ void MainWindow::closeEvent(QCloseEvent* event)
     event->accept();
 }
 
+MainWindow::~MainWindow()
+{
+    m_tearingDown = true;
+    // Stop listening BEFORE the children start disappearing. A destructor
+    // body runs before ~QWidget destroys the child tree, so this is the last
+    // moment at which every pointer reflectCurrentPage() touches is still
+    // valid — and the first moment at which we know they are about to not be.
+    if (m_pages)
+        disconnect(m_pages, nullptr, this, nullptr);
+}
+
 void MainWindow::showPage(int index)
 {
     if (index < 0 || index >= m_pages->count())
         return;
     m_pages->setCurrentIndex(index);
-    if (index < m_navButtons.size())
-        m_navButtons[index]->setChecked(true); // autoExclusive unchecks the rest
+    // No setChecked here any more: reflectCurrentPage() is wired to the
+    // stack's own currentChanged, so the highlight follows the page whether
+    // it was changed from here, from a rail button, or from a toast's action.
+}
+
+void MainWindow::reflectCurrentPage(int index)
+{
+    if (m_tearingDown)
+        return; // the widgets below are being deleted out from under us
+    if (index >= 0 && index < m_navButtons.size())
+        m_navButtons[index]->setChecked(true); // autoExclusive clears the rest
+    if (m_mobileNav)
+        m_mobileNav->setCurrentPage(index); // clears every tab if none owns it
+
+    // The + belongs where the page has no bottom-right action of its own.
+    // It does not on the Assistant (whose Send button sits exactly there) or
+    // on Activities (whose Add does) — verified on the phone, where the
+    // circle landed squarely on top of both. Capture is still one tap away
+    // from the two pages people capture FROM, and Ctrl+N still works
+    // everywhere.
+    m_fabPageAllows = (index == 0 || index == 1); // Calendar, Upcoming
+    updateCaptureFabVisibility();
+
+    // ---- the header's per-page action -------------------------------------
+    // Re-aimed rather than rebuilt: one button, disconnected and re-wired, so
+    // there is exactly one of these in the header no matter how many pages
+    // eventually want one.
+    if (!m_headerAction)
+        return;
+    QObject::disconnect(m_headerActionConn); // just ours, nothing of Qt's
+    if (index == 0 && m_planner && m_planner->hasGlanceDrawer()) {
+        m_headerAction->setText(tr("Glance"));
+        m_headerAction->setToolTip(tr("Today at a glance"));
+        m_headerActionConn = connect(m_headerAction, &QPushButton::clicked,
+                                     m_planner, &PlannerPage::openGlanceDrawer);
+        m_headerAction->show();
+    } else if (index == 1) {
+        // Special days has no tab — five is already saturated — and this is
+        // its door. The association is the owner's and it holds up: Upcoming
+        // is the page about what the calendar owes you, and a marked day is
+        // the same kind of fact seen from the other side.
+        m_headerAction->setText(tr("Special days"));
+        m_headerAction->setToolTip(tr("Vacations, exams, days that are not ordinary"));
+        m_headerActionConn = connect(m_headerAction, &QPushButton::clicked,
+                                     this, [this]() { showPage(3); });
+        m_headerAction->show();
+    } else if (index == 3) {
+        // The way back. Special days is reached from Upcoming's header and has
+        // no tab of its own, so without this the only exit is the bottom bar —
+        // which works, but makes the trip feel one-way. The pair reads as one
+        // door swinging both directions.
+        m_headerAction->setText(tr("Upcoming"));
+        m_headerAction->setToolTip(tr("Back to dated tasks"));
+        m_headerActionConn = connect(m_headerAction, &QPushButton::clicked,
+                                     this, [this]() { showPage(1); });
+        m_headerAction->show();
+    } else if (index == 2 && m_activities && m_activities->hasAreaDrawer()) {
+        // U+2261 — verified rendering on this phone, unlike the ✦ and ✕ that
+        // came back as empty boxes.
+        m_headerAction->setText(QStringLiteral("≡"));
+        m_headerAction->setToolTip(tr("Switch life area"));
+        m_headerActionConn = connect(m_headerAction, &QPushButton::clicked,
+                                     m_activities,
+                                     &ActivitiesPage::openAreaDrawer);
+        m_headerAction->show();
+    } else {
+        m_headerAction->hide();
+    }
+}
+
+// ---- the four actions, one body each ---------------------------------------
+
+void MainWindow::buildProfileMenu(QMenu* menu)
+{
+    // Rebuilt from scratch every time it opens. Nothing has to notify it when
+    // a session begins: it simply asks what exists at the moment of asking.
+    menu->clear();
+
+    QAction* who = menu->addAction(
+        m_username.isEmpty()
+            ? tr("Not signed in")
+            : (m_sync ? tr("Signed in as %1").arg(m_username)
+                      : tr("%1 — working offline").arg(m_username)));
+    who->setEnabled(false);
+    menu->addSeparator();
+
+    menu->addAction(tr("Settings"), this, &MainWindow::openSettings);
+
+    if (m_sync) {
+        // The ⚠ is derived here, the same way the rail's Sync button derives
+        // it — asked at the moment of display, never stored.
+        menu->addAction(m_sync->hasPendingConflict() ? tr("⚠  Sync")
+                                                     : tr("Sync"),
+                        this, &MainWindow::openSyncDialog);
+    }
+    if (m_shareClient)
+        menu->addAction(tr("Share"), this, &MainWindow::openSharingDialog);
+    if (m_signInBtn)
+        menu->addAction(tr("Sign in to sync"), this, &MainWindow::promptSignIn);
+}
+
+void MainWindow::openSettings()
+{
+    SettingsDialog dialog(this, MemoryStore::pathForUser(m_username));
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    // The dialog wrote QSettings; now the pages re-read and re-tell their
+    // widgets. Pull, not push: the dialog stays ignorant of who listens, and
+    // adding a future pref-consumer touches only this line's callee.
+    m_planner->applyDisplayPrefs();
+}
+
+void MainWindow::openSyncDialog()
+{
+    if (!m_sync)
+        return; // no session: the caller should not have offered it
+    SyncDialog dialog(m_sync, this);
+    dialog.exec();
+}
+
+void MainWindow::openSharingDialog()
+{
+    if (!m_shareClient)
+        return;
+    SharingDialog dialog(m_shareClient, &m_data, &m_tracker, m_username, this);
+    dialog.exec();
+}
+
+void MainWindow::promptSignIn()
+{
+    LoginDialog dialog(m_offlineServerUrl, this);
+    if (dialog.exec() != QDialog::Accepted || dialog.offline())
+        return; // cancelled, or chose to stay offline again
+
+    // THE GUARD THAT MATTERS. This window is already holding
+    // data-<m_username>.json in memory and saving to it. Enabling sync for a
+    // DIFFERENT account would push this planner up as theirs and pull theirs
+    // down over it — one tap, two planners destroyed. The window cannot
+    // change identity mid-life, so a different account is a refusal, not a
+    // switch.
+    if (dialog.loggedInUser().compare(m_username, Qt::CaseInsensitive) != 0) {
+        statusBar()->showMessage(
+            tr("That's a different account. Restart TickTimer to use it — "
+               "this window is holding %1's planner.").arg(m_username),
+            8000);
+        return;
+    }
+
+    session::setLastUser(dialog.loggedInUser());
+    if (!dialog.deviceToken().isEmpty())
+        session::setDeviceToken(dialog.loggedInUser(), dialog.deviceToken());
+    goOnline(dialog.serverUrl(), dialog.authToken());
 }
 
 void MainWindow::goOnline(const QString& serverUrl, const QString& token)
@@ -1106,30 +1433,8 @@ void MainWindow::addSignInButton()
     m_signInBtn->setText(tr("⇅  Sign in to sync"));
     m_signInBtn->setCursor(Qt::PointingHandCursor);
     m_signInBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    connect(m_signInBtn, &QToolButton::clicked, this, [this]() {
-        LoginDialog dialog(m_offlineServerUrl, this);
-        if (dialog.exec() != QDialog::Accepted || dialog.offline())
-            return; // cancelled, or chose to stay offline again
-
-        // THE GUARD THAT MATTERS. This window is already holding
-        // data-<m_username>.json in memory and saving to it. Enabling sync
-        // for a DIFFERENT account would push this planner up as theirs and
-        // pull theirs down over it — one tap, two planners destroyed. The
-        // window cannot change identity mid-life, so a different account is
-        // a refusal, not a switch.
-        if (dialog.loggedInUser().compare(m_username, Qt::CaseInsensitive) != 0) {
-            statusBar()->showMessage(
-                tr("That's a different account. Restart TickTimer to use it — "
-                   "this window is holding %1's planner.").arg(m_username),
-                8000);
-            return;
-        }
-
-        session::setLastUser(dialog.loggedInUser());
-        if (!dialog.deviceToken().isEmpty())
-            session::setDeviceToken(dialog.loggedInUser(), dialog.deviceToken());
-        goOnline(dialog.serverUrl(), dialog.authToken());
-    });
+    connect(m_signInBtn, &QToolButton::clicked, this,
+            &MainWindow::promptSignIn);
     m_navLayout->addWidget(m_signInBtn);
 }
 
@@ -1247,10 +1552,7 @@ void MainWindow::enableSync(const QString& serverUrl, const QString& token)
     b->setText(tr("⇅  Sync"));
     b->setCursor(Qt::PointingHandCursor);
     b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    connect(b, &QToolButton::clicked, this, [this]() {
-        SyncDialog dialog(m_sync, this);
-        dialog.exec();
-    });
+    connect(b, &QToolButton::clicked, this, &MainWindow::openSyncDialog);
     m_navLayout->addWidget(b);
 
     // v30.4.4 — work stranded by an offline session. Checked HERE rather than
@@ -1315,11 +1617,8 @@ void MainWindow::enableSync(const QString& serverUrl, const QString& token)
     shareBtn->setText(tr("👥  Share"));
     shareBtn->setCursor(Qt::PointingHandCursor);
     shareBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    connect(shareBtn, &QToolButton::clicked, this, [this]() {
-        SharingDialog dialog(m_shareClient, &m_data, &m_tracker,
-                             m_username, this);
-        dialog.exec();
-    });
+    connect(shareBtn, &QToolButton::clicked, this,
+            &MainWindow::openSharingDialog);
     m_navLayout->addWidget(shareBtn);
 
     // ---- update check (networked arc part 4) ------------------------------

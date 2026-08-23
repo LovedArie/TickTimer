@@ -232,6 +232,63 @@ inline QString appStyleSheet(bool compact = false)
         QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
             background: transparent;
         }
+        /* Edge-to-edge on a phone: the day grid runs to the screen edge, so
+           the card's frame and rounding come off. Set as a dynamic property
+           by PlannerPage::applyLayoutMode, which must unpolish/polish after
+           — a property selector never re-evaluates by itself. */
+        QFrame#panel[flat="true"] {
+            background: #FFFFFF;
+            /* The frame goes, but NOT the top edge. That 1px was doing
+               separation work between the date bar and the timeline, and
+               without it the whole screen reads as one undifferentiated
+               sheet of white. The border was load-bearing, not decoration. */
+            border: none;
+            border-top: 1px solid #E2E6E0;
+            border-radius: 0;
+        }
+
+        /* The needs-a-block strip: a full-width line that PUSHES the
+           timeline down rather than covering it. */
+        QPushButton#attentionStrip {
+            background: #FBF3E4; color: #8A6314; border: none;
+            border-top: 1px solid #EFE2C6; border-bottom: 1px solid #EFE2C6;
+            padding: 9px 12px; font-weight: 600; text-align: left;
+        }
+        QPushButton#attentionStrip:pressed { background: #F6E9CF; }
+
+        /* Flat, not a pill. A #EEF2F0 lozenge on a white header is so close
+           to the background that only its bottom curve reads — which looks
+           like a rendering fault rather than a button. The green word is the
+           affordance; it does not need a box. */
+        QPushButton#pickClose {
+            background: transparent; border: none; color: #616974;
+            font-size: 20px; font-weight: 600;
+        }
+        QPushButton#pickClose:pressed { color: #272C33; }
+
+        QPushButton#headerAction {
+            background: transparent; border: none;
+            padding: 6px 4px; color: #2F7E6E; font-size: 15px;
+            font-weight: 700;
+        }
+        QPushButton#headerAction:pressed { color: #276B5D; }
+
+        QPushButton#areaSwitchBtn {
+            background: #EEF2F0; border: none; border-radius: 8px;
+            color: #2F7E6E; font-size: 17px; font-weight: 700;
+        }
+
+        QPushButton#glanceBtn {
+            background: #EEF2F0; border: none; border-radius: 8px;
+            padding: 6px 12px; color: #2F7E6E; font-weight: 600;
+        }
+
+        /* The phone's bottom navigation (v30.6). A hairline above it is the
+           only separation between the bar and the page it sits under. */
+        QWidget#mobileNav {
+            background: #FFFFFF;
+            border-top: 1px solid #E2E6E0;
+        }
     )CSS") + narrow;
     // R"CSS(...)CSS" is a C++11 raw string literal: no escaping of quotes
     // or newlines — ideal for embedding a stylesheet.

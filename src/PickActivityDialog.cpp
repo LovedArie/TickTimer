@@ -29,6 +29,11 @@ PickActivityDialog::PickActivityDialog(const AppData* data, QDate date,
     layout->setContentsMargins(20, 18, 20, 18);
     layout->setSpacing(10);
 
+    // A title ROW, so the close affordance has somewhere to live. Android
+    // gives a frameless dialog no title bar and no ✕, and Esc does not exist
+    // on a phone — without this the only way out was the Back gesture, which
+    // is not discoverable and which the owner reported being trapped by.
+    auto* titleRow = new QHBoxLayout;
     auto* title = new QLabel(
         tr("What are you doing at %1?").arg(timeLabel(chosenStartMinutes())),
         this);
@@ -79,6 +84,10 @@ PickActivityDialog::PickActivityDialog(const AppData* data, QDate date,
             this, &PickActivityDialog::onTitleReturnPressed);
 
     m_list = new QListWidget(this);
+    // Draggable by thumb, and no bar: the gesture IS the affordance on a
+    // touchscreen, and the bar was the only way to scroll this list before.
+    makeTouchScrollable(m_list);
+    m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
     // Tall enough to show a dozen-ish rows before scrolling — a short list
     // was half the reason user-added categories at the bottom went unseen.
@@ -87,7 +96,17 @@ PickActivityDialog::PickActivityDialog(const AppData* data, QDate date,
     connect(m_list, &QListWidget::itemClicked,
             this, &PickActivityDialog::onItemClicked);
 
-    layout->addWidget(title);
+    auto* closeBtn = new QPushButton(QString(QChar(0x00D7)), this);
+    closeBtn->setObjectName(QStringLiteral("pickClose"));
+    closeBtn->setFixedSize(32, 32);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setToolTip(tr("Close"));
+    // U+00D7, not the prettier U+2715 — that one renders as an empty box on
+    // Android, which is how SlidePanel's ✕ was found.
+    connect(closeBtn, &QPushButton::clicked, this, &QDialog::reject);
+    titleRow->addWidget(title, 1);
+    titleRow->addWidget(closeBtn, 0, Qt::AlignTop);
+    layout->addLayout(titleRow);
     layout->addWidget(sub);
     layout->addWidget(pillHost);
     layout->addWidget(m_titleEdit);

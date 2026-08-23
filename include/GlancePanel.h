@@ -70,6 +70,24 @@ signals:
     void catchUpResolveAllRequested(const QStringList& eventIds,
                                     BlockOutcome outcome);
 
+public:
+    // Does the panel hold anything that is actively asking for attention —
+    // flagged tasks or missed blocks? On a phone the panel lives behind a
+    // drawer, and a nudge nobody opens is not a nudge; PlannerPage asks this
+    // to decide whether to surface a strip on the calendar itself.
+    bool needsAttention() const;
+
+    // Who the cards' slide-over drawers should cover. Normally the panel
+    // itself, but inside the phone's glance drawer the panel is a widget in
+    // another SlidePanel's scroll area — a sheet sized to it would be sized
+    // to the wrong thing. The owner says who gets covered.
+    void setCardDrawerHost(QWidget* host);
+
+    // Hide the panel's own "At a glance" heading. Inside the phone's drawer
+    // the sheet is already titled that, and saying it twice in 40px of
+    // vertical space is just noise.
+    void setHeadingVisible(bool on);
+
 public slots:
     void refresh(); // recompute everything from the raw data
 
@@ -84,6 +102,7 @@ private:
                                             // (v26.7.1 — one pill grammar)
     QWidget*        m_dayContent = nullptr; // everything the gate can hold back
     QLabel*         m_sub        = nullptr; // swaps text with the gate state
+    QLabel*         m_title      = nullptr; // hidden inside the phone drawer
 
     StatBox*      m_focusBox      = nullptr;
     StatBox*      m_breakBox      = nullptr;

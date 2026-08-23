@@ -56,6 +56,7 @@
 #include "NeedsBlockCard.h"
 #include "SlidePanel.h"
 #include "PickActivityDialog.h"
+#include "MobileNavBar.h"
 #include "MainWindow.h"
 #include "PlannerPage.h"
 #include "PomodoroPage.h"
@@ -2209,6 +2210,237 @@ private slots:
         fitted.close();
     }
 
+    // ---- planning by touch --------------------------------------------------
+    // Hand-built events with an explicit source, because QTest::mousePress
+    // sends an unsynthesised one and so takes the DESKTOP branch — which is
+    // exactly the distinction under test.
+
+    void aSecondTapOnAFreeSlotPlansIt()
+    {
+        AppData data;
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.resize(360, 900);
+        // Qt decides touch-vs-mouse from QMouseEvent::source(), which only IT
+        // can set — hence the seam. Without it this test silently exercises
+        // the desktop path and proves nothing about the phone.
+        agenda.setTouchGesturesForTesting(true);
+        QSignalSpy spy(&agenda, &AgendaWidget::emptySlotClicked);
+
+        // A point inside a free slot, below the top padding and right of the
+        // hour gutter.
+        const QPoint p(AgendaWidget::kDefaultGutter + 40, 120);
+        const auto tap = [&]() {
+            QMouseEvent press(QEvent::MouseButtonPress, p, agenda.mapToGlobal(p),
+                              Qt::LeftButton, Qt::LeftButton, Qt::NoModifier,
+                              QPointingDevice::primaryPointingDevice());
+            press.setTimestamp(0);
+            QMouseEvent release(QEvent::MouseButtonRelease, p,
+                                agenda.mapToGlobal(p), Qt::LeftButton,
+                                Qt::NoButton, Qt::NoModifier,
+                                QPointingDevice::primaryPointingDevice());
+            release.setTimestamp(0);
+            QCoreApplication::sendEvent(&agenda, &press);
+            QCoreApplication::sendEvent(&agenda, &release);
+        };
+
+        tap();
+        QCOMPARE(spy.count(), 0); // the first tap only ARMS the slot
+        tap();
+        QCOMPARE(spy.count(), 1); // the second opens the planner
+
+        // ...and a MOUSE still plans on the first click. Adding a hold or a
+        // double-click to a desktop would be a regression, so it is pinned.
+        AgendaWidget desktop(&data, &tracker);
+        desktop.resize(900, 900);
+        QSignalSpy mouseSpy(&desktop, &AgendaWidget::emptySlotClicked);
+        QTest::mousePress(&desktop, Qt::LeftButton, Qt::NoModifier, p);
+        QCOMPARE(mouseSpy.count(), 1);
+    }
+
+    // ---- the phone shell ---------------------------------------------------
+    // Gated on the DEVICE (TICKTIMER_COMPACT), not on container width, so
+    // these construct a genuinely different window rather than a narrow one.
+
+    void theMobileShellReplacesTheRail()
+    {
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); clearWindowPrefs(); }
+        } compactMode;
+        clearWindowPrefs();
+
+        MainWindow w(QStringLiteral("phanp"));
+        w.resize(360, 800);
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+        QTest::qWait(5);
+
+        auto* bar = w.findChild<MobileNavBar*>();
+        QVERIFY2(bar, "the phone shell must build a bottom bar");
+        QVERIFY(bar->isVisible());
+
+        // The 190px rail is built but never shown on a phone.
+        QWidget* rail = nullptr;
+        for (QWidget* c : w.findChildren<QWidget*>())
+            if (c->maximumWidth() == 190 && c->minimumWidth() == 190)
+                rail = c;
+        QVERIFY2(rail, "the rail should still exist");
+        QVERIFY2(rail->isHidden(), "the rail must not show on a phone");
+
+        // The profile button replaces the hamburger.
+        QVERIFY(w.findChild<QPushButton*>(QStringLiteral("profileBtn")));
+        QVERIFY(w.findChild<QPushButton*>(QStringLiteral("captureFab")));
+        auto* railToggle = w.findChild<QPushButton*>(QStringLiteral("railToggle"));
+        QVERIFY(railToggle);
+        QVERIFY2(railToggle->isHidden(),
+                 "the rail toggle has no job on a phone");
+    }
+
+    // The bar's tab order is NOT the stack's order, so this pins the mapping
+    // rather than the positions: Assistant is the third tab and page six.
+    void theMobileBarRoutesToTheRightPages()
+    {
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); clearWindowPrefs(); }
+        } compactMode;
+        clearWindowPrefs();
+
+        MainWindow w(QStringLiteral("phanp"));
+        w.resize(360, 800);
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+        QTest::qWait(5);
+
+        auto* stack = w.findChild<QStackedWidget*>();
+        auto* bar = w.findChild<MobileNavBar*>();
+        QVERIFY(stack && bar);
+
+        const auto tabs = bar->findChildren<QAbstractButton*>();
+        QCOMPARE(tabs.size(), 5);
+        tabs[2]->click();                 // the Assistant sits third
+        QCOMPARE(stack->currentIndex(), 6); // ...and is page six
+        tabs[3]->click();
+        QCOMPARE(stack->currentIndex(), 2); // Life areas
+        tabs[0]->click();
+        QCOMPARE(stack->currentIndex(), 0);
+    }
+
+    // Archive is gone from the phone's NAVIGATION but must remain a page.
+    // Without this, "tidying" it out of the stack would silently renumber the
+    // Assistant, and index 6 is load-bearing (the check-in toast opens it).
+    void theMobileBarHasNoArchiveButKeepsThePage()
+    {
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); clearWindowPrefs(); }
+        } compactMode;
+        clearWindowPrefs();
+
+        MainWindow w(QStringLiteral("phanp"));
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+        QTest::qWait(5);
+
+        auto* stack = w.findChild<QStackedWidget*>();
+        auto* bar = w.findChild<MobileNavBar*>();
+        QVERIFY(stack && bar);
+
+        for (QAbstractButton* t : bar->findChildren<QAbstractButton*>()) {
+            t->click();
+            QVERIFY2(stack->currentIndex() != 5,
+                     "no phone tab may open the Archive");
+        }
+        w.showPage(5);
+        QCOMPARE(QString::fromLatin1(
+                     stack->currentWidget()->metaObject()->className()),
+                 QStringLiteral("ArchivePage"));
+    }
+
+    // The highlight is derived from the stack, and must be able to show
+    // NOTHING — pages without a tab exist. An autoExclusive group physically
+    // cannot express that, which is why the tabs are not autoExclusive.
+    void theMobileBarClearsItselfOnAPageWithNoTab()
+    {
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); clearWindowPrefs(); }
+        } compactMode;
+        clearWindowPrefs();
+
+        MainWindow w(QStringLiteral("phanp"));
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+        QTest::qWait(5);
+
+        auto* bar = w.findChild<MobileNavBar*>();
+        QVERIFY(bar);
+        const auto tabs = bar->findChildren<QAbstractButton*>();
+
+        w.showPage(4); // Pomodoro — the fifth tab
+        QVERIFY(tabs[4]->isChecked());
+
+        w.showPage(3); // Special days — no tab owns it
+        for (QAbstractButton* t : tabs)
+            QVERIFY2(!t->isChecked(),
+                     "no tab may stay lit on a page it does not own");
+    }
+
+    // The glance is put in a drawer at CONSTRUCTION on a phone and never
+    // moved, which is why there is no "does it come back?" case to test.
+    void theGlanceLivesInADrawerOnThePhone()
+    {
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); clearWindowPrefs(); }
+        } compactMode;
+        clearWindowPrefs();
+
+        MainWindow w(QStringLiteral("phanp"));
+        w.resize(360, 800);
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+        QTest::qWait(5);
+
+        auto* glance = w.findChild<GlancePanel*>();
+        QVERIFY(glance);
+        bool inDrawer = false;
+        for (QWidget* p = glance->parentWidget(); p; p = p->parentWidget())
+            if (qobject_cast<SlidePanel*>(p))
+                inDrawer = true;
+        QVERIFY2(inDrawer, "on a phone the glance belongs to a SlidePanel");
+
+        // The affordance lives in the app HEADER, not inside the page: a
+        // per-page action belongs at the top right of the SCREEN, where a
+        // thumb reaches, rather than buried in the panel it acts on. One
+        // button, re-labelled per page.
+        auto* action = w.findChild<QPushButton*>(QStringLiteral("headerAction"));
+        QVERIFY(action);
+        w.showPage(0);
+        QVERIFY2(action->isVisible(), "the calendar offers Glance");
+        QCOMPARE(action->text(), QStringLiteral("Glance"));
+
+        w.showPage(2);
+        QVERIFY2(action->isVisible(), "Activities offers the area switcher");
+
+        // Special days has no tab of its own; Upcoming's header is its door.
+        w.showPage(1);
+        QVERIFY(action->isVisible());
+        auto* stack = w.findChild<QStackedWidget*>();
+        QVERIFY(stack);
+        action->click();
+        QCOMPARE(stack->currentIndex(), 3); // SpecialDaysPage
+
+        // ...and the same slot is the way back. Special days has no tab, so
+        // without this the trip is one-way and the header would go blank on
+        // the one page that most needs an exit.
+        QVERIFY(action->isVisible());
+        QCOMPARE(action->text(), QStringLiteral("Upcoming"));
+        action->click();
+        QCOMPARE(stack->currentIndex(), 1);
+    }
+
     // ---- responsive:: — the layout-mode pipe ------------------------------
     // These two prove the MACHINE, before any page depends on it: a width
     // change reaches the stack and is classified. What a page then does with
@@ -2297,10 +2529,11 @@ private slots:
             QTest::qWait(5);
         }
 
-        QPushButton* railToggle = nullptr;
-        for (QPushButton* b : w.findChildren<QPushButton*>())
-            if (b->text() == QStringLiteral("≡"))
-                railToggle = b;
+        // By objectName, not by text: "≡" is also the phone's life-area
+        // switcher now, and matching on a glyph would find whichever came
+        // first in the child list.
+        auto* railToggle =
+            w.findChild<QPushButton*>(QStringLiteral("railToggle"));
         QVERIFY2(railToggle, "the hamburger toggle should exist");
         QVERIFY2(!w.findChild<QStackedWidget*>()->parentWidget()
                       ->isHidden(), "body should be visible");
