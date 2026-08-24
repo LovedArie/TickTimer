@@ -1,0 +1,162 @@
+<?xml version="1.0"?>
+<!--
+    TickTimer's own AndroidManifest (v30.6).
+
+    WHY THIS FILE NOW EXISTS. Until v30.6 there was none: androiddeployqt
+    generated one from Qt's template plus the four QT_ANDROID_* properties
+    in CMakeLists.txt, and that was the right trade for a year — nothing to
+    maintain, nothing to drift. It stopped being viable the moment the app
+    needed a permission and a receiver, because neither can be expressed
+    through those properties. (Qt does have a QT_ANDROID_PERMISSIONS target
+    property, but its only public entry point is _qt_internal_add_android_
+    permission, whose own comment says it is not public API — and it cannot
+    declare a <receiver> at all.)
+
+    THE RULE FOR EDITING THIS FILE, and it is load-bearing: this is a COPY
+    of Qt's own src/android/templates/AndroidManifest.xml with additions,
+    and every %%INSERT_XXX%% token below must survive. androiddeployqt
+    substitutes the version code, version name, app name, icon and library
+    name into those tokens at package time, which is what keeps
+    include/Version.h the single source of truth for the APK's version.
+    Hard-code one of them and you have created a fourth version seam of the
+    kind installer/ticktimer.iss already teaches about the hard way — so
+    test_domain::androidManifestKeepsTheVersionTokens asserts they are
+    still here. Mechanism beats intention.
+
+    AND A TRAP, paid for on the first build: an XML comment may not contain
+    a double hyphen. The tokens this file is built around are written with
+    them, so quoting one inside a comment makes androiddeployqt fail with
+    "Expected '>', but got ' '" — a parser error that names neither the
+    line nor the reason. Refer to them as %%INSERT_XXX%% in prose; the real
+    ones live in attribute values, where the rule does not apply.
+
+    NOT IN THIS FILE, on purpose: minSdkVersion and targetSdkVersion. Qt
+    writes those into the Gradle properties, not the manifest, so
+    QT_ANDROID_MIN_SDK_VERSION and QT_ANDROID_TARGET_SDK_VERSION in
+    CMakeLists.txt remain authoritative. Putting a <uses-sdk> here would
+    create a second answer to the same question.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.qtproject.example"
+    android:installLocation="auto"
+    android:versionCode="-- %%INSERT_VERSION_CODE%% --"
+    android:versionName="-- %%INSERT_VERSION_NAME%% --">
+
+    <!-- QT'S OWN INJECTION POINTS. Leave these two comments exactly as they
+         are: androiddeployqt substitutes the permissions and features that
+         the linked Qt modules declare for themselves, and it finds the spot
+         by matching this literal text.
+
+         Deleting the first one is not a no-op, and the first build of this
+         file proved it: the APK came out WITHOUT android.permission.INTERNET
+         and without ACCESS_NETWORK_STATE, because Qt6Core contributes those
+         transitively rather than anyone writing them down. The app would
+         have installed, launched, rendered perfectly, and been unable to
+         reach the server at all — the same shape of failure as the missing
+         OpenSSL in docs/ANDROID.md §2b, and just as misleading to debug.
+
+         Found by dumping the built APK rather than by reading this file, so:
+         after any change here, run `aapt2 dump badging` on the result and
+         read the permission list. -->
+    <!-- %%INSERT_PERMISSIONS -->
+    <!-- %%INSERT_FEATURES -->
+
+    <!-- ================= TickTimer additions (v30.6) ==================== -->
+
+    <!-- Mandatory since API 33. Without it the app may post notifications
+         and the system will drop every one in silence, which is exactly
+         the failure mode v30.6 was written to end. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- USE_EXACT_ALARM rather than SCHEDULE_EXACT_ALARM, deliberately.
+         SCHEDULE_EXACT_ALARM is denied by default since Android 14: the
+         app must detect that, send the user into a Settings screen, and
+         handle their refusal — a whole permission flow. USE_EXACT_ALARM is
+         granted at install with no prompt, and is restricted to apps whose
+         core function is an alarm clock or a calendar. TickTimer's block
+         alarms are literally that. The restriction is enforced by Google
+         Play review, which this app never faces: it is sideloaded to a
+         handful of known people and will never be in a store. TickTick,
+         installed on the owner's own phone, made the same call; Daylio
+         took the other road and needed a battery-optimisation exemption on
+         top of it. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
+    <!-- Android wipes every scheduled alarm on reboot. Without this the
+         alarms vanish at the first restart and never come back — a failure
+         that is silent, delayed by days, and indistinguishable from "the
+         feature just doesn't work". -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- ================= end TickTimer additions ======================== -->
+
+    <supports-screens
+        android:anyDensity="true"
+        android:largeScreens="true"
+        android:normalScreens="true"
+        android:smallScreens="true" />
+    <application
+        android:name="org.qtproject.qt.android.bindings.QtApplication"
+        android:hardwareAccelerated="true"
+        android:label="-- %%INSERT_APP_NAME%% --"
+        android:icon="-- %%INSERT_APP_ICON%% --"
+        android:enableOnBackInvokedCallback="false"
+        android:allowBackup="true"
+        android:fullBackupOnly="false">
+        <activity
+            android:name="org.qtproject.qt.android.bindings.QtActivity"
+            android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation|mcc|mnc|density"
+            android:label="-- %%INSERT_APP_NAME%% --"
+            android:launchMode="singleTop"
+            android:screenOrientation="unspecified"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+          <meta-data
+                android:name="android.app.lib_name"
+                android:value="-- %%INSERT_APP_LIB_NAME%% --" />
+
+          <meta-data
+                android:name="android.app.arguments"
+                android:value="-- %%INSERT_APP_ARGUMENTS%% --" />
+        </activity>
+
+        <!-- The two receivers. Both android:exported="false": nothing
+             outside this app has any business waking them. BootReceiver is
+             the exception that must still be reachable by the system, and
+             a BOOT_COMPLETED intent-filter is how the system is granted
+             that without opening the receiver to other apps. -->
+        <receiver
+            android:name="org.ticktimer.app.AlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="org.ticktimer.app.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <!-- Samsung and several other OEMs send their own flavour
+                     after an update rather than the AOSP one. Listening for
+                     both costs nothing and is the difference between
+                     alarms surviving a system update and quietly not. -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.qtprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/qtprovider_paths"/>
+        </provider>
+    </application>
+</manifest>

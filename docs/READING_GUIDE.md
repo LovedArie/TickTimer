@@ -360,6 +360,51 @@ Deliberate simplifications (candidates for your first solo features):
   "Unknown Organization" — deliberately NOT fixed: naming an org now would
   relocate settings AND the data folder (`main.cpp`; the screenshot tool's
   probe prints the real path).
+- **A feature check must guard the feature it NAMES.**
+  `setupNotifications()` opened with
+  `if (!QSystemTrayIcon::isSystemTrayAvailable()) return;` — correct in
+  v19.8, when a notification really was a tray balloon, and obsolete the
+  moment v19.9 started painting its own window. Eleven versions later
+  Android, which has no tray, returned at that first line and lost the
+  chime, the block alarm and the block-finished toast at once. Nothing
+  logged it: a guard doing what it says is not an error. When you change
+  what a mechanism IS, re-read every test of whether it is available
+  (`MainWindow::setupNotifications`, `docs/design-addendum-notifications.md`
+  §A).
+- **A `QTimer` is not an alarm on a phone.** Android freezes a backgrounded
+  process (Doze, app standby), so an in-process timer does not fire — and
+  `BlockAlarmService`'s hour-capped nap, whose comment promised an "hourly
+  self-check" would heal suspend/resume "without any platform-specific wake
+  signals", healed nothing because nothing was running to do the healing.
+  Anything that must happen while the app is closed has to be handed to the
+  OS *in advance*, fully rendered, because there is no process left to
+  compose it later (`Alarms.h`, `AlarmService.h`).
+- **Qt ships no notification API, and `QPermission` does not cover
+  notifications.** `qpermissions.h` has classes for camera, microphone,
+  bluetooth, contacts, calendar and location — nothing for
+  `POST_NOTIFICATIONS`, which is mandatory from Android 13. The C++ route is
+  the private `QtAndroidPrivate::requestPermission`; the route this codebase
+  took is four lines of its own Java, which cannot break on a Qt upgrade
+  (`AndroidNotifier.cpp`, `android/src/org/ticktimer/app/TickNotifier.java`).
+- **`Notification.Builder.setSmallIcon` is mandatory, and a Qt app has no
+  launcher icon to borrow.** `getApplicationInfo().icon` is `0` when no
+  `QT_ANDROID_APP_ICON` is set, and `setSmallIcon(0)` throws — killing the
+  receiver process, so a correctly-scheduled alarm arrives as silence. Ship
+  a white-silhouette drawable (Android tints the alpha and discards colour)
+  and resolve it by name with a framework fallback
+  (`android/src/org/ticktimer/app/TickNotifier.java::smallIcon`).
+- **`am force-stop` is not "the app is closed" — it is a different state.**
+  It sets the package's *stopped* flag, and Android refuses to deliver
+  broadcasts to a stopped package, so no receiver of that app can run until
+  a human launches it. Any "does it work in the background?" test built on
+  force-stop is incapable of passing. Use `am kill`, which reclaims the
+  process without the flag (`docs/TROUBLESHOOTING.md`).
+- **Android discards every scheduled alarm on reboot, silently.** No error,
+  no log — the app simply stops speaking some days later, which reads as
+  "the feature never worked". A `BOOT_COMPLETED` receiver that re-arms from
+  its own persisted copy is not optional, and `MY_PACKAGE_REPLACED` belongs
+  in the same filter because sideloading a new APK clears them the same way
+  (`android/src/org/ticktimer/app/BootReceiver.java`).
 
 ## 5. New since v13 — landmarks worth a visit
 

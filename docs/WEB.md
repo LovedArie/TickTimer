@@ -202,9 +202,16 @@ having been done.
   the on-screen keyboard misbehaves, that is a known Qt-for-WebAssembly
   weakness, not something this app is doing wrong.
 - **No background anything.** A closed tab runs no timers, so block alarms,
-  nudges and the check-in do not fire. **This is not a WASM regression** — the
-  Android app has the same gap, because `BlockAlarmService` is an in-process
-  timer. Phase 5 fixes both at once with Web Push.
+  nudges and the check-in do not fire. This used to be shared with Android
+  and is not any more: **v30.6 fixed the Android half** by handing the
+  schedule to the OS (`Alarms.h` derives it, `AlarmManager` holds it, and
+  the app is not running when it rings — see
+  `docs/design-addendum-notifications.md`). The WASM half is still open, and
+  the seam it needs already exists: a third `Notifier` implementation over
+  the browser's Notification API would cover an *open* tab, and only a
+  service worker plus Web Push covers a closed one. That remains its own
+  project, and it is the reason `notify::make()` has a branch shape rather
+  than an if/else.
 - **iOS can evict browser storage** after roughly seven days without use.
   Installing to the Home Screen makes it much stickier but is not a guarantee,
   which is the real argument for logging in and letting the server hold the

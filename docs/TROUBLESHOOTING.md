@@ -1905,3 +1905,162 @@ Same family as the OpenSSL entry: both are things only a real Android run
 could find, and both were shipped as documentation before anyone had one.
 
 
+
+---
+
+### Android: no notification at all — not the chime, not the block alarm, not even in the app
+
+**SYMPTOM**
+(v30.5.2 on a Galaxy S21 Ultra, Android 15.) The app runs on the phone, syncs,
+plans, tracks — and never notifies. No block-start alarm, no Pomodoro chime, no
+block-finished toast, with the app open OR closed. Other apps on the same phone
+(TickTick, Daylio) pop heads-up reminders with sound perfectly.
+
+**CAUSE**
+Three separate things, stacked. Only the first is a bug; the third is the whole
+feature.
+
+1. `MainWindow::setupNotifications()` began with
+   `if (!QSystemTrayIcon::isSystemTrayAvailable()) return;`. Android has no
+   system tray, so the function returned at its first line and never wired any
+   of its clients. The guard was correct in v19.8, when a notification *was* a
+   tray balloon delivered through `QSystemTrayIcon::showMessage`. v19.9
+   replaced the balloon with `NotificationToast` — a window the app paints —
+   and the guard was never revisited.
+2. `NotificationToast` is a `Qt::Tool` always-on-top window. An ordinary
+   Android app cannot draw a floating window (that needs the
+   `SYSTEM_ALERT_WINDOW` overlay permission), so at best it is an in-app card.
+3. `BlockAlarmService` armed an in-process `QTimer`. Android freezes a
+   backgrounded app, so the timer never fires — and an alarm that only rings
+   while you are already looking at the app is not an alarm.
+
+Underneath all three: the APK requested no notification permission and
+registered no notification channel, because Qt generates the AndroidManifest
+and Qt has no notification API.
+
+**FIX**
+v30.6. The tray guard now covers only the tray icon (presence and
+click-to-raise); the notifier clients run unconditionally. The schedule became
+a value (`Alarms.h`) that gets handed to whatever holds schedules on this
+platform — the app's own `QTimer` on desktop, `AlarmManager` on Android via
+`android/src/org/ticktimer/app/TickNotifier.java`. The tree gained its own
+`android/AndroidManifest.xml` with `POST_NOTIFICATIONS`, `USE_EXACT_ALARM` and
+`RECEIVE_BOOT_COMPLETED`, plus a boot receiver, because Android discards
+scheduled alarms on reboot without saying so.
+
+Diagnosing this took four `adb` commands and no reading of Qt at all:
+
+```sh
+adb shell dumpsys package org.ticktimer.app | grep -E "POST_NOTIFICATIONS|EXACT_ALARM|BOOT_COMPLETED"
+adb shell dumpsys package com.ticktick.task | grep -E "POST_NOTIFICATIONS|EXACT_ALARM"
+adb shell dumpsys notification --noredact | grep -A2 ticktimer
+adb shell dumpsys alarm | grep -i ticktimer
+```
+
+The second line is the one that mattered: an app on the *same phone* doing the
+*same job* correctly, with its permission list visible. TickTick's channel runs
+at `importance=4` — the flag that makes a notification a heads-up banner with
+sound instead of a silent line in the shade.
+
+**PREVENT**
+Two rules, and the first is the general one.
+
+**A feature check must guard the feature it names.** This guard asked "is there
+a tray?" and meant "can we speak at all?", and those stopped being the same
+question the moment the app started painting its own window. When you change
+what a mechanism IS, re-read every availability test written for the old one.
+
+**When one of your own apps already does the thing, read it before reasoning
+about it.** `adb shell dumpsys package <them>` prints a working app's entire
+permission list. Comparing against a neighbour that works turned a vague "Qt
+probably can't do this" into a concrete four-line diff in minutes.
+
+Family resemblance to the OpenSSL and compact-layout entries above: all three
+were only findable on a real phone, and all three had documentation asserting
+the feature worked before anyone had run it there.
+
+---
+
+### The alarm fires, the app crashes, and no notification ever appears
+
+**SYMPTOM**
+(v30.6, first run on a real phone.) A scheduled block/Pomodoro alarm reaches
+its instant. Nothing shows in the notification shade. `adb logcat` carries:
+
+```
+ActivityManager: Start proc 9397:org.ticktimer.app for broadcast {…AlarmReceiver}
+NotificationManager: org.ticktimer.app: notify(112833260, … channel=ticktimer_alarms …)
+E AndroidRuntime: java.lang.IllegalArgumentException:
+    Invalid notification (no valid small icon)
+      at org.ticktimer.app.TickNotifier.post(TickNotifier.java:270)
+```
+
+**CAUSE**
+`Notification.Builder.setSmallIcon` is **mandatory**, and it was given `0`.
+The code passed `context.getApplicationInfo().icon`, on the reasonable-sounding
+theory that an app always has a launcher icon. A Qt app packaged without an
+explicit `QT_ANDROID_APP_ICON` does not: androiddeployqt drops the `android:icon`
+attribute entirely, so `applicationInfo.icon` is 0.
+
+Everything *around* the failure was working, which is what makes it confusing:
+the alarm fired on time with the app dead, Android cold-started a process to
+serve the receiver, and `notify()` was reached. The exception then killed that
+process, so the only visible symptom was silence.
+
+**FIX**
+v30.6 ships `android/res/drawable/ic_stat_ticktimer.xml` (a white silhouette —
+Android tints the alpha channel and discards colour) and resolves it by NAME
+at runtime via `Resources.getIdentifier`, not through the generated `R` class.
+If it is ever missing, `TickNotifier.smallIcon()` falls back to
+`android.R.drawable.ic_popup_reminder`. The one thing it may never return is 0.
+
+**PREVENT**
+**Read the log, not the symptom.** "No notification appeared" and "the alarm
+never fired" look identical from the outside and have completely different
+causes. One `adb logcat -d | grep -i ticktimer` separated them in seconds.
+
+And the recurring one, now met a third time: **a claim about a platform is
+worth nothing until the platform has executed it.** The design addendum had
+this written down as a cosmetic limitation, reasoned from the API docs, before
+anything had run. Same family as the OpenSSL entry and the compact-layout
+entry — all three were documented as understood before a phone had ever
+disagreed.
+
+---
+
+### `adb shell am force-stop` is NOT how you test "the app is closed"
+
+**SYMPTOM**
+Testing whether an alarm survives the app not running: force-stop the app,
+wait for the instant, and nothing happens. `dumpsys alarm` still lists the
+alarm, so it was not cancelled — it simply never fired.
+
+**CAUSE**
+`am force-stop` does more than end the process: it puts the package into
+Android's **stopped state** (`dumpsys package … | grep stopped=` shows
+`stopped=true`). The system will not deliver broadcasts to a stopped package —
+`FLAG_EXCLUDE_STOPPED_PACKAGES` is applied to broadcast intents by default —
+so no `BroadcastReceiver` of that app can run until a human launches it again.
+
+The test was therefore incapable of passing, whatever the code did.
+
+**FIX**
+Use `adb shell am kill <package>` instead. It reclaims the process **without**
+setting the stopped flag, which is what Android itself does when it needs
+memory — the condition a background alarm actually has to survive. Check with:
+
+```sh
+adb shell am kill org.ticktimer.app
+adb shell pidof org.ticktimer.app                                  # empty
+adb shell dumpsys package org.ticktimer.app | grep -o "stopped=[a-z]*"   # false
+```
+
+Swiping the app away from Recents is equivalent and needs no cable.
+
+**PREVENT**
+Know what your test harness actually did to the system. "Force stop" reads like
+a stronger version of "close", and it is a *different* state with different
+rules — one that no ordinary user action produces except tapping Force Stop in
+Settings. Worth knowing for real use too: if someone force-stops TickTimer, its
+alarms stay silent until they next open it. That is true of every Android app,
+including the ones on this phone that work.

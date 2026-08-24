@@ -68,6 +68,7 @@
 #include "SettingsPages.h"
 #include "MemoryStore.h"
 #include "AffordabilityService.h" // v28.10 — the debug panel tests
+#include "AlarmService.h"         // v30.6 — the alarm group
 #include "CheckInService.h"       // v28.10 — forceOffer
 #include "ChatPage.h"             // v29.0 — the write boundary
 #include "DebugPanel.h"           // v28.10
@@ -3856,14 +3857,16 @@ private slots:
         AppData data;
         AffordabilityService afford(&data);
         CheckInService checkIn(&data);
+        AlarmService alarms(&data);
 
         int  clockCalls   = 0;
         bool lastWasReal  = false;
         bool briefedOnce  = false;
         int  injections   = 0;
         int  interviews   = 0;
+        int  schedulesShown = 0;
         DebugPanel panel(
-            &afford, &checkIn,
+            &afford, &checkIn, &alarms,
             [&] {
                 briefedOnce = true;
                 return QStringLiteral("BRIEFING TEXT");
@@ -3879,6 +3882,10 @@ private slots:
             [&]() -> QString {
                 ++interviews;
                 return QStringLiteral("INTERVIEWING");
+            },
+            [&]() -> QString {
+                ++schedulesShown;
+                return QStringLiteral("SCHEDULE TEXT");
             });
 
         // Force check-in reaches the service's rehearsal door.
@@ -3927,6 +3934,25 @@ private slots:
         interview->click();
         QCOMPARE(interviews, 1);
         QCOMPARE(injectStatus->text(), QStringLiteral("INTERVIEWING"));
+
+        // v30.6 — the alarm group. Poll and republish are plain public
+        // methods on the service (the raw-pointer shape); the schedule
+        // viewer goes through the composition root, because rendering it
+        // needs to say which side is HOLDING the schedule and that fact
+        // lives on the Notifier, not here.
+        QSignalSpy republished(&alarms, &AlarmService::scheduleChanged);
+        auto* poll =
+            panel.findChild<QPushButton*>(QStringLiteral("debugAlarmPoll"));
+        auto* republish = panel.findChild<QPushButton*>(
+            QStringLiteral("debugAlarmRepublish"));
+        auto* schedule = panel.findChild<QPushButton*>(
+            QStringLiteral("debugAlarmSchedule"));
+        QVERIFY(poll && republish && schedule);
+        poll->click();      // no crash, no alarms: an empty planner is quiet
+        republish->click();
+        QCOMPARE(republished.count(), 1);
+        schedule->click();
+        QCOMPARE(schedulesShown, 1);
 
         // The AI switch owns the wildcard, this process only.
         auto* down =

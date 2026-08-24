@@ -32,6 +32,7 @@
 #include <optional>
 
 class AffordabilityService;
+class AlarmService;
 class CheckInService;
 class QCheckBox;
 class QDateTimeEdit;
@@ -54,22 +55,34 @@ public:
     //    apply), returning a status line for the panel. The composition
     //    lives in MainWindow because choosing a target needs AppData and
     //    the chat's handle world — wiring knowledge, as ever.
+    // `alarms` (v30.6) — the alarm service itself, the raw-pointer shape,
+    //    because "fire the next one" and "republish" are plain public
+    //    methods on one object. `showSchedule` is the callback shape for
+    //    the same reason injectProposal is: rendering the schedule needs to
+    //    say whether the PLATFORM is holding it, and that fact lives on the
+    //    Notifier, which MainWindow owns and the panel has no business
+    //    knowing about.
     DebugPanel(AffordabilityService* afford, CheckInService* checkIn,
+               AlarmService* alarms,
                std::function<QString()> briefing,
                std::function<void(const std::optional<QDateTime>&)> applyClock,
                std::function<QString()> injectProposal,
                std::function<QString()> startIntake,
+               std::function<QString()> showSchedule,
                QWidget* parent = nullptr);
 
 private:
     void showBriefing();
+    void showSchedule();
 
     AffordabilityService* m_afford  = nullptr;
     CheckInService*       m_checkIn = nullptr;
+    AlarmService*         m_alarms  = nullptr;
     std::function<QString()> m_briefing;
     std::function<void(const std::optional<QDateTime>&)> m_applyClock;
     std::function<QString()> m_injectProposal;
     std::function<QString()> m_startIntake;
+    std::function<QString()> m_showSchedule;
 
     QDateTimeEdit* m_clockEdit  = nullptr;
     QLabel*        m_clockState = nullptr;

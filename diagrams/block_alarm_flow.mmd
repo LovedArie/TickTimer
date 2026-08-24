@@ -1,14 +1,33 @@
-%% Block-start alarms — derive-don't-store, applied to time (v19.5)
+%% Alarms — the schedule as a value, published to whoever holds schedules
+%% (v19.5 derive-don't-store; v30.6 inverted so it survives the app closing)
 flowchart LR
-    AD[("AppData<br/><i>events: date + start minutes</i>")]
+    AD[("AppData<br/><i>events: date + start/end minutes</i>")]
 
-    SVC["BlockAlarmService  (domain)<br/><i>high-water mark, born at 'now'<br/>grace window: 120 s<br/>Qt::PreciseTimer single-shot,<br/>nap capped at 1 h</i>"]
+    EXTRA["extras the planner cannot hold<br/><i>PomodoroEngine phase end ·<br/>check-in ledger (QSettings)</i>"]
 
-    MW["MainWindow toast client<br/><i>pref read at fire time ·<br/>titles resolved fresh by id ·<br/>mutes blocks already tracking ·<br/>same tray icon as the Pomodoro</i>"]
+    PURE["alarms:: (pure, Qt-Widgets-free)<br/><i>upcoming / forPhase / forCheckIn<br/>dueBetween / nextAfter<br/>text RENDERED here, in advance</i>"]
 
-    TRAY["beep + tray toast<br/><i>'Starting now —<br/>Study GTI350 · 9:00 – 10:30'</i>"]
+    SVC["AlarmService  (domain)<br/><i>high-water mark, born at 'now'<br/>grace window: 120 s · 48 h horizon<br/>Qt::PreciseTimer, nap capped at 1 h</i>"]
 
-    AD -.->|"changed() → re-derive<br/>the NEXT start, re-aim"| SVC
-    SVC -->|"blocksStarting(ids)<br/>fresh-only; stale swept in silence"| MW
-    MW -->|"unless muted"| TRAY
-    MW -.->|"eventById / activityById /<br/>taskById at toast time"| AD
+    MW["MainWindow  (composition root)<br/><i>pref read at fire time ·<br/>groups simultaneous starts</i>"]
+
+    NOTIF{{"Notifier::deliversSchedule()?"}}
+
+    DESK["DesktopNotifier<br/><i>NotificationToast + 3-tier chime<br/>publish() is a NO-OP:<br/>our own timer already rings</i>"]
+
+    DROID["AndroidNotifier → TickNotifier.java<br/><i>AlarmManager.setExactAndAllowWhileIdle<br/>channel importance 4 (heads-up)<br/>persisted → BootReceiver re-arms</i>"]
+
+    OS["Android posts it<br/><i>app closed, screen off,<br/>no C++ running at all</i>"]
+
+    AD -.->|"changed() → republish"| SVC
+    EXTRA -.->|"extrasProvider()"| SVC
+    SVC -->|"derives through"| PURE
+    SVC -->|"scheduleChanged(future only)"| NOTIF
+    SVC -->|"due(alarms) — desktop path"| MW
+    MW -->|"announce(ToastSpec)"| DESK
+    NOTIF -->|"false: desktop / WASM"| DESK
+    NOTIF -->|"true: Android"| DROID
+    DROID --> OS
+
+    %% The one mute rule, and why it had to become pure
+    SVC -.->|"trackedEventId: a tracked block<br/>contributes its END, not its START"| PURE

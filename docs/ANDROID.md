@@ -331,6 +331,61 @@ downloads or installs anything by itself.
   native-feeling mobile UI would be a QML front-end on the same domain
   layer — a natural future project (the domain wouldn't change at all).
 
+## Notifications on Android (v30.6)
+
+Before v30.6 the phone showed **nothing** — no block alarm, no Pomodoro
+chime, no block-finished toast, whether the app was open or closed. The story
+is in `docs/TROUBLESHOOTING.md`; what you need to know to use it is here.
+
+**What you get now.** A planned block starting, a tracked block finishing, a
+Pomodoro phase ending, and the morning check-in all arrive as real Android
+notifications — heads-up banner, sound, on the lock screen — **with the app
+closed and the phone asleep**. They survive a reboot and a re-install.
+
+**One permission prompt, on first launch.** Android has required apps to ask
+before notifying since Android 13. A couple of seconds after the app opens
+you will be asked once. Say yes; there is no second chance from inside the
+app, and if you say no the alarms are dropped in silence. To fix it later:
+**Settings → Apps → TickTimer → Notifications**.
+
+**The Samsung tax — the one thing that will bite you.** One UI runs its own
+app-sleep layer on top of Android's Doze, and it is aggressive with apps you
+have not opened for a few days. This is the single most likely reason an
+alarm goes missing after a quiet weekend. Exclude TickTimer once:
+
+**Settings → Battery → Background usage limits** → make sure TickTimer is
+**not** in *Sleeping apps* or *Deep sleeping apps*. Then **Settings → Apps →
+TickTimer → Battery → Unrestricted**.
+
+It is a manual step on purpose: the alternative is the app demanding a
+battery-optimisation exemption on first launch, which is a worse thing to do
+to someone than a line in a doc.
+
+**Known cosmetics.** The sound is your system notification sound, not
+TickTimer's own chime — the app's WAVs live in Qt's resource system, which an
+Android notification channel cannot reach.
+
+**Not scheduled, deliberately:** the affordability nudge ("Lab 4 is looking
+tight") only appears while the app is open. Its whole value is the live
+numbers in the sentence, and an alarm set two days in advance would buzz
+with stale arithmetic. See the addendum's *Limits, named*.
+
+**Checking it yourself**, with the phone plugged in:
+
+```sh
+# what the OS is actually holding for us
+adb shell dumpsys alarm | grep -i ticktimer
+
+# are we allowed to speak, and is the channel a heads-up one
+adb shell dumpsys package org.ticktimer.app | grep POST_NOTIFICATIONS
+adb shell dumpsys notification --noredact | grep -A2 ticktimer
+```
+
+An empty first result with blocks planned in the next two days means the
+schedule never reached the OS. In the app, `Ctrl+Shift+D` → **Block alarms**
+→ *Show the schedule* prints exactly what was handed over, and its first line
+says whether the platform or the app is holding it.
+
 ## If something goes wrong
 
 | Symptom | Fix |
@@ -348,3 +403,4 @@ downloads or installs anything by itself.
 | Content clipped at the right edge with the rail OPEN | Known and expected: the rail is still in-flow and adds 190 logical px. **Tap ☰** to close it. The overlay-drawer rework is the next stage. |
 | Stuck in a dialog, Back does nothing | Fixed in v30.5.1 — Back dismisses any dialog. On older builds: | Known, 2026-08-22: `SyncDialog` is modal and renders frameless over the page. `adb shell am force-stop org.ticktimer.app`. Sync runs automatically regardless. |
 | Installs a *second* TickTimer | The package name changed between builds. It's pinned in CMakeLists (`org.ticktimer.app`) — don't edit it. |
+| Notifications never arrive on the phone | Three checks in order: the permission prompt was answered yes (**Settings → Apps → TickTimer → Notifications**); TickTimer is excluded from Samsung's *Sleeping apps*; and `adb shell dumpsys alarm | grep -i ticktimer` lists something. See **Notifications on Android** above. |

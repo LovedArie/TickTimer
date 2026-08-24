@@ -36,7 +36,7 @@ package "Shell" {
   note right of mw
     owns the app-lifetime objects:
     AppData, JsonStore, TrackerService,
-    PomodoroEngine + Link, BlockAlarmService,
+    PomodoroEngine + Link, AlarmService,
     the tray icon, the nav rail
   end note
 
@@ -72,7 +72,7 @@ package "Domain — pure, headers, no Qt widgets, no sockets" {
 package "Services — app-lifetime QObjects" {
   component "TrackerService" as svc1
   component "PomodoroEngine\n+ PomodoroLink" as svc2
-  component "BlockAlarmService" as svc3
+  component "AlarmService" as svc3
   component "SyncService" as svc4
 }
 

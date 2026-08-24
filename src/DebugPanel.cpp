@@ -1,6 +1,7 @@
 #include "DebugPanel.h"
 
 #include "AffordabilityService.h"
+#include "AlarmService.h"
 #include "CheckInService.h"
 
 #include <QCheckBox>
@@ -27,18 +28,22 @@ QPushButton* button(const QString& text, const char* name)
 
 DebugPanel::DebugPanel(
     AffordabilityService* afford, CheckInService* checkIn,
+    AlarmService* alarms,
     std::function<QString()> briefing,
     std::function<void(const std::optional<QDateTime>&)> applyClock,
     std::function<QString()> injectProposal,
     std::function<QString()> startIntake,
+    std::function<QString()> showSchedule,
     QWidget* parent)
     : QDialog(parent)
     , m_afford(afford)
     , m_checkIn(checkIn)
+    , m_alarms(alarms)
     , m_briefing(std::move(briefing))
     , m_applyClock(std::move(applyClock))
     , m_injectProposal(std::move(injectProposal))
     , m_startIntake(std::move(startIntake))
+    , m_showSchedule(std::move(showSchedule))
 {
     setWindowTitle(tr("TickTimer — debug seams"));
     setModal(false); // the whole point is watching the app react beside it
@@ -239,7 +244,64 @@ DebugPanel::DebugPanel(
         root->addWidget(box);
     }
 
+    // ---- block alarms (v30.6) ----------------------------------------------
+    // The seam the fake clock deliberately does NOT reach. AlarmService
+    // reads its clock in the constructor — the high-water mark is born at
+    // "now" — so there is no now-provider left to rewire afterwards. The
+    // hint says so, rather than the panel offering a control that would
+    // quietly do nothing, which is the one thing a debug panel must never
+    // do.
+    {
+        auto* box    = new QGroupBox(tr("Block alarms"));
+        auto* layout = new QVBoxLayout(box);
+
+        auto* row       = new QHBoxLayout;
+        auto* pollNow   = button(tr("Poll now"), "debugAlarmPoll");
+        auto* rebuild   = button(tr("Republish"), "debugAlarmRepublish");
+        auto* showSched = button(tr("Show the schedule"), "debugAlarmSchedule");
+        row->addWidget(pollNow);
+        row->addWidget(rebuild);
+        row->addWidget(showSched);
+        layout->addLayout(row);
+
+        auto* hint = new QLabel(
+            tr("\"Poll now\" asks whether anything came due, without waiting "
+               "out the timer. \"Show the schedule\" prints the forward "
+               "window exactly as it is handed to the platform — on a phone "
+               "that list IS what Android holds, so a block missing from it "
+               "is a block that will not ring. This group runs on the wall "
+               "clock: the fake clock above does not reach it."));
+        hint->setWordWrap(true);
+        layout->addWidget(hint);
+
+        connect(pollNow, &QPushButton::clicked, m_alarms, &AlarmService::poll);
+        connect(rebuild, &QPushButton::clicked, m_alarms,
+                &AlarmService::republish);
+        connect(showSched, &QPushButton::clicked, this,
+                &DebugPanel::showSchedule);
+
+        root->addWidget(box);
+    }
+
     root->addStretch(1);
+}
+
+void DebugPanel::showSchedule()
+{
+    // Fetched per press, for the same reason the briefing is: a schedule is
+    // derived state, and the entire question being asked here is "what does
+    // it say RIGHT NOW".
+    auto* view = new QDialog(this);
+    view->setWindowTitle(tr("The forward schedule, right now"));
+    view->setAttribute(Qt::WA_DeleteOnClose);
+    view->resize(620, 460);
+
+    auto* layout = new QVBoxLayout(view);
+    auto* text   = new QPlainTextEdit(m_showSchedule());
+    text->setReadOnly(true);
+    layout->addWidget(text);
+
+    view->show();
 }
 
 void DebugPanel::showBriefing()

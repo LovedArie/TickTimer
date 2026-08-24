@@ -96,12 +96,13 @@ set(DOMAIN_SOURCES
     include/NudgePhrasing.h
     include/Mood.h
     include/CheckIn.h
+    include/Alarms.h
     include/ReturnPolicy.h
     include/Stats.h
     include/DayBriefing.h
     include/TrackerService.h
-    include/BlockAlarmService.h
-    src/BlockAlarmService.cpp
+    include/AlarmService.h
+    src/AlarmService.cpp
     include/PomodoroEngine.h
     include/PomodoroLink.h
     src/PomodoroEngine.cpp
@@ -127,6 +128,14 @@ set(UI_SOURCES
     src/PomodoroMiniWindow.cpp
     include/NotificationToast.h
     src/NotificationToast.cpp
+    # v30.6 — how the app SPEAKS, as an interface plus one implementation
+    # per platform. Notifier.cpp holds the only #ifdef that picks one.
+    include/Notifier.h
+    src/Notifier.cpp
+    include/DesktopNotifier.h
+    src/DesktopNotifier.cpp
+    include/AndroidNotifier.h
+    src/AndroidNotifier.cpp
     include/Affordability.h
     include/AffordabilityService.h
     src/AffordabilityService.cpp
@@ -375,6 +384,22 @@ if(ANDROID)
         # Android 9 (API 28) and newer — old enough for any phone you own,
         # new enough that Qt 6 doesn't have to carry compatibility shims.
         QT_ANDROID_MIN_SDK_VERSION "28"
+        # ...and the OTHER end of that range, pinned in v30.6 after the
+        # installed APK was found reporting targetSdk 36 while this file
+        # said nothing about it. Unset, the property takes Qt's own default
+        # (Qt6AndroidGradleHelpers.cmake), so the app was silently opted in
+        # to every behaviour change of an Android version nobody here had
+        # tested against — and would move again on the next Qt upgrade.
+        # targetSdk is a DECLARATION that the app was written for that
+        # platform's rules; it should be raised deliberately, after a run on
+        # a real phone, never inherited.
+        QT_ANDROID_TARGET_SDK_VERSION "35"
+        # v30.6 — our own AndroidManifest.xml and the Java that backs the
+        # notification alarms. Qt overlays this directory onto the generated
+        # Gradle project, so `android/src/**.java` is compiled with no
+        # further declaration here. See android/AndroidManifest.xml for the
+        # rule about keeping its %%INSERT_...%% tokens intact.
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android"
     )
 
     # ---- OpenSSL, which Qt for Android does NOT ship ---------------------
@@ -473,8 +498,14 @@ target_link_libraries(test_domain PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
 # source tree is — it may be run from build-release/, from ctest, or from
 # a deploy folder — so the path is baked in at configure time rather than
 # guessed from argv[0] or the working directory.
+# ...and the same trick for the same reason (v30.6): androidManifestKeeps
+# TheVersionTokens() reads our hand-written manifest and checks that the
+# placeholders androiddeployqt substitutes are still in it. A hand-written
+# manifest is precisely where a FOURTH version seam would start drifting,
+# and this repo has already paid for the third one.
 target_compile_definitions(test_domain PRIVATE
-    TICKTIMER_ISS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/installer/ticktimer.iss")
+    TICKTIMER_ISS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/installer/ticktimer.iss"
+    TICKTIMER_MANIFEST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/android/AndroidManifest.xml")
 
 add_test(NAME domain COMMAND test_domain)
 

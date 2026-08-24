@@ -15,6 +15,7 @@
 
 #include "CheckIn.h"
 
+#include <QDate>
 #include <QObject>
 #include <QTimer>
 
@@ -41,6 +42,12 @@ public:
     // The ledger reset, owned HERE because the key is this file's private
     // knowledge — the panel presses, the service knows which key it keeps.
     static void clearTodaysAsk();
+
+    // ...and the READ side of that same ledger (v30.6). AlarmService needs
+    // it to decide whether a scheduled morning knock is still owed, and it
+    // asks through this door for exactly the reason the reset lives here:
+    // one file, and only one, may know how the key is spelled.
+    static QDate lastOffered();
 
     checkin::Rule rule;
 

@@ -29,11 +29,14 @@
 
 #include <QMetaObject>
 
+#include <memory>
+
 #include "Responsive.h"
 
 #include <QMainWindow>
 
-class BlockAlarmService;
+class AlarmService;
+class Notifier;
 class AffordabilityService;
 class CheckInService;
 class ActivitiesPage;
@@ -125,8 +128,11 @@ protected:
     void changeEvent(QEvent* event) override;
 
 private:
-    void setupNotifications(); // ONE tray icon; two clients: the Pomodoro's
-                               // phaseEnded and the agenda's blocksStarting
+    void setupNotifications(); // three clients: the Pomodoro's phaseEnded,
+                               // and the agenda's own voice (AlarmService::
+                               // due, carrying both starts and ends). The
+                               // tray is guarded separately and carries
+                               // none of them.
 
     // The window's own memory (v23). A matched pair, deliberately adjacent:
     // any key one of them touches, the other must too, and putting them side
@@ -241,8 +247,14 @@ private:
     PlannerPage*  m_planner = nullptr; // typed: Settings re-applies prefs here
     PomodoroEngine* m_pomodoro     = nullptr; // app-lifetime, like m_tracker
     PomodoroLink*   m_pomodoroLink = nullptr; // engine→tracker adapter
-    QSystemTrayIcon* m_tray        = nullptr; // shared by every notifier
-    BlockAlarmService* m_blockAlarm = nullptr; // "your 9:00 is starting"
+    QSystemTrayIcon* m_tray        = nullptr; // presence + click-to-raise
+                                              // only; null where no tray
+    AlarmService*   m_alarms  = nullptr;       // owns the whole schedule
+    // HOW THE APP SPEAKS, chosen once at construction (v30.6). A
+    // unique_ptr and not a QObject child: Notifier has no signals and no
+    // place in a widget tree, so plain exclusive ownership is the honest
+    // tool. Destroyed with the window, deterministically.
+    std::unique_ptr<Notifier> m_notifier;
     AffordabilityService* m_afford = nullptr;  // "Lab 4 is looking tight" (v28)
     CheckInService* m_checkIn = nullptr;       // the morning knock (v28.2p2)
     ChatPage*       m_chat    = nullptr;       // typed: the check-in opens it

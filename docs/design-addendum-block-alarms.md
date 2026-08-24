@@ -4,6 +4,14 @@
 `design-doc.md` §3 and the pomodoro addendum (whose notifier this reuses);
 question bank section W.*
 
+> **Superseded in part by v30.6** — see
+> `design-addendum-notifications.md`. `BlockAlarmService` is now
+> `AlarmService`, and §C's ids-not-text rule is *inverted* on purpose: an
+> alarm is rendered in advance, because on Android there is no process alive
+> at fire time to resolve an id. The reasoning below is still the record of
+> why the desktop design was right — and reading it first is what makes the
+> inversion legible rather than arbitrary.
+
 ---
 
 ## A. Why a service, again — and why not the widget the owner named

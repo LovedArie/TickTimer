@@ -57,6 +57,14 @@ void CheckInService::clearTodaysAsk()
     QSettings().remove(kLastOffered);
 }
 
+QDate CheckInService::lastOffered()
+{
+    // An absent key reads as an invalid QDate, which every caller already
+    // treats as "never asked" — the tolerant-read habit JsonStore uses,
+    // applied to a preference.
+    return QSettings().value(kLastOffered).toDate();
+}
+
 void CheckInService::offerNow(const QDateTime& now)
 {
     // The toast line is C++ and SPECIFIC (§G.3): the heavy facts, briefly.

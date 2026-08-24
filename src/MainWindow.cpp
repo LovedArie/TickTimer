@@ -8,7 +8,8 @@
 #include "QuickCaptureOverlay.h"
 #include "SpecialDaysPage.h"
 #include "UpcomingPage.h"
-#include "BlockAlarmService.h"
+#include "AlarmService.h"
+#include "Notifier.h"
 #include "DebugPanel.h"
 #include "AffordabilityService.h"
 #include "CheckIn.h"
@@ -36,15 +37,10 @@
 
 #include <optional>
 #include <QSystemTrayIcon>
-#ifdef TICKTIMER_HAS_MULTIMEDIA
-#include <QSoundEffect>
-#elif defined(Q_OS_WIN)
-// Tier-2 sound (v19.9): Windows' own waveform API. Always present on
-// Windows — no Qt module, no extra DLLs — so a Qt kit installed without
-// Multimedia (the owner's, it turned out) still plays the real chimes.
-#include <windows.h>
-#include <mmsystem.h>
-#endif
+// The three-tier sound ifdef that used to live here went to
+// DesktopNotifier.cpp with the code that used it (v30.6). This file is now
+// free of platform preprocessor entirely — the one place that still asks
+// what platform this is, for notification purposes, is notify::make().
 #include "NotificationToast.h"
 #include <QFile>
 #include <functional>
@@ -355,7 +351,55 @@ MainWindow::MainWindow(const QString& username)
     m_pomodoroLink = new PomodoroLink(m_pomodoro, &m_tracker, this);
     m_pages->addWidget(new PomodoroPage(m_pomodoro, m_pomodoroLink,
                                         &m_tracker, &m_data, m_pages));
-    m_blockAlarm = new BlockAlarmService(&m_data, this);
+    // HOW THIS APP SPEAKS, decided once (v30.6). Built BEFORE the services
+    // that talk through it, and before setupNotifications() wires them —
+    // construction order is the cheapest kind of guarantee.
+    m_notifier = notify::make(this);
+
+    m_alarms = new AlarmService(&m_data, this);
+    // The two facts the schedule needs that the planner does not hold.
+    // Injected here because WHICH collaborators exist is composition
+    // knowledge — the same reason DebugPanel takes its clock seam as a
+    // callback rather than reaching for the services itself.
+    m_alarms->setTrackedEventProvider(
+        [this] { return m_tracker.trackedEventId(); });
+    m_alarms->setExtrasProvider([this] {
+        QVector<alarms::Alarm> extras;
+        // The Pomodoro's phase end: a known instant the moment a phase
+        // starts, so it schedules like anything else. remaining() is
+        // seconds, and a paused engine yields nothing (forPhase's guard).
+        if (prefs::pomodoroNotify()) {
+            const bool toBreak =
+                (m_pomodoro->phase() == PomodoroEngine::Phase::Focus);
+            extras += alarms::forPhase(
+                m_pomodoro->running(), toBreak, m_pomodoro->round(),
+                QDateTime::currentDateTime().addSecs(m_pomodoro->remaining()));
+        }
+        // The morning knock, gated by the same once-a-day ledger the live
+        // CheckInService keeps. Today AND tomorrow are offered: today's is
+        // dropped by derive()'s window when 08:00 has already gone by, so
+        // an app opened at noon still arms tomorrow's without arming a
+        // knock in the past.
+        const QDate today = QDate::currentDate();
+        const QDate seen  = CheckInService::lastOffered();
+        extras += alarms::forCheckIn(m_data, today, seen, m_alarms->rule);
+        extras += alarms::forCheckIn(m_data, today.addDays(1), seen,
+                                     m_alarms->rule);
+        return extras;
+    });
+    // Neither the tracker nor the Pomodoro is a planner edit, so neither
+    // reaches AlarmService through AppData::changed. Both move the
+    // schedule, so both must republish it.
+    connect(&m_tracker, &TrackerService::stateChanged, m_alarms,
+            &AlarmService::republish);
+    connect(m_pomodoro, &PomodoroEngine::modeChanged, m_alarms,
+            &AlarmService::republish);
+    // ...and the schedule goes wherever this platform keeps schedules: a
+    // no-op on desktop (our own timer already has it), the OS on Android.
+    connect(m_alarms, &AlarmService::scheduleChanged, this,
+            [this](const QVector<alarms::Alarm>& schedule) {
+                m_notifier->publish(schedule);
+            });
 
     // v28.0 — the proactive heads-up, with NO model in it. The whole
     // pipeline (trigger → verdict → manners → sentence) already works;
@@ -369,7 +413,7 @@ MainWindow::MainWindow(const QString& username)
     m_afford->setPersonaProvider(
         [] { return chat::configuredPersonaBand(); });
     connect(m_afford, &AffordabilityService::nudge, this,
-            [](const QString& title, const QString& body,
+            [this](const QString& title, const QString& body,
                const QString& /*taskId — the §G.1 action's seam, unused
                                 until the check-in gives tapping a toast
                                 somewhere to GO*/) {
@@ -379,7 +423,7 @@ MainWindow::MainWindow(const QString& username)
                 spec.kind  = ToastSpec::Kind::Alert; // danger-red accent
                 spec.msecs = 9000; // longer than a block alarm: this one
                                    // carries numbers worth actually reading
-                NotificationToast::show(spec);
+                m_notifier->announce(spec);
             });
 
     // v28.2p2 — the morning knock. The toast's action row meets the
@@ -400,7 +444,7 @@ MainWindow::MainWindow(const QString& username)
                     showPage(6);
                     m_chat->beginCheckIn();
                 };
-                NotificationToast::show(spec);
+                m_notifier->announce(spec);
             });
 
     setupNotifications();
@@ -671,7 +715,7 @@ MainWindow::MainWindow(const QString& username)
     connect(debugChord, &QShortcut::activated, this, [this]() {
         if (!m_debug) {
             m_debug = new DebugPanel(
-                m_afford, m_checkIn,
+                m_afford, m_checkIn, m_alarms,
                 [this] { return m_chat->currentBriefing(); },
                 [this](const std::optional<QDateTime>& fake) {
                     // One rewire, every clock: the panel promises "the app
@@ -724,6 +768,42 @@ MainWindow::MainWindow(const QString& username)
                                : tr("Nothing interview-worthy right now "
                                     "(everything is sized, skipped, or "
                                     "the queue is empty).");
+                },
+                [this]() -> QString {
+                    // v30.6 — the forward schedule, rendered. The first
+                    // line is the one that actually matters when a phone
+                    // stays silent: it says WHO is holding this list. If
+                    // the platform holds it, everything below is what
+                    // Android will ring whether or not this app is alive;
+                    // if we hold it, nothing below survives closing the
+                    // app, which on a desktop is fine and on a phone is
+                    // the whole bug.
+                    QStringList out;
+                    out << (m_notifier->deliversSchedule()
+                                ? tr("Held by the PLATFORM (survives the app "
+                                     "closing).")
+                                : tr("Held by THIS PROCESS (dies with the "
+                                     "app)."));
+                    out << (m_notifier->canSpeak()
+                                ? tr("Allowed to post notifications: yes.")
+                                : tr("Allowed to post notifications: NO — "
+                                     "every alarm below will be dropped in "
+                                     "silence."));
+                    out << QString();
+
+                    const QVector<alarms::Alarm>& schedule =
+                        m_alarms->schedule();
+                    if (schedule.isEmpty()) {
+                        out << tr("(nothing scheduled in the next %1 hours)")
+                                   .arg(m_alarms->rule.horizonHours);
+                    }
+                    for (const alarms::Alarm& a : schedule) {
+                        out << QStringLiteral("%1  %2\n    %3\n    key=%4")
+                                   .arg(a.at.toString(
+                                            QStringLiteral("ddd yyyy-MM-dd HH:mm")),
+                                        a.title, a.body, a.key);
+                    }
+                    return out.join(QChar('\n'));
                 },
                 this);
         }
@@ -1028,179 +1108,157 @@ void MainWindow::setupNotifications()
 {
     // The notifier lives HERE, not in the engine (which must stay liftable
     // and UI-free) and not in the page (which may be hidden — being hidden
-    // is the whole scenario a notification exists for). It now serves TWO
-    // clients — the Pomodoro's phase ends and the agenda's block starts —
-    // through one tray icon and one house style of toast.
+    // is the whole scenario a notification exists for). It now serves THREE
+    // clients — the Pomodoro's phase ends, the agenda's block starts, and
+    // the tracked block's planned end — through one house style of toast.
     //
-    // A tray icon is required plumbing: Qt routes desktop balloons through
-    // QSystemTrayIcon::showMessage, and most platforms only deliver them
-    // for a VISIBLE tray icon. So TickTimer now has a permanent tray
-    // presence — a small cost that buys a native notification path with
-    // zero new Qt modules. The icon itself is painted, not shipped: a
-    // 64-px disc in the app's focus green with a white minute-hand tick —
-    // no resource file, identical on every platform.
-    if (!QSystemTrayIcon::isSystemTrayAvailable())
-        return; // headless/tests/odd desktops: silently no balloons
+    // WHY THERE IS NO LONGER AN EARLY RETURN HERE (v30.6). This function
+    // used to open with `if (!QSystemTrayIcon::isSystemTrayAvailable())
+    // return;`, and that guard outlived its reason by eleven versions.
+    // It was correct in v19.8, when a notification WAS a tray balloon:
+    // Qt routes them through QSystemTrayIcon::showMessage and most
+    // platforms only deliver them for a visible tray icon, so no tray
+    // meant no notifications and returning early was honest. v19.9 then
+    // replaced the balloon with NotificationToast — a window we paint,
+    // which no pipeline can decline — and the guard was never revisited.
+    //
+    // The bill arrived on Android, which has no system tray: the function
+    // returned at its first line, and the phone lost the chime, the block
+    // alarm and the block-finished toast in one silent stroke. Nothing
+    // logged it, because a guard doing exactly what it says is not an
+    // error.
+    //
+    // So the tray is now guarded where the tray is actually USED (below),
+    // and the notifier clients run unconditionally. The lesson worth
+    // keeping: a feature check must guard the feature it names. This one
+    // said "is there a tray?" and meant "can we speak at all?", and those
+    // stopped being the same question the moment we owned the window.
 
-    // Chimes in three tiers (v19.9 — the owner's build fell through the
-    // v19.8 version silently: their Qt kit has no Multimedia module, so
-    // the ifdef quietly took the beep. The lesson is the fix: degrade in
-    // STEPS, and never past a step the platform is known to have):
-    //   1. QSoundEffect  — any platform, when Qt Multimedia exists;
-    //   2. winmm PlaySound — Windows' own API, ALWAYS present there: the
-    //      real chime with zero extra installs (WAV bytes read from the
-    //      resource and kept alive — SND_ASYNC plays from OUR buffer);
-    //   3. QApplication::beep() — the floor, for platforms with neither.
-#ifdef TICKTIMER_HAS_MULTIMEDIA
-    const auto makeChime = [this](const QString& qrcPath) {
-        auto* fx = new QSoundEffect(this);
-        fx->setSource(QUrl(QStringLiteral("qrc") + qrcPath));
-        fx->setVolume(0.85);
-        return std::function<void()>([fx]() { fx->play(); });
-    };
-#elif defined(Q_OS_WIN)
-    const auto makeChime = [](const QString& qrcPath) {
-        // The QByteArray is captured BY VALUE into the lambda and the
-        // lambda lives as long as the connection: the async player reads
-        // from a buffer that provably outlives every playback.
-        QFile wav(qrcPath);
-        // open()'s verdict is checked (Qt 6.11 marks it nodiscard — the
-        // owner's compiler flagged it, and the zero-warning policy covers
-        // THEIR machine, not just the CI's): a failed open yields empty
-        // bytes, and empty bytes already fall back to the beep below.
-        const QByteArray bytes =
-            wav.open(QIODevice::ReadOnly) ? wav.readAll() : QByteArray();
-        return std::function<void()>([bytes]() {
-            if (bytes.isEmpty()) {
-                QApplication::beep();
-                return;
-            }
-            PlaySoundW(reinterpret_cast<LPCWSTR>(bytes.constData()), nullptr,
-                       SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+    // The chime moved to DesktopNotifier in v30.6, along with the toast
+    // it rides with: what a notification SAYS and what it SOUNDS LIKE
+    // are one decision, and they now travel together on a ToastSpec
+    // instead of being assembled from two places at each connect.
+
+    // ---- the tray, guarded where it is actually used ------------------------
+    // Presence and click-to-raise ONLY — it carries no notification traffic
+    // any more (see the note at the top). Platforms without a tray (Android,
+    // the offscreen test platform, some desktops) simply skip it and keep
+    // every notifier below. The icon is painted, not shipped: a 64-px disc
+    // in the app's focus green with a white minute-hand tick — no resource
+    // file, identical on every platform.
+    if (QSystemTrayIcon::isSystemTrayAvailable()) {
+        QPixmap pix(64, 64);
+        pix.fill(Qt::transparent);
+        {
+            QPainter p(&pix);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setBrush(theme::focus());
+            p.setPen(Qt::NoPen);
+            p.drawEllipse(QRect(4, 4, 56, 56));
+            p.setPen(QPen(Qt::white, 6, Qt::SolidLine, Qt::RoundCap));
+            p.drawLine(QPoint(32, 34), QPoint(32, 16)); // minute hand at 12
+            p.drawLine(QPoint(32, 34), QPoint(44, 40)); // hour hand at ~4
+        }
+        m_tray = new QSystemTrayIcon(QIcon(pix), this);
+        m_tray->setToolTip(tr("TickTimer"));
+        m_tray->show();
+        // Clicking the tray brings the window back — earns its keep the
+        // moment the mini timer is floating over a maximized browser.
+        connect(m_tray, &QSystemTrayIcon::activated, this, [this]() {
+            showNormal();
+            raise();
+            activateWindow();
         });
-    };
-#else
-    const auto makeChime = [](const QString&) {
-        return std::function<void()>([]() { QApplication::beep(); });
-    };
-#endif
-    const auto phaseSound = makeChime(QStringLiteral(":/sounds/notify_phase.wav"));
-    const auto blockSound = makeChime(QStringLiteral(":/sounds/notify_block.wav"));
-
-    QPixmap pix(64, 64);
-    pix.fill(Qt::transparent);
-    {
-        QPainter p(&pix);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setBrush(theme::focus());
-        p.setPen(Qt::NoPen);
-        p.drawEllipse(QRect(4, 4, 56, 56));
-        p.setPen(QPen(Qt::white, 6, Qt::SolidLine, Qt::RoundCap));
-        p.drawLine(QPoint(32, 34), QPoint(32, 16)); // minute hand at 12
-        p.drawLine(QPoint(32, 34), QPoint(44, 40)); // hour hand at ~4
     }
-    m_tray = new QSystemTrayIcon(QIcon(pix), this);
-    m_tray->setToolTip(tr("TickTimer"));
-    m_tray->show();
-    // Clicking the tray brings the window back — earns its keep the moment
-    // the mini timer is floating over a maximized browser.
-    connect(m_tray, &QSystemTrayIcon::activated, this, [this]() {
-        showNormal();
-        raise();
-        activateWindow();
-    });
 
+    // ---- client 1: the Pomodoro's phase ends --------------------------------
     connect(m_pomodoro, &PomodoroEngine::phaseEnded, this,
-            [this, phaseSound](PomodoroEngine::Phase, PomodoroEngine::Phase next) {
+            [this](PomodoroEngine::Phase, PomodoroEngine::Phase next) {
                 // The preference is read AT FIRE TIME (derive-don't-store):
                 // unticking the box mid-phase silences the very next toast,
                 // no stale cached flag to chase.
                 if (!prefs::pomodoroNotify())
                     return;
-                phaseSound();
+                // v30.6: where the platform holds the schedule, the OS is
+                // already going to post this one at exactly this instant
+                // (alarms::forPhase put it there). Speaking here too would
+                // deliver it twice whenever the app happens to be open.
+                if (m_notifier->deliversSchedule())
+                    return;
+
                 const bool toBreak = (next != PomodoroEngine::Phase::Focus);
-                const QString title = toBreak ? tr("Focus done")
-                                              : tr("Break over");
-                const QString body =
+                ToastSpec spec;
+                spec.title = toBreak ? tr("Focus done") : tr("Break over");
+                spec.body =
                     toBreak ? tr("Time for a break — %1 on the clock.")
                                   .arg(m_pomodoro->timeText())
                             : tr("Round %1 — %2 of focus. You've got this.")
                                   .arg(m_pomodoro->round())
                                   .arg(m_pomodoro->timeText());
-                NotificationToast::show(title, body);
+                spec.sound = ToastSpec::Sound::Phase;
+                m_notifier->announce(spec);
             });
 
-    // ---- client 2: "your planned block is starting" -------------------------
-    connect(m_blockAlarm, &BlockAlarmService::blocksStarting, this,
-            [this, blockSound](const QVector<QString>& eventIds) {
-                if (!prefs::blockStartNotify()) // fire-time read, as always
-                    return;
-
-                // Compose a line per block — resolved FRESH from AppData at
-                // toast time (the service sent ids, not text, for exactly
-                // this reason: titles may have been edited since).
-                QStringList lines;
-                for (const QString& id : eventIds) {
-                    const Event* e = m_data.eventById(id);
-                    if (!e)
-                        continue; // deleted between alarm and toast: skip
-                    // Already tracking it? You clearly know — the own-hands
-                    // rule's cousin: never announce what the user is
-                    // actively doing.
-                    if (m_tracker.isTrackingEvent(id))
-                        continue;
-
-                    // The block's name, by its identity (block-labels
-                    // addendum): activity occurrence, task block, or ad-hoc
-                    // title — first one that exists wins.
-                    QString name = e->title;
-                    if (const Activity* a = m_data.activityById(e->activityId))
-                        name = a->name;
-                    else if (const Task* t = m_data.taskById(e->taskId))
-                        name = t->title;
-                    if (name.isEmpty())
-                        name = tr("(untitled block)");
-
-                    lines << tr("%1 · %2 – %3")
-                                 .arg(name,
-                                      timeLabel(e->plannedStartMinutes),
-                                      timeLabel(e->plannedEndMinutes));
-                }
-                if (lines.isEmpty())
-                    return;
-
-                blockSound();
-                // Our own card, not showMessage (v19.9): the tray API only
-                // SUBMITS a balloon to the OS pipeline, and Windows may
-                // decline in silence (Focus Assist, per-app settings) —
-                // which is precisely how the owner's 12:00 went unheard.
-                // The tray icon itself stays: presence + click-to-raise.
-                NotificationToast::show(
-                    lines.size() == 1 ? tr("Starting now")
-                                      : tr("%1 blocks starting now")
-                                            .arg(lines.size()),
-                    lines.join(QStringLiteral("\n")));
-            });
-
-    // ---- client 3: "that block is finished" (v19.8) -------------------------
-    // Fires from the tracker's own exit door, so it is exact: the toast
-    // lands within one tick of the boundary, names the block, and — when
-    // the link was driving — arrives alongside the Pomodoro's pause.
-    connect(&m_tracker, &TrackerService::trackedBlockEnded, this,
-            [this, blockSound](const QString& eventId) {
+    // ---- client 2: the agenda's voice, both halves (v30.6) ------------------
+    // One connection where there used to be two. Before v30.6 a block
+    // STARTING came from BlockAlarmService and a tracked block FINISHING
+    // came from TrackerService's exit door, and each composed its own
+    // sentence at fire time. Both are now instants in one schedule, and
+    // the sentence was written when the schedule was derived — because on
+    // a phone there is no process left to write it later (Alarms.h).
+    //
+    // What this handler still owns is GROUPING, which is a presentation
+    // decision and belongs nowhere else: two blocks starting in the same
+    // poll are one toast on a desktop, where cards stack in a corner. On
+    // Android they are separate notifications, which is what a shade is
+    // for — and that path never reaches here at all.
+    connect(m_alarms, &AlarmService::due, this,
+            [this](const QVector<alarms::Alarm>& ready) {
                 if (!prefs::blockStartNotify()) // one agenda voice, one pref
                     return;
-                QString name = tr("Planned block");
-                if (const Event* e = m_data.eventById(eventId))
-                    name = m_data.eventLabel(*e);
-                blockSound();
-                NotificationToast::show(
-                    tr("%1 finished").arg(name),
-                    m_pomodoroLink->isEnabled()
-                        ? tr("Its planned time is up — tracking stopped and "
-                             "the Pomodoro is paused.")
-                        : tr("Its planned time is up — tracking stopped."));
+                // The OS already posted these; see client 1.
+                if (m_notifier->deliversSchedule())
+                    return;
+
+                QVector<alarms::Alarm> blocks;
+                for (const alarms::Alarm& a : ready)
+                    if (a.chime == alarms::Chime::Block)
+                        blocks.append(a);
+                if (blocks.isEmpty())
+                    return;
+
+                ToastSpec spec;
+                spec.sound = ToastSpec::Sound::Block;
+                if (blocks.size() == 1) {
+                    spec.title = blocks.first().title;
+                    spec.body  = blocks.first().body;
+                } else {
+                    spec.title = tr("%1 blocks starting now").arg(blocks.size());
+                    QStringList lines;
+                    for (const alarms::Alarm& a : blocks)
+                        lines << a.body;
+                    spec.body = lines.join(QChar('\n'));
+                }
+                m_notifier->announce(spec);
             });
+
+    // ---- ask for permission to speak, if this platform has such a notion ---
+    // Deferred rather than fired from the constructor: on Android the
+    // request puts a system dialog in front of the user, and one that
+    // arrives before the window it belongs to reads as an ambush. Two
+    // seconds is the same instinct CheckInService's thirty-second delay
+    // encodes — let the app finish appearing first.
+    //
+    // Asked once per launch and only while blocked; the answer is read back
+    // by canSpeak() whenever it next matters, so nothing here awaits a
+    // callback. A desktop's canSpeak() is always true, so this costs the
+    // desktop build one branch and nothing else.
+    if (!m_notifier->canSpeak()) {
+        QTimer::singleShot(2000, this, [this] {
+            if (!m_notifier->canSpeak())
+                m_notifier->requestPermission();
+        });
+    }
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -1228,6 +1286,20 @@ MainWindow::~MainWindow()
     // valid — and the first moment at which we know they are about to not be.
     if (m_pages)
         disconnect(m_pages, nullptr, this, nullptr);
+
+    // Same reasoning, a different lifetime mismatch (v30.6). m_notifier is a
+    // MEMBER, so it dies with the members — right after this body. m_alarms
+    // is a QObject CHILD, so it dies later still, inside ~QObject. That
+    // leaves a window in which the service is alive, its connection intact,
+    // and the notifier its handler dereferences already gone. Nothing emits
+    // in that window today; the point is that nothing has to, for this to be
+    // a real bug the day someone adds a signal to a destructor.
+    //
+    // Severing it here costs one line and closes the window while every
+    // pointer involved is still valid — the same "last moment everything is
+    // still true" argument as above.
+    if (m_alarms)
+        disconnect(m_alarms, nullptr, this, nullptr);
 }
 
 void MainWindow::showPage(int index)

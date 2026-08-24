@@ -27,6 +27,9 @@ diagram is `diagrams/debug_seams.*`.
 | | Clear today's ask | `CheckInService::clearTodaysAsk()` |
 | The assistant's context | Show the briefing | `ChatPage::currentBriefing()` — the exact text every chat turn carries |
 | AI | All providers down this run | `TICKTIMER_AI_DOWN=*` for this process only |
+| Block alarms | Poll now | `AlarmService::poll()` — "has anything come due?", without the timer |
+| | Republish | `AlarmService::republish()` — re-derive the window and hand it to the platform |
+| | Show the schedule | `AlarmService::schedule()` + `Notifier::deliversSchedule()` / `canSpeak()` |
 
 ---
 
@@ -166,6 +169,48 @@ per-service decision for whenever a recipe needs it, not a default.
    names the path that always works.
 6. The designed entry: force a check-in (Offer now), answer the mood,
    and the interview offer follows — §K.1's moment, never at capture.
+
+## Recipe: block alarms, and whether the phone will actually ring (v30.6)
+
+**Goal: see what the OS is holding, without waiting for 09:00.**
+
+The alarm group runs on the **wall clock**. The fake clock above does not
+reach it, and that is not an oversight: `AlarmService` reads its clock in the
+constructor (the high-water mark is born at "now"), so there is no
+now-provider left to rewire afterwards. The panel says so rather than
+offering a control that would quietly do nothing.
+
+1. Plan a block a few minutes out. Ctrl+Shift+D → **Block alarms** →
+   **Show the schedule**.
+2. Read the **first line** before anything else. *Held by THIS PROCESS* means
+   the app's own timer is the only thing that will ring — correct on a
+   desktop, and the entire bug on a phone. *Held by the PLATFORM* means
+   Android has it and will ring with the app dead.
+3. The second line says whether the app is allowed to post notifications at
+   all. On Android a **NO** here means every alarm below is dropped in
+   silence — the exact failure v30.6 was written to end.
+4. **Poll now** asks whether anything came due, without waiting out the
+   timer. On a desktop that fires the toast; on a phone it deliberately does
+   nothing, because the OS already owns that moment and speaking here too
+   would deliver it twice.
+5. The scene worth doing once: **start tracking** the block you planned, then
+   press **Show the schedule** again. Its *start* alarm is gone and an *end*
+   alarm has taken its place. That is the own-hands rule surviving
+   out-of-process — the schedule was republished without it, which is the
+   only way a mute can work when the app is closed. Stop tracking and it
+   comes back.
+
+**On the phone itself**, the same question from the other side:
+
+```sh
+adb shell dumpsys alarm | grep -i ticktimer
+```
+
+What that prints should match what the panel showed. If the panel lists
+alarms and `dumpsys` lists none, the publish never reached the OS. The
+reboot check is the one nothing else can substitute for: `adb reboot`, wait,
+then run it again — Android discards scheduled alarms on restart, and only
+`BootReceiver` puts them back.
 
 ---
 

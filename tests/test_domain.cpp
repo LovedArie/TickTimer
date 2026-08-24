@@ -23,7 +23,8 @@
 #include "ReturnPolicy.h"
 #include "Version.h"
 #include "Stats.h"
-#include "BlockAlarmService.h"
+#include "Alarms.h" // v30.6 — the schedule as a value
+#include "AlarmService.h"
 #include "PomodoroEngine.h"
 #include "PomodoroLink.h"
 #include "TrackerService.h"
@@ -289,18 +290,25 @@ private slots:
                  qint64(0));
     }
 
-    void blockAlarmAnnouncesEachStartExactlyOnce()
+    // ---- AlarmService: the object half (was BlockAlarmService) -------------
+    // The RULES these used to prove now live in Alarms.h and are pinned
+    // above without a service at all. What is left here is what genuinely
+    // needs an object: the clock read at construction, the high-water mark
+    // moving forward exactly once, and the schedule being republished
+    // rather than accumulated.
+
+    void alarmServiceAnnouncesEachStartExactlyOnce()
     {
         AppData data;
         const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
         const QString act = data.addActivity("Study", cat);
-        const QString ev  = data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+        data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
 
         // The movable clock, injected THROUGH the ctor (the mark is born
         // at "now", so a seam patched on afterwards would be too late).
-        QDateTime now = kT0.addSecs(-120); // 08:58
-        BlockAlarmService alarm(&data, [&now] { return now; });
-        QSignalSpy fired(&alarm, &BlockAlarmService::blocksStarting);
+        QDateTime    now = kT0.addSecs(-120); // 08:58
+        AlarmService alarm(&data, [&now] { return now; });
+        QSignalSpy   fired(&alarm, &AlarmService::due);
 
         alarm.poll(); // 08:58 — nothing is due yet
         QCOMPARE(fired.count(), 0);
@@ -308,9 +316,12 @@ private slots:
         now = kT0.addSecs(30); // 09:00:30 — inside the grace window
         alarm.poll();
         QCOMPARE(fired.count(), 1);
-        const auto ids =
-            fired.takeFirst().at(0).value<QVector<QString>>();
-        QCOMPARE(ids, QVector<QString>{ev});
+        const auto ready =
+            fired.takeFirst().at(0).value<QVector<alarms::Alarm>>();
+        QCOMPARE(ready.size(), 1);
+        QCOMPARE(ready.first().at, kT0);
+        QCOMPARE(ready.first().body,
+                 QStringLiteral("Study · 9:00 AM – 10:00 AM"));
 
         alarm.poll(); // the high-water mark forbids a second announcement
         QCOMPARE(fired.count(), 0);
@@ -322,16 +333,16 @@ private slots:
         QCOMPARE(fired.count(), 1);
     }
 
-    void blockAlarmSkipsStaleStartsInSilence()
+    void alarmServiceSkipsStaleStartsInSilence()
     {
         AppData data;
         const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
         const QString act = data.addActivity("Study", cat);
         data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
 
-        QDateTime now = kT0.addSecs(-60);
-        BlockAlarmService alarm(&data, [&now] { return now; });
-        QSignalSpy fired(&alarm, &BlockAlarmService::blocksStarting);
+        QDateTime    now = kT0.addSecs(-60);
+        AlarmService alarm(&data, [&now] { return now; });
+        QSignalSpy   fired(&alarm, &AlarmService::due);
 
         // The laptop slept through 09:00 and woke at 09:05 — five minutes
         // stale is past the grace window: silence, not a late toast...
@@ -345,7 +356,7 @@ private slots:
         QCOMPARE(fired.count(), 0);
     }
 
-    void blockAlarmIgnoresBlocksCreatedAlreadyUnderway()
+    void alarmServiceIgnoresBlocksCreatedAlreadyUnderway()
     {
         AppData data;
         const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
@@ -353,46 +364,288 @@ private slots:
 
         // Born at 09:05; the block you then create for 09:00 is your own
         // hands at work — its start is behind the mark, so: nothing.
-        QDateTime now = kT0.addSecs(300);
-        BlockAlarmService alarm(&data, [&now] { return now; });
-        QSignalSpy fired(&alarm, &BlockAlarmService::blocksStarting);
+        QDateTime    now = kT0.addSecs(300);
+        AlarmService alarm(&data, [&now] { return now; });
+        QSignalSpy   fired(&alarm, &AlarmService::due);
 
         data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
         alarm.poll();
         QCOMPARE(fired.count(), 0);
     }
 
-    void blockAlarmSweepsManyDueStartsButAnnouncesOnlyFreshOnes()
+    void alarmServiceSweepsManyDueStartsButAnnouncesOnlyFreshOnes()
     {
         // One poll after a long stall can find SEVERAL due blocks at once.
         // The contract: stale ones (past grace) go silent, fresh ones get
         // announced, and the mark sweeps past ALL of them — that's why the
-        // signal carries a vector. (With today's 30-min slot grid and a
-        // 2-min grace, two FRESH blocks in one poll can't happen — the
-        // vector is headroom, and this test pins the sweep that can.)
+        // signal carries a vector.
         AppData data;
         const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
         const QString act = data.addActivity("Study", cat);
-        data.addEvent(kT0.date(), 9 * 60, 9 * 60 + 30, act);       // 09:00
-        const QString fresh =
-            data.addEvent(kT0.date(), 9 * 60 + 30, 10 * 60, act);  // 09:30
+        data.addEvent(kT0.date(), 9 * 60, 9 * 60 + 30, act);      // 09:00
+        data.addEvent(kT0.date(), 9 * 60 + 30, 10 * 60, act);     // 09:30
 
-        QDateTime now = kT0.addSecs(-60); // 08:59
-        BlockAlarmService alarm(&data, [&now] { return now; });
-        QSignalSpy fired(&alarm, &BlockAlarmService::blocksStarting);
+        QDateTime    now = kT0.addSecs(-60); // 08:59
+        AlarmService alarm(&data, [&now] { return now; });
+        QSignalSpy   fired(&alarm, &AlarmService::due);
 
         // The app stalls straight through 09:00 and polls at 09:31 —
         // 09:00 is 31 min stale (silence), 09:30 is 60 s fresh (toast).
         now = kT0.addSecs(31 * 60);
         alarm.poll();
         QCOMPARE(fired.count(), 1);
-        const auto ids = fired.takeFirst().at(0).value<QVector<QString>>();
-        QCOMPARE(ids, QVector<QString>{fresh});
+        const auto ready =
+            fired.takeFirst().at(0).value<QVector<alarms::Alarm>>();
+        QCOMPARE(ready.size(), 1);
+        QCOMPARE(ready.first().at, kT0.addSecs(30 * 60));
 
         // And the swept-past 09:00 can never resurrect.
         now = kT0.addSecs(32 * 60);
         alarm.poll();
         QCOMPARE(fired.count(), 0);
+    }
+
+    void alarmServiceRepublishesRatherThanAccumulates()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev  = data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+
+        QDateTime    now = kT0.addSecs(-3600);
+        AlarmService alarm(&data, [&now] { return now; });
+        QSignalSpy   published(&alarm, &AlarmService::scheduleChanged);
+
+        QCOMPARE(alarm.schedule().size(), 1);
+
+        // A planner edit re-derives the WHOLE window. Accumulating instead
+        // would keep alarms the data no longer supports — and on a phone
+        // those are not stale objects in memory, they are pending intents
+        // the OS will happily fire.
+        QVERIFY(data.removeEvent(ev));
+        QVERIFY(published.count() >= 1);
+        QCOMPARE(alarm.schedule().size(), 0);
+    }
+
+    void alarmServiceCarriesExtrasItCannotDeriveItself()
+    {
+        AppData data;
+        QDateTime    now = kT0;
+        AlarmService alarm(&data, [&now] { return now; });
+
+        // The Pomodoro's phase end is not in the planner, so the
+        // composition root contributes it. Injected rather than reached
+        // for, so this assertion needs no engine.
+        alarm.setExtrasProvider([] {
+            return alarms::forPhase(true, /*nextIsBreak=*/true, 1,
+                                    kT0.addSecs(25 * 60));
+        });
+
+        QCOMPARE(alarm.schedule().size(), 1);
+        QCOMPARE(alarm.schedule().first().chime, alarms::Chime::Phase);
+    }
+
+    // ---- v30.6: the schedule as a value (Alarms.h) -------------------------
+    // Everything below is pure: no timer, no service, no signal spy. The
+    // clock is a parameter, so these pin the rules the Android scheduler and
+    // the desktop timer now SHARE. The fixture: kT0 is Wed 2026-07-01 09:00,
+    // and "from" is deliberately a moment BEFORE the blocks under test so
+    // the horizon question is about the far edge, never the near one.
+
+    void alarmsUpcomingRendersAStartForAPlannedBlock()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+
+        const auto out = alarms::upcoming(data, kT0.addSecs(-3600), QString());
+        QCOMPARE(out.size(), 1);
+        QCOMPARE(out.first().at, kT0);
+        QCOMPARE(out.first().title, QStringLiteral("Starting now"));
+        // The body is FINISHED TEXT — the whole point of the inversion.
+        // Nothing here may need a lookup at fire time.
+        QCOMPARE(out.first().body,
+                 QStringLiteral("Study · 9:00 AM – 10:00 AM"));
+        QCOMPARE(out.first().chime, alarms::Chime::Block);
+    }
+
+    void alarmsUpcomingStopsAtTheHorizon()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        data.addEvent(kT0.date().addDays(1), 9 * 60, 10 * 60, act); // +24h
+        data.addEvent(kT0.date().addDays(5), 9 * 60, 10 * 60, act); // +120h
+
+        // The default 48-hour window takes tomorrow and leaves next week.
+        // A schedule is a working set, not a backlog: every republish
+        // replaces it, so reaching further would only hand the OS pending
+        // intents that a single edit invalidates.
+        const auto out = alarms::upcoming(data, kT0, QString());
+        QCOMPARE(out.size(), 1);
+        QCOMPARE(out.first().at.date(), kT0.date().addDays(1));
+    }
+
+    void alarmsUpcomingSkipsBlocksWithASettledOutcome()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev  = data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+
+        QCOMPARE(alarms::upcoming(data, kT0.addSecs(-3600), QString()).size(), 1);
+
+        // A decision already made is not something to be alarmed about.
+        QVERIFY(data.resolveBlock(ev, BlockOutcome::Dropped));
+        QCOMPARE(alarms::upcoming(data, kT0.addSecs(-3600), QString()).size(), 0);
+    }
+
+    void alarmsUpcomingMutesTheBlockYouAreAlreadyTracking()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev  = data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+
+        // The own-hands rule, which lived in MainWindow until v30.6. It had
+        // to move here to survive the app being closed: the schedule the
+        // phone holds is the only thing that can carry it.
+        const auto out = alarms::upcoming(data, kT0.addSecs(-3600), ev);
+        for (const alarms::Alarm& a : out)
+            QVERIFY(!a.key.startsWith(QStringLiteral("start:")));
+    }
+
+    void alarmsUpcomingEndsOnlyTheBlockBeingTracked()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev  = data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+        data.addEvent(kT0.date(), 11 * 60, 12 * 60, act); // never tracked
+
+        // Untracked: no end alarm anywhere. Announcing the end of work
+        // nobody started is a different and worse feature.
+        const auto idle = alarms::upcoming(data, kT0.addSecs(-3600), QString());
+        for (const alarms::Alarm& a : idle)
+            QVERIFY(!a.key.startsWith(QStringLiteral("end:")));
+
+        // Tracking it swaps that one block's start for its end.
+        const auto live = alarms::upcoming(data, kT0.addSecs(-3600), ev);
+        int ends = 0;
+        for (const alarms::Alarm& a : live) {
+            if (a.key.startsWith(QStringLiteral("end:"))) {
+                ++ends;
+                QCOMPARE(a.at, kT0.addSecs(3600)); // the PLANNED end, 10:00
+                QCOMPARE(a.title, QStringLiteral("Study finished"));
+            }
+        }
+        QCOMPARE(ends, 1);
+    }
+
+    void alarmsKeyIsStableAcrossRepublishAndSplitsStartFromEnd()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev  = data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+
+        // STABILITY IS THE WHOLE CONTRACT. In-process a high-water mark made
+        // duplicates impossible; out-of-process the OS dedupes by this key,
+        // so a key that wobbled between republishes would double-book the
+        // schedule on every edit.
+        const auto first  = alarms::upcoming(data, kT0.addSecs(-3600), QString());
+        const auto second = alarms::upcoming(data, kT0.addSecs(-1800), QString());
+        QCOMPARE(first.size(), 1);
+        QCOMPARE(first.first().key, second.first().key);
+
+        // And a block's start must never collide with its own end.
+        const auto tracked = alarms::upcoming(data, kT0.addSecs(-3600), ev);
+        QCOMPARE(tracked.size(), 1);
+        QVERIFY(tracked.first().key != first.first().key);
+    }
+
+    void alarmsDueBetweenAnnouncesFreshStartsAndSkipsStaleOnesInSilence()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        data.addEvent(kT0.date(), 9 * 60, 10 * 60, act);
+        const auto schedule = alarms::upcoming(data, kT0.addSecs(-3600), QString());
+
+        // Nothing is due before the instant.
+        QCOMPARE(alarms::dueBetween(schedule, kT0.addSecs(-600),
+                                    kT0.addSecs(-1)).size(), 0);
+        // Inside the two-minute grace window it speaks.
+        QCOMPARE(alarms::dueBetween(schedule, kT0.addSecs(-600),
+                                    kT0.addSecs(30)).size(), 1);
+        // Past it — a slept laptop, a suspended phone — it stays silent
+        // rather than shouting about a morning that already happened.
+        QCOMPARE(alarms::dueBetween(schedule, kT0.addSecs(-600),
+                                    kT0.addSecs(300)).size(), 0);
+        // And the mark, not the schedule, is what forbids a repeat.
+        QCOMPARE(alarms::dueBetween(schedule, kT0.addSecs(30),
+                                    kT0.addSecs(31)).size(), 0);
+    }
+
+    void alarmsNextAfterFindsTheEarliestAheadOfTheMark()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        data.addEvent(kT0.date(), 11 * 60, 12 * 60, act);
+        data.addEvent(kT0.date(), 9 * 60, 10 * 60, act); // added second, earlier
+        const auto schedule = alarms::upcoming(data, kT0.addSecs(-7200), QString());
+
+        // Insertion order must not decide what a desktop timer arms for.
+        QCOMPARE(alarms::nextAfter(schedule, kT0.addSecs(-7200)), kT0);
+        QCOMPARE(alarms::nextAfter(schedule, kT0), kT0.addSecs(2 * 3600));
+        // Nothing ahead reads as "sleep until the data changes".
+        QVERIFY(!alarms::nextAfter(schedule, kT0.addSecs(4 * 3600)).isValid());
+    }
+
+    void alarmsForPhaseSchedulesOnlyWhileTheCountdownRuns()
+    {
+        const QDateTime ends = kT0.addSecs(25 * 60);
+
+        const auto focus = alarms::forPhase(true, /*nextIsBreak=*/true, 1, ends);
+        QCOMPARE(focus.size(), 1);
+        QCOMPARE(focus.first().at, ends);
+        QCOMPARE(focus.first().title, QStringLiteral("Focus done"));
+        QCOMPARE(focus.first().chime, alarms::Chime::Phase);
+
+        const auto back = alarms::forPhase(true, /*nextIsBreak=*/false, 3, ends);
+        QCOMPARE(back.first().title, QStringLiteral("Break over"));
+        QVERIFY(back.first().body.contains(QStringLiteral("Round 3")));
+
+        // Paused holds nothing: the caller republishes on modeChanged, so
+        // pause cancels and resume re-arms with no state kept in the header.
+        QCOMPARE(alarms::forPhase(false, true, 1, ends).size(), 0);
+        QCOMPARE(alarms::forPhase(true, true, 1, QDateTime()).size(), 0);
+    }
+
+    void alarmsForCheckInKnocksOnlyOnAHeavyDayNotYetAsked()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate   day = kT0.date();
+
+        // An empty day earns no knock.
+        QCOMPARE(alarms::forCheckIn(data, day, QDate()).size(), 0);
+
+        // Five hours of blocks is a real day (checkin::Rule's own threshold).
+        data.addEvent(day, 9 * 60, 12 * 60, act);
+        data.addEvent(day, 13 * 60, 15 * 60, act);
+        const auto knock = alarms::forCheckIn(data, day, QDate());
+        QCOMPARE(knock.size(), 1);
+        // 08:00 — inside checkin::Rule's 06:00–11:00 window, but its own
+        // decision: the window says when a knock is ACCEPTABLE, this says
+        // when to initiate one nobody asked for.
+        QCOMPARE(knock.first().at, QDateTime(day, QTime(8, 0)));
+
+        // Once means once — a day already asked gets nothing scheduled.
+        QCOMPARE(alarms::forCheckIn(data, day, day).size(), 0);
     }
 
     void pomodoroEngineWalksTheClassicCycle()
@@ -1502,6 +1755,69 @@ private slots:
                  "no '#define AppVersion \"...\"' line in ticktimer.iss");
 
         QCOMPARE(m.captured(1), version::current());
+    }
+
+    void androidManifestKeepsTheVersionTokens()
+    {
+        // v30.6. The sibling of the test above, guarding the seam that
+        // v30.6 CREATED. Until this version there was no AndroidManifest in
+        // the tree at all — androiddeployqt generated one and stamped the
+        // version into it from CMake, so there was nothing to drift. A
+        // hand-written manifest (needed for POST_NOTIFICATIONS and the two
+        // receivers) is a place someone can hard-code "30.6.0" and be right
+        // exactly once.
+        //
+        // So: assert the PLACEHOLDERS survive, not the version. Getting the
+        // number right is androiddeployqt's job; keeping the holes it fills
+        // is ours, and that is the part a human can quietly break.
+        QFile manifest(QStringLiteral(TICKTIMER_MANIFEST_PATH));
+        QVERIFY2(manifest.open(QIODevice::ReadOnly | QIODevice::Text),
+                 qPrintable(QStringLiteral("cannot open %1 — if the manifest "
+                                           "moved, fix the path in "
+                                           "CMakeLists.txt rather than "
+                                           "deleting this test")
+                                .arg(QStringLiteral(TICKTIMER_MANIFEST_PATH))));
+        const QString text = QString::fromUtf8(manifest.readAll());
+
+        // The two the version machinery depends on...
+        QVERIFY2(text.contains(QStringLiteral("%%INSERT_VERSION_CODE%%")),
+                 "AndroidManifest.xml lost its versionCode placeholder — the "
+                 "APK would stop tracking include/Version.h");
+        QVERIFY2(text.contains(QStringLiteral("%%INSERT_VERSION_NAME%%")),
+                 "AndroidManifest.xml lost its versionName placeholder — the "
+                 "APK would stop tracking include/Version.h");
+        // ...and the one that decides whether the app launches at all: the
+        // native library's name is substituted here too, and a manifest
+        // that lost it produces an APK that installs and then dies on
+        // startup with nothing useful in the log.
+        QVERIFY2(text.contains(QStringLiteral("%%INSERT_APP_LIB_NAME%%")),
+                 "AndroidManifest.xml lost its lib_name placeholder — the APK "
+                 "would install and fail to start");
+
+        // Qt's own injection point, which is easier to delete than to miss.
+        // androiddeployqt substitutes the permissions the linked Qt modules
+        // declare for themselves at this literal comment — INTERNET and
+        // ACCESS_NETWORK_STATE among them, contributed transitively by
+        // Qt6Core rather than written down anywhere. The first build of the
+        // hand-written manifest dropped it and produced an APK that
+        // installed, launched, rendered, and could not reach the server.
+        QVERIFY2(text.contains(QStringLiteral("%%INSERT_PERMISSIONS")),
+                 "AndroidManifest.xml lost Qt's permission injection point — "
+                 "the APK would build without INTERNET and the app could not "
+                 "reach the server");
+
+        // And the permissions that ARE the feature. Losing one of these is
+        // silent: Android drops the notifications, or the alarms stop
+        // surviving a reboot, and nothing anywhere reports an error.
+        for (const QString& permission :
+             { QStringLiteral("android.permission.POST_NOTIFICATIONS"),
+               QStringLiteral("android.permission.USE_EXACT_ALARM"),
+               QStringLiteral("android.permission.RECEIVE_BOOT_COMPLETED") }) {
+            QVERIFY2(text.contains(permission),
+                     qPrintable(QStringLiteral("AndroidManifest.xml no longer "
+                                               "requests %1")
+                                    .arg(permission)));
+        }
     }
 
     // ---- v7: archive, priority, honest tracking, editable days ------------

@@ -46,9 +46,22 @@ struct ToastSpec
     // made for the delegate.
     enum class Kind { Info, Alert };
 
+    // Which chime, if any, rides along (v30.6). It lives on the spec for
+    // the same reason Kind does: a toast that makes a noise is a different
+    // VALUE, not a different function. Before this, the sound was a
+    // std::function captured beside each connect in setupNotifications,
+    // which meant the two facts about one notification — what it says and
+    // what it sounds like — were assembled in two places and could not
+    // travel together to a Notifier.
+    //
+    // None is the default so the two silent voices (the affordability
+    // nudge, the morning check-in) read exactly as they did before.
+    enum class Sound { None, Block, Phase };
+
     QString title;
     QString body;
     Kind    kind  = Kind::Info;
+    Sound   sound = Sound::None;
     int     msecs = 6000;
 
     // Optional action row. Empty text = no button = exactly the old toast.
