@@ -21,6 +21,7 @@
 #include "PomodoroPage.h"
 #include "Prefs.h"
 #include "Theme.h"
+#include "Touch.h" // v30.7 — the 48dp minimum, as a value
 #include "Widgets.h"
 
 #include <QApplication>
@@ -105,6 +106,19 @@ MainWindow::MainWindow(const QString& username)
     // "a phone is a different product" hangs off this line; everything that is
     // "this container got narrower" still goes through applyLayoutMode().
     m_phoneShell = isCompactScreen();
+
+    // NO STATUS BAR ON A PHONE (v30.7). QMainWindow creates one lazily on the
+    // first statusBar() call and it then reserves its strip forever, saying
+    // nothing most of the day — 14dp measured on the device, taken from a
+    // timeline that only had 47% of the screen to begin with. say() routes
+    // those messages to a toast instead, so nothing is lost; this line is
+    // what stops the empty band from ever being built.
+    //
+    // setStatusBar(nullptr) rather than hide(): a hidden one would be
+    // re-shown by the next statusBar() call, and there are seven of those.
+    if (m_phoneShell)
+        setStatusBar(nullptr);
+
     // The FALLBACK size. restoreWindowState() runs at the end of this
     // constructor and may replace it; setting it here first means every path
     // out of that function — no memory, rejected blob, unreachable screen —
@@ -144,8 +158,7 @@ MainWindow::MainWindow(const QString& username)
     // silent, exactly for this wiring.)
     connect(&m_data, &AppData::changed, this, [this]() {
         if (!m_store.save(m_data))
-            statusBar()->showMessage(
-                tr("Save failed: %1").arg(m_store.errorMessage()));
+            say(tr("Save failed: %1").arg(m_store.errorMessage()));
     });
 
     // ---- STARTUP SEQUENCE (order is the design) ---------------------------
@@ -190,7 +203,8 @@ MainWindow::MainWindow(const QString& username)
     // switcher uses the same glyph, and a test that finds chrome by its
     // TEXT found both of them.
     navToggle->setObjectName(QStringLiteral("railToggle"));
-    navToggle->setFixedSize(34, 34);
+    navToggle->setFixedSize(touch::sizeFor(34, m_phoneShell),
+                            touch::sizeFor(34, m_phoneShell));
     navToggle->setCursor(Qt::PointingHandCursor);
     navToggle->setToolTip(tr("Show or hide the sidebar (Ctrl+B)"));
     // A shortcut on the button itself: while the window is active,
@@ -210,7 +224,12 @@ MainWindow::MainWindow(const QString& username)
     // unanswerable on a phone once the welcome label is hidden.
     m_profileBtn = new QPushButton(header);
     m_profileBtn->setObjectName(QStringLiteral("profileBtn"));
-    m_profileBtn->setFixedSize(34, 34);
+    // The phone's ONLY door to Settings, Sync, Share, Special days and
+    // Archive, and it was a 34dp circle (v30.7). Grown to Material's 48
+    // on a phone and left alone under a mouse, where 34 is a comfortable
+    // avatar and 48 is a dinner plate.
+    m_profileBtn->setFixedSize(touch::sizeFor(34, m_phoneShell),
+                               touch::sizeFor(34, m_phoneShell));
     m_profileBtn->setCursor(Qt::PointingHandCursor);
     m_profileBtn->setToolTip(tr("Account, settings and sync"));
     m_profileBtn->setText(m_username.isEmpty()
@@ -703,7 +722,7 @@ MainWindow::MainWindow(const QString& username)
                          "moved in with the new name.");
     if (!recoveryMessage.isEmpty())
         startupNote = recoveryMessage; // rarer and more important: it wins
-    statusBar()->showMessage(startupNote, /*ms=*/8000);
+    say(startupNote, /*ms=*/8000);
 
     // v28.10 — the seams, reachable (see DebugPanel.h for the why). Lazy:
     // most launches never press the chord, so most launches never pay for
@@ -880,8 +899,14 @@ void MainWindow::applyChromeMode(responsive::Mode mode)
     if (m_welcome)
         m_welcome->setVisible(!compact);
     if (m_headerLayout)
-        m_headerLayout->setContentsMargins(compact ? 10 : 24, 14,
-                                           compact ? 10 : 24, 14);
+        // v30.7 — 4px top and bottom on a phone instead of 14. Around a
+        // 48dp avatar that is a 56dp bar, against Material's 64dp app bar
+        // and the 76dp this used to be. Owner's report: "comparing it to
+        // Google Calendar and TickTick, it is indeed too big". The
+        // desktop keeps 14 — it has the room, and there the header is
+        // not competing with the only thing on the page.
+        m_headerLayout->setContentsMargins(compact ? 10 : 24, compact ? 4 : 14,
+                                           compact ? 10 : 24, compact ? 4 : 14);
 
     // Density, through the ONE place that owns how this app looks. Re-applying
     // the sheet re-polishes every widget, which is why it is done here — on an
@@ -1102,6 +1127,27 @@ void MainWindow::changeEvent(QEvent* event)
     // has three members instead of the two everyone remembers.
     if (event->type() == QEvent::WindowStateChange)
         scheduleWindowStateSave();
+}
+
+void MainWindow::say(const QString& text, int msecs)
+{
+    // On a desktop the status bar is exactly right for this: a quiet strip
+    // that is already part of the window's furniture, costing nothing
+    // because the window has room to spare.
+    //
+    // A phone has no room to spare, and QStatusBar reserves its strip even
+    // while empty — an unbroken grey band at the bottom of every screen for
+    // the sake of a sentence shown a few seconds a day. So there is no
+    // status bar there, and the same words arrive as a toast: transient by
+    // construction, and already the app's voice for the block alarms.
+    if (m_phoneShell) {
+        ToastSpec spec;
+        spec.title = text;
+        spec.msecs = msecs;
+        m_notifier->announce(spec);
+        return;
+    }
+    statusBar()->showMessage(text, msecs);
 }
 
 void MainWindow::setupNotifications()
@@ -1363,15 +1409,18 @@ void MainWindow::reflectCurrentPage(int index)
         m_headerActionConn = connect(m_headerAction, &QPushButton::clicked,
                                      this, [this]() { showPage(1); });
         m_headerAction->show();
-    } else if (index == 2 && m_activities && m_activities->hasAreaDrawer()) {
-        // U+2261 — verified rendering on this phone, unlike the ✦ and ✕ that
-        // came back as empty boxes.
-        m_headerAction->setText(QStringLiteral("≡"));
-        m_headerAction->setToolTip(tr("Switch life area"));
-        m_headerActionConn = connect(m_headerAction, &QPushButton::clicked,
-                                     m_activities,
-                                     &ActivitiesPage::openAreaDrawer);
-        m_headerAction->show();
+    // NOTHING FOR THE LIFE-AREAS PAGE ANY MORE (v30.7). It used to carry a ≡
+    // that opened the area sheet, and that was the only door — which is
+    // precisely what made switching areas hard to find: the control sat in
+    // the APP header, at the opposite corner from the area name it changed,
+    // wearing a glyph that means "menu" in general and nothing in particular.
+    //
+    // The page's own heading is the switcher now ("Work / Study ▼"), and a
+    // second door in a worse place is not redundancy, it is noise: two
+    // controls for one job, one of them unlabelled, competing for the corner
+    // where a phone user expects the app's own menu. Owner's call once they
+    // had both in front of them — "I love the activity on the top left, we
+    // can remove the sandwich on the top right".
     } else {
         m_headerAction->hide();
     }
@@ -1391,6 +1440,26 @@ void MainWindow::buildProfileMenu(QMenu* menu)
             : (m_sync ? tr("Signed in as %1").arg(m_username)
                       : tr("%1 — working offline").arg(m_username)));
     who->setEnabled(false);
+    menu->addSeparator();
+
+    // ---- the two pages a phone could not otherwise reach (v30.7) -----------
+    // ArchivePage had exactly one door in the entire app — a button on the
+    // desktop nav rail — and the rail is force-hidden on a phone. So on
+    // Android the archive was not hard to find, it was UNREACHABLE: restore
+    // and delete-forever both sat behind a control that never rendered.
+    // Special days was one step better and no more, reachable only through
+    // the header action and only while standing on the Upcoming page.
+    //
+    // The menu is where they belong rather than the bottom bar: the bar is
+    // five destinations you visit constantly, and these are two you visit
+    // rarely. Adding tabs would have cost the frequent ones room. This is
+    // the phone's "everything else" door and it already existed.
+    //
+    // Added for every shell, not just the phone: a desktop user losing
+    // nothing by having a second path, and one code path beats two.
+    menu->addAction(tr("Special days"), this,
+                    [this]() { showPage(3); });
+    menu->addAction(tr("Archive"), this, [this]() { showPage(5); });
     menu->addSeparator();
 
     menu->addAction(tr("Settings"), this, &MainWindow::openSettings);
@@ -1448,8 +1517,7 @@ void MainWindow::promptSignIn()
     // change identity mid-life, so a different account is a refusal, not a
     // switch.
     if (dialog.loggedInUser().compare(m_username, Qt::CaseInsensitive) != 0) {
-        statusBar()->showMessage(
-            tr("That's a different account. Restart TickTimer to use it — "
+        say(tr("That's a different account. Restart TickTimer to use it — "
                "this window is holding %1's planner.").arg(m_username),
             8000);
         return;
@@ -1471,7 +1539,7 @@ void MainWindow::goOnline(const QString& serverUrl, const QString& token)
         m_signInBtn->deleteLater();
         m_signInBtn = nullptr;
     }
-    statusBar()->showMessage(tr("Back online — syncing."), 5000);
+    say(tr("Back online — syncing."), 5000);
     enableSync(serverUrl, token);
 
     // AND ACTUALLY SYNC. v30.4.4, and the second time this exact class of bug
@@ -1521,8 +1589,7 @@ void MainWindow::beginOffline(const QString& serverUrl)
     // before v30.2, or anyone who unticks "Remember this device" — and sat
     // there forever while the status bar promised it would sync by itself.
     // A promise the code cannot keep is worse than no promise.
-    statusBar()->showMessage(
-        token.isEmpty()
+    say(token.isEmpty()
             ? tr("Working offline — your changes are saved here. Sign in to "
                  "sync them.")
             : tr("Working offline — your changes are saved here and will sync "
@@ -1558,8 +1625,7 @@ void MainWindow::beginOffline(const QString& serverUrl)
                 return; // still gone, or we already went online
             m_reconnect->stop(); // it is back; no reason to keep asking
             m_signInBtn->setText(tr("⇅  Server is back — sign in"));
-            statusBar()->showMessage(
-                tr("The server is back. Sign in to sync your changes."));
+            say(tr("The server is back. Sign in to sync your changes."));
         });
 
         m_reconnect = new QTimer(this);
@@ -1586,8 +1652,7 @@ void MainWindow::beginOffline(const QString& serverUrl)
             // is the honest thing to ask for.
             m_reconnect->stop();
             session::clearDeviceToken(m_username);
-            statusBar()->showMessage(
-                tr("This device is no longer signed in. Log in again to "
+            say(tr("This device is no longer signed in. Log in again to "
                    "sync."));
         }
         // Anything else (still unreachable, a puzzling reply) — say nothing

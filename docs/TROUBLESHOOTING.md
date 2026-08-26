@@ -2064,3 +2064,78 @@ rules — one that no ordinary user action produces except tapping Force Stop in
 Settings. Worth knowing for real use too: if someone force-stops TickTimer, its
 alarms stay silent until they next open it. That is true of every Android app,
 including the ones on this phone that work.
+
+---
+
+### Typed a block name in the picker on a phone, and there is no way to confirm it
+
+**SYMPTOM**
+(v30.6 on Android.) Long-press an empty slot, the "What are you doing at 9:00
+AM?" dialog opens. Picking an activity from the list works. Typing your own
+name into the text field does nothing — no button appears, and no keyboard key
+completes it. The only way out is the ✕.
+
+**CAUSE**
+`PickActivityDialog` deliberately has no OK button: "a click on an activity
+confirms — one tap fewer than a select-then-OK dance." That is true of the
+LIST and was never true of the text field. The typed path was bound to
+`QLineEdit::returnPressed` alone, and the only place that was written down was
+the field's **placeholder** — which Qt hides as soon as you type a character.
+So the instruction disappeared exactly when it became relevant, and on a phone,
+which has no Enter key, an undiscoverable path became a closed one.
+
+**FIX**
+v30.7 adds an explicit **Plan it** button beside the field, disabled until
+there is something to plan. Enter still works. It is present on every platform,
+not just phones — a hint that vanishes when you start typing is broken on a
+desktop too, it is merely survivable there.
+
+**PREVENT**
+**An affordance documented only in a placeholder is documented nowhere.**
+Placeholders are hints for an empty field. If a rule is still true once the
+user has typed something, it needs a home that does not disappear — a button, a
+caption, a label under the field.
+
+And the narrower one: when a dialog opts out of a convention ("no OK button
+here"), write down which paths the opt-out covers. This one covered the list
+and silently left the text field with no door at all.
+
+---
+
+### A dialog fills the whole phone screen when it should be a card
+
+**SYMPTOM**
+Any dialog on Android occupies the entire screen, including small ones opened
+over a page you were reading — the block picker covers the very day it is
+asking about.
+
+**CAUSE**
+`CompactDialogFitter` gave every dialog `setGeometry(availableGeometry())`
+unless it opted out. That default was correct for its original case: a
+`LoginDialog` whose minimum is 234px reads as "a small floating panel adrift on
+a phone", and filling the screen cured it. The taxonomy that grew from there
+sorted dialogs by how much CONTENT they hold — one line versus a list — which
+put the block picker in the same bucket as login.
+
+**FIX**
+v30.7 adds a third fit. The property is now `compactFit` with named values:
+
+| value | shape | for |
+|---|---|---|
+| absent / `screen` | the whole screen | dialogs that REPLACE the app: login, settings, sync |
+| `card` | natural size, inset, centred | modals over content you are still reading: the block picker, EventDialog |
+| `sheet` | full width, natural height | one-line inputs: quick capture |
+| `none` | untouched | a deliberately small floater |
+
+Set it on the dialog itself: `setProperty("compactFit", "card");`
+
+**PREVENT**
+The tempting fix here is to delete the declaration and compute the size:
+"give a dialog the smaller of what it asks for and what fits." It sounds
+strictly better and it silently restores the original 234px bug. **No size hint
+can answer a question that is not about size** — what separates login from the
+picker is whether the app is still behind it, and only the dialog knows that.
+
+Note also what caught it: the test pinning the full-screen fit for LoginDialog
+failed the moment the blanket rule was tried. A behaviour worth keeping is
+worth a test that argues back.

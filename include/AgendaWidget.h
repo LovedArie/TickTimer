@@ -22,6 +22,8 @@
 #include <QPoint>
 #include <QWidget>
 
+#include "Widgets.h" // isCompactScreen
+
 class AppData;
 class TrackerService;
 class Event;
@@ -40,7 +42,22 @@ public:
     // Slot geometry, made public so the week view's shared time-axis lines up
     // with these columns to the pixel. One source of truth for the grid — a
     // sibling widget reading the SAME numbers can't drift out of alignment.
-    static constexpr int kSlotHeight   = 30; // pixels per 30-minute slot
+    // Pixels per 30-minute slot. A FUNCTION rather than a constant since
+    // v30.7, because a half-hour is the calendar's primary tap target and
+    // 30dp was well under Android's 48.
+    //
+    // 44, not 48, and the shortfall is deliberate. A timeline is a canvas,
+    // not a row of buttons: every extra pixel per slot is an hour less of
+    // the day on screen, and at 48 an 18-hour day needs nearly two full
+    // screens of scrolling before you can see the afternoon. 44 clears
+    // WCAG 2.5.8's 24dp floor comfortably, is within 4dp of Material's
+    // guideline, and keeps the day readable. touch::meetsFloor() is the
+    // predicate that says this is a considered compromise and not a defect.
+    //
+    // Still ONE answer app-wide: the week view's shared axis and both sides
+    // of the compare dialog line up only because every column asks the same
+    // question, and they are all built under the same screen.
+    static int slotHeight() { return isCompactScreen() ? 44 : 30; }
     static constexpr int kTopPad       = 12; // headroom above the first line
     static constexpr int kDefaultGutter = 64; // hour-label column width
     // A phone's whole width is 360, so 64 of it is 18% spent on "12 PM".

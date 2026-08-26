@@ -8,6 +8,14 @@
 // activity confirms — one tap fewer than a select-then-OK dance, exactly
 // like the validated prototype.
 //
+// v30.7 AMENDS THAT, for the one path it did not cover. "A click confirms"
+// is true of the LIST and was never true of the text field: typing your own
+// block was bound to Enter, and the only place that was written down was the
+// field's placeholder, which disappears as soon as you type. On a phone,
+// with no Enter key, the path was not merely hidden but closed. So the
+// no-OK-button rule keeps its scope — picking still confirms in one tap —
+// and the typed path gets the explicit button it always needed.
+//
 // Note the dialog only COLLECTS the answer (chosenActivityId/Minutes); the
 // caller performs the actual AppData::addEvent. Dialogs that mutate data
 // behind their caller's back are a debugging nightmare — keep them as pure
@@ -51,7 +59,10 @@ private:
     void buildDurationPills(QWidget* host);
     void buildChoiceList();    // activities AND open tasks, rail order
     void onItemClicked(QListWidgetItem* item);
-    void onTitleReturnPressed(); // Enter in the text field -> ad-hoc block
+    // "Plan what I typed, as its own block." Reached by the Plan it button
+    // and, still, by Enter in the field (v30.7 — it was Enter alone until
+    // then, which a phone has no key for).
+    void confirmAdHoc();
 
     const AppData* m_data;
     QDate m_date;
@@ -62,6 +73,9 @@ private:
     QString m_taskId;
 
     QLineEdit*   m_titleEdit = nullptr;
+    // Enabled only while the field has something in it, so the affordance
+    // teaches the rule instead of failing silently the way Enter did.
+    class QPushButton* m_planBtn = nullptr;
     QListWidget* m_list = nullptr;
     QVector<class QPushButton*> m_pills;
 };

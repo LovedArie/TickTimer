@@ -1,4 +1,5 @@
 #include "TaskDetailDialog.h"
+#include "Widgets.h" // isCompactScreen
 
 #include "AppData.h"         // the free helpers only
 #include "TaskDetailPanel.h" // runTaskDetail's preferred container (v28.6)
@@ -16,7 +17,7 @@ TaskDetailDialog::TaskDetailDialog(const QString& title,
     : QDialog(parent)
 {
     setWindowTitle(tr("Task details"));
-    setMinimumWidth(380);
+    setMinimumWidth(isCompactScreen() ? 0 : 380); // v30.7: 380 > a 360px phone
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(18, 16, 18, 14);

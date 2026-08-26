@@ -1,5 +1,6 @@
 #include "ActivitiesPage.h"
 
+
 #include "SlidePanel.h"
 
 #include <QStyle>
@@ -14,6 +15,7 @@
 #include "Theme.h"
 #include "ResponsiveWatcher.h"
 #include "Widgets.h"
+#include "Touch.h" // v30.7 — the 48dp minimum, as a value
 
 #include <QAbstractItemView>
 #include <QColorDialog>
@@ -61,16 +63,34 @@ void clearLayout(QLayout* layout)
 CategoryTree::CategoryTree(QWidget* parent)
     : QTreeWidget(parent)
 {
-    // The four switches that turn an ordinary tree into a drag-drop surface:
-    setDragEnabled(true);        // items with ItemIsDragEnabled can be picked up
-    setAcceptDrops(true);        // the tree will receive drops
-    setDropIndicatorShown(true); // the blue line showing where a drop lands
+    // ---- DRAG TO ORGANISE IS A MOUSE AFFORDANCE (v30.7) --------------------
+    // On a touchscreen a press-and-move means SCROLL, and there is no second
+    // gesture to spend: whichever widget claims it, the other loses. This tree
+    // claimed it, so on the phone the life-areas list could not be scrolled at
+    // all — every attempt picked an area up and carried it. Reported exactly
+    // that way: "when I want to scroll down, it selects and hold the item and
+    // moves it. So it's impossible to navigate."
+    //
+    // So drag-and-drop is desktop-only now. The capability is not lost on the
+    // phone, it moves to a gesture that costs nothing: LONG-PRESS opens the
+    // context menu (Qt synthesises it from a touch hold), and that menu has
+    // carried "Move to folder" since folders existed. One organiser per input
+    // device, and the common gesture goes to the common task.
+    //
+    // Same shape as the agenda's edge-resize decision (§3.31): where a touch
+    // gesture and a mouse gesture collide, the touchscreen keeps scrolling and
+    // the rarer action finds another door.
+    const bool mouseDriven = !isCompactScreen();
+    setDragEnabled(mouseDriven);   // items with ItemIsDragEnabled can be picked up
+    setAcceptDrops(mouseDriven);   // the tree will receive drops
+    setDropIndicatorShown(mouseDriven); // the blue line showing where a drop lands
     // DragDrop (not InternalMove): InternalMove would let Qt reparent items
     // ITSELF, which for us would allow nonsense like a category nested under a
     // category, or a folder inside a folder — states our domain forbids. By
     // handling the drop ourselves and rebuilding from AppData, the domain's
     // rules stay the only rules.
-    setDragDropMode(QAbstractItemView::DragDrop);
+    setDragDropMode(mouseDriven ? QAbstractItemView::DragDrop
+                                : QAbstractItemView::NoDragDrop);
     setSelectionMode(QAbstractItemView::SingleSelection);
 }
 
@@ -158,6 +178,15 @@ ActivitiesPage::ActivitiesPage(AppData* data, QWidget* parent)
         railPanel);
     railHint->setObjectName("sub");
     railHint->setWordWrap(true);
+    // The desktop sentence names two gestures a phone does not have: there is
+    // no right-click, and a drag is a scroll. Swapped rather than hidden,
+    // because after v30.7 the phone's organiser is a LONG PRESS and that is
+    // exactly as undiscoverable as press-and-hold-to-plan was on the agenda.
+    // The one instruction a surface needs is the one for the input device in
+    // front of it.
+    if (m_phoneShell)
+        railHint->setText(
+            tr("Press and hold an area to move it to a folder."));
 
     m_rail = new CategoryTree(railPanel);
     m_rail->setObjectName("railTree");
@@ -165,6 +194,23 @@ ActivitiesPage::ActivitiesPage(AppData* data, QWidget* parent)
     m_rail->setIndentation(16);
     m_rail->setCursor(Qt::PointingHandCursor);
     m_rail->setContextMenuPolicy(Qt::CustomContextMenu);
+    // ---- THE SCROLLER GOES WHERE THE PRESSES LAND (v30.7) ------------------
+    // QScroller::grabGesture installs an event filter on the widget you name.
+    // A mouse press over this tree is delivered straight to this tree — it
+    // never travels through the enclosing sheet's viewport — so a grab on the
+    // sheet, which is what the previous two attempts did, could not possibly
+    // see it. The list kept highlighting rows under a dragging finger because
+    // the tree was still the only thing receiving the drag.
+    //
+    // makeTouchScrollable's QAbstractItemView overload is the right tool and
+    // was sitting here unused: it sets ScrollPerPixel and grabs
+    // LeftMouseButtonGesture, which DELAYS the press — panning if the finger
+    // travels, replaying press-and-release to the row if it does not. That is
+    // the whole difference between "scrolls" and "selects whatever you touch".
+    makeTouchScrollable(m_rail);
+    // And no bar: on a touchscreen the gesture is the affordance, and this
+    // stripe down the side of the sheet is what the owner asked to remove.
+    m_rail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     connect(m_rail, &QTreeWidget::itemClicked,
             this, &ActivitiesPage::onRailItemClicked);
     connect(m_rail, &QTreeWidget::customContextMenuRequested,
@@ -244,6 +290,11 @@ ActivitiesPage::ActivitiesPage(AppData* data, QWidget* parent)
     m_detailLayout = detailLayout;
     m_detail = new QScrollArea(detailPanel);
     makeTouchScrollable(m_detail); // finger-flick on touch screens
+    // Same reasoning as the drawer's and the agenda's (v30.7): where the
+    // gesture is the affordance the bar is only noise, and on this page it
+    // was a stub of grey hanging off the right edge beside the task rows.
+    if (m_phoneShell)
+        m_detail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_detail->setWidgetResizable(true);
     detailLayout->addWidget(m_detail);
     buildDetailPane(); // the persistent skeleton — built ONCE, never rebuilt
@@ -274,13 +325,20 @@ ActivitiesPage::ActivitiesPage(AppData* data, QWidget* parent)
         // beneath it. This panel is not a stack of rows — it IS the content —
         // so the pooled slack is given to it.
         sheet->setStretch(sheet->count() - 1, 0);
-        // The corner is worth more than a second way to close: the ≡ that
-        // opened this sheet closes it again, and the scrim and Back both work.
-        // So it carries the action that belongs WITH a chosen area instead.
-        m_areaDrawer->setHeaderButton(tr("Archive area"),
-                                      tr("Archive the selected life area"));
-        connect(m_areaDrawer, &SlidePanel::headerButtonClicked,
-                this, &ActivitiesPage::archiveSelectedArea);
+        // THE CORNER GOES BACK TO BEING A CLOSE BUTTON (v30.7).
+        //
+        // It used to carry "Archive area", on the reasoning that the ≡ which
+        // opened the sheet also closes it, so the ✕ was a spare. The premise
+        // was true and the conclusion was still wrong: the top-right of a
+        // sheet is where every phone user reaches to dismiss it, so what sat
+        // there was not a spare corner but the most-aimed-at pixel on the
+        // screen — and it held an action that ARCHIVES a whole life area.
+        // A destructive verb parked in the muscle-memory position of "close"
+        // is a trap regardless of how many other exits exist.
+        //
+        // Archiving moves to the area's own header, next to the name it acts
+        // on, which is where the desktop has always kept it.
+        m_areaDrawer->setHeaderButton(QString(), tr("Close"));
         // The sheet's own header already says "Life areas".
         if (m_railTitle)
             m_railTitle->hide();
@@ -714,10 +772,45 @@ void ActivitiesPage::refreshHeader()
     auto* hl = static_cast<QHBoxLayout*>(m_headerHost->layout());
     auto* dot = new QLabel(m_headerHost);
     dot->setPixmap(colorDot(category->color, 12));
-    auto* name = new QLabel(category->name, m_headerHost);
-    name->setObjectName("h2");
     hl->addWidget(dot);
-    hl->addWidget(name);
+
+    // ---- the area name IS the area switcher, on a phone (v30.7) -----------
+    // Reported as "when I try to change the life area, it's very difficult to
+    // navigate", and the screenshot says why: the area you are looking at was
+    // static text at the top LEFT, while the only control that changed it was
+    // an unlabelled ≡ at the top right of the APP header — a different bar,
+    // belonging to a different thing, with nothing tying the two together.
+    //
+    // This file already argued the principle, for the Task-notes toggle:
+    // "Controls near their effect need no label explaining what they affect;
+    // distance is what creates that need." It was never applied to the
+    // biggest control on the page.
+    //
+    // So the name becomes a button with a ▾ and tapping it opens the sheet.
+    // That is also what Google Calendar and TickTick do — you tap the list
+    // you are in to change which list you are in — so it needs no teaching.
+    // The ≡ still works; it is simply no longer the only way in.
+    if (m_phoneShell) {
+        // U+25BC (▼), not the prettier small U+25BE: the small one
+        // renders as an empty box on this device, exactly as U+2715 did
+        // for SlidePanel's close button. Android's default font has a
+        // narrower glyph set than a desktop's, and the rule this keeps
+        // proving is to reuse a codepoint the app already draws somewhere
+        // rather than pick the nicest-looking one. EventDialog's nudge
+        // buttons have been drawing this one since v19.
+        auto* switcher = new QPushButton(
+            category->name + QStringLiteral("  ▼"), m_headerHost);
+        switcher->setObjectName("areaSwitcher");
+        switcher->setCursor(Qt::PointingHandCursor);
+        switcher->setToolTip(tr("Switch life area"));
+        connect(switcher, &QPushButton::clicked,
+                this, &ActivitiesPage::openAreaDrawer);
+        hl->addWidget(switcher);
+    } else {
+        auto* name = new QLabel(category->name, m_headerHost);
+        name->setObjectName("h2");
+        hl->addWidget(name);
+    }
     hl->addStretch(1);
 
     const QString categoryId = category->id;
@@ -733,16 +826,23 @@ void ActivitiesPage::refreshHeader()
         connect(del, &QPushButton::clicked, this,
                 [this, categoryId]() { m_data->removeCategory(categoryId); });
         hl->addWidget(del);
-    } else if (!m_phoneShell) {
+    } else {
         // A life area with content can't be deleted, but it can archive whole.
-        // On a phone this lives in the area sheet's corner instead — one place
-        // for "things you do TO an area", and one less button crowding the
-        // name of the one you are reading.
+        // v30.7 brings this back to the phone too: it briefly lived in the
+        // area sheet's corner, which is the position a phone user reaches for
+        // to CLOSE a sheet. An archive button there is a trap. Beside the name
+        // it acts on, it is just a button.
         auto* arch = new QPushButton(tr("Archive area"), m_headerHost);
         arch->setCursor(Qt::PointingHandCursor);
+        // A widget's OWN stylesheet beats the application one outright, so the
+        // compact min-height in Theme.h cannot reach an inline sheet like this
+        // — it has to carry its own. 5px of padding either side, so 38 lands
+        // on 48 (v30.7; caught by the touch gate, not by reading).
         arch->setStyleSheet(
-            "background:#EEF0ED; border:none; border-radius:8px; "
-            "padding:5px 10px; color:#616974; font-weight:600;");
+            QStringLiteral(
+                "background:#EEF0ED; border:none; border-radius:8px; "
+                "padding:5px 10px; color:#616974; font-weight:600;%1")
+                .arg(m_phoneShell ? " min-height:38px;" : ""));
         connect(arch, &QPushButton::clicked, this, [this, categoryId]() {
             m_data->setCategoryArchived(categoryId, true);
         });
@@ -782,8 +882,10 @@ void ActivitiesPage::refreshActivities()
             auto* arch = new QPushButton(tr("Archive"), m_actHost);
             arch->setCursor(Qt::PointingHandCursor);
             arch->setStyleSheet(
-                "background:#EEF0ED; border:none; border-radius:8px; "
-                "padding:4px 9px; color:#616974; font-weight:600;");
+                QStringLiteral(
+                    "background:#EEF0ED; border:none; border-radius:8px; "
+                    "padding:4px 9px; color:#616974; font-weight:600;%1")
+                    .arg(m_phoneShell ? " min-height:40px;" : ""));
             connect(arch, &QPushButton::clicked, this, [this, activityId]() {
                 m_data->setActivityArchived(activityId, true);
             });
@@ -791,7 +893,9 @@ void ActivitiesPage::refreshActivities()
         } else {
             auto* x = new QPushButton(QStringLiteral("\u00D7"), m_actHost);
             x->setObjectName("danger");
-            x->setFixedWidth(24);
+            // A 24dp × on the delete-activity row. Narrow targets are
+            // worst where the action is destructive (v30.7).
+            x->setFixedWidth(touch::sizeFor(24, m_phoneShell));
             x->setCursor(Qt::PointingHandCursor);
             connect(x, &QPushButton::clicked, this, [this, activityId]() {
                 m_data->removeActivity(activityId);

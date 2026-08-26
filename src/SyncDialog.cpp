@@ -1,4 +1,5 @@
 #include "SyncDialog.h"
+#include "Widgets.h" // isCompactScreen
 
 #include "SyncService.h"
 
@@ -12,7 +13,7 @@ SyncDialog::SyncDialog(SyncService* sync, QWidget* parent)
 {
     setWindowTitle(tr("Sync"));
     setModal(true);
-    setMinimumWidth(380);
+    setMinimumWidth(isCompactScreen() ? 0 : 380); // v30.7: 380 > a 360px phone
 
     auto* title = new QLabel(tr("Sync with your server"), this);
     title->setObjectName("dialogTitle");

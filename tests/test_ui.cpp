@@ -63,6 +63,8 @@
 #include "Prefs.h"
 #include "Widgets.h"
 #include "ResponsiveWatcher.h"
+#include "Touch.h" // v30.7 — the touch-target gate
+#include <QSet>
 #include "LlmProvider.h"
 #include "SettingsDialog.h"
 #include "SettingsPages.h"
@@ -548,14 +550,14 @@ private slots:
         // Full-day default: 36 slots — the historical widget, pinned so the
         // preference can never change behaviour for people who never set it.
         const int fullH = AgendaWidget::kTopPad
-                          + plan::kSlotsPerDay * AgendaWidget::kSlotHeight + 12;
+                          + plan::kSlotsPerDay * AgendaWidget::slotHeight() + 12;
         QCOMPARE(agenda.minimumHeight(), fullH);
 
         // Narrow to 8 AM–12 PM: 8 slots tall — the window moves the
         // viewport, never the meaning of a slot index.
         agenda.setVisibleWindow(8 * 60, 12 * 60);
         QCOMPARE(agenda.minimumHeight(),
-                 AgendaWidget::kTopPad + 8 * AgendaWidget::kSlotHeight + 12);
+                 AgendaWidget::kTopPad + 8 * AgendaWidget::slotHeight() + 12);
 
         // Data always wins: a 6:00 block outside the window stretches the
         // shown range back to 6 AM (4 extra hours = 8 extra slots) instead
@@ -564,7 +566,7 @@ private slots:
         // assertion.
         data.addEvent(day, 6 * 60, 6 * 60 + 30, a);
         QCOMPARE(agenda.minimumHeight(),
-                 AgendaWidget::kTopPad + 12 * AgendaWidget::kSlotHeight + 12);
+                 AgendaWidget::kTopPad + 12 * AgendaWidget::slotHeight() + 12);
     }
 
     void weekViewStartsOnTheDayItIsTold()
@@ -1959,6 +1961,102 @@ private slots:
     // 2.81 — established by rendering a widget declared setFixedWidth(34) and
     // measuring it at 96 physical px in an adb screencap. 1080 / 2.81 = 384
     // logical px, which is the whole width a page gets.
+    // ---- v30.7: the touch-target gate --------------------------------------
+    // The sibling of everyPageFitsAPhoneScreen, and its opposite pull. That
+    // one says nothing may be WIDER than the phone; this one says nothing
+    // interactive may be SMALLER than a thumb. Together they are the real
+    // design constraint, and the tension between them is why both have to be
+    // measured rather than argued about.
+    //
+    // 48x48dp is Material's minimum touch target and WCAG 2.5.5. On this
+    // device one Qt logical pixel is exactly one dp (see Touch.h), so a
+    // widget's size() in Qt units can be compared to the guideline directly,
+    // with no conversion — which is the only reason this test can be this
+    // simple.
+    //
+    // It reports every offender WITH its size. "Something is too small" costs
+    // a hunt; "SlidePanel/panelClose 28x28" does not.
+    void everyTouchTargetIsBigEnoughForAThumb()
+    {
+        constexpr int kPhoneWidthPx  = 360;
+        constexpr int kPhoneHeightPx = 800;
+
+        if (QFontDatabase::families().isEmpty()) {
+#ifdef Q_OS_WIN
+            QFAIL("No fonts — see everyPageFitsAPhoneScreen().");
+#else
+            QSKIP("No fonts on this platform; set QT_QPA_FONTDIR.");
+#endif
+        }
+
+        clearWindowPrefs();
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode()
+            {
+                qunsetenv("TICKTIMER_COMPACT");
+                clearWindowPrefs();
+            }
+        } compactMode;
+
+        MainWindow w(QStringLiteral("phanp"));
+        w.resize(kPhoneWidthPx, kPhoneHeightPx);
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w));
+        for (int i = 0; i < 4; ++i) {
+            w.resize(kPhoneWidthPx, kPhoneHeightPx);
+            QTest::qWait(5);
+        }
+
+        auto* stack = w.findChild<QStackedWidget*>();
+        QVERIFY(stack);
+
+        // A name a human can act on: the objectName if the widget has one
+        // (most do, because the tests already drive them that way), then its
+        // label, then its class.
+        const auto describe = [](const QAbstractButton* b) {
+            if (!b->objectName().isEmpty())
+                return b->objectName();
+            if (!b->text().isEmpty())
+                return b->text().simplified().left(18);
+            return QString::fromLatin1(b->metaObject()->className());
+        };
+
+        QSet<QString> small;
+        const auto sweep = [&](const QString& where) {
+            for (const QAbstractButton* b : w.findChildren<QAbstractButton*>()) {
+                // VISIBLE only. An invisible widget has no laid-out size, and
+                // a control nobody can see is not a control anybody can miss.
+                if (!b->isVisible() || b->size().isEmpty())
+                    continue;
+                if (touch::meets(b->size()))
+                    continue;
+                small.insert(QStringLiteral("%1/%2 %3x%4")
+                                 .arg(where, describe(b))
+                                 .arg(b->width())
+                                 .arg(b->height()));
+            }
+        };
+
+        // Every page in turn, because a QStackedWidget lays out only the page
+        // it is showing — walking once would certify one seventh of the app.
+        for (int i = 0; i < stack->count(); ++i) {
+            stack->setCurrentIndex(i);
+            QTest::qWait(5); // the responsive dispatch is queued
+            sweep(QStringLiteral("page%1").arg(i));
+        }
+
+        QStringList sorted(small.begin(), small.end());
+        sorted.sort();
+        QVERIFY2(sorted.isEmpty(),
+                 qPrintable(QStringLiteral(
+                                "%1 controls below Android's %2dp minimum "
+                                "touch target:\n    %3")
+                                .arg(sorted.size())
+                                .arg(touch::kMinTarget)
+                                .arg(sorted.join(QStringLiteral("\n    ")))));
+    }
+
     void everyPageFitsAPhoneScreen()
     {
         // These live INSIDE the function, and that is a moc constraint rather
@@ -2169,10 +2267,74 @@ private slots:
         QuickCaptureOverlay capture(&data);
         PickActivityDialog pick(&data, QDate(2026, 7, 15), 2);
 
+        // v30.7 — four dialogs were never in this list and all four were over
+        // budget: EventDialog and SharingDialog asked for 420px, SyncDialog
+        // and TaskDetailDialog for 380px, against a 360px phone. A dialog is
+        // not covered by "every PAGE fits a phone screen" — it is its own
+        // top-level window with its own minimum, and nothing was measuring
+        // it. That is exactly the gap TROUBLESHOOTING predicted and left
+        // open after v30.5.1.
+        //
+        // NOT MEASURED HERE, and said out loud rather than left to look like
+        // coverage: SharingDialog and SyncDialog. Both had their minimums
+        // fixed in the same change, but constructing them needs a
+        // SyncService and a SyncClient, i.e. a socket, which does not belong
+        // in this suite. Two of six remain unpinned; the day either grows a
+        // cheap constructor it should join this list.
+        TrackerService widthTracker(&data);
+        const QString widthAct = data.activities().first().id;
+        const QString widthEv =
+            data.addEvent(QDate(2026, 7, 15), 9 * 60, 10 * 60, widthAct);
+        EventDialog eventDlg(&data, &widthTracker, widthEv);
+        TaskDetailDialog taskDlg(QStringLiteral("Lab 4"), QString(),
+                                 QDate(2026, 7, 20), QTime(), Task::Repeat::None,
+                                 Task::Priority::Medium, 0, false);
+
         const QVector<QPair<QString, QWidget*>> surfaces = {
             {QStringLiteral("LoginDialog"), &login},
             {QStringLiteral("QuickCaptureOverlay"), &capture},
             {QStringLiteral("PickActivityDialog"), &pick},
+            {QStringLiteral("EventDialog"), &eventDlg},
+            {QStringLiteral("TaskDetailDialog"), &taskDlg},
+        };
+
+        // WHEN THIS FAILS IT NAMES THE CULPRIT (v30.7). "EventDialog is
+        // 402px" tells you there is a problem; it does not tell you which of
+        // forty widgets caused it, and the v30.5 minimum-width hunt burned a
+        // session on exactly that question before the layout probe was built
+        // (android addendum §3.32 — "diagnosis became a command"). A budget
+        // test that only reports the total makes the same hunt necessary
+        // every time it trips, so this one reports the widest offenders too.
+        //
+        // Both widgets AND layouts, because they fail differently: one
+        // unwrapped label is a wide WIDGET, while four buttons of 100px in a
+        // row is a wide LAYOUT made of perfectly reasonable children.
+        const auto blame = [](QWidget* surface) {
+            QVector<QPair<int, QString>> rows;
+            for (QWidget* child : surface->findChildren<QWidget*>()) {
+                const int w = child->minimumSizeHint().width();
+                if (w > 0)
+                    rows.append({w, QStringLiteral("%1/%2")
+                                        .arg(QLatin1String(
+                                                 child->metaObject()->className()),
+                                             child->objectName().isEmpty()
+                                                 ? child->property("text")
+                                                       .toString()
+                                                       .left(14)
+                                                 : child->objectName())});
+            }
+            for (QLayout* l : surface->findChildren<QLayout*>()) {
+                const int w = l->minimumSize().width();
+                if (w > 0)
+                    rows.append({w, QStringLiteral("layout:%1").arg(
+                                        QLatin1String(l->metaObject()->className()))});
+            }
+            std::sort(rows.begin(), rows.end(),
+                      [](const auto& a, const auto& b) { return a.first > b.first; });
+            QStringList out;
+            for (int i = 0; i < qMin(6, int(rows.size())); ++i)
+                out << QStringLiteral("%1=%2").arg(rows[i].second).arg(rows[i].first);
+            return out.join(QStringLiteral(" "));
         };
 
         QStringList over;
@@ -2181,14 +2343,17 @@ private slots:
             const int min = s.second->minimumSizeHint().width();
             all << QStringLiteral("%1=%2").arg(s.first).arg(min);
             if (min > kPhoneWidthPx)
-                over << QStringLiteral("%1 (%2px)").arg(s.first).arg(min);
+                over << QStringLiteral("%1 (%2px) widest: [%3]")
+                            .arg(s.first)
+                            .arg(min)
+                            .arg(blame(s.second));
         }
 
         QVERIFY2(over.isEmpty(),
                  qPrintable(QStringLiteral(
                      "dialogs over the %1px phone budget: %2  |  all: %3")
                      .arg(kPhoneWidthPx)
-                     .arg(over.join(QStringLiteral(", ")))
+                     .arg(over.join(QStringLiteral("  ")))
                      .arg(all.join(QStringLiteral(" ")))));
 
         // Fitting inside the screen is necessary but not sufficient: the
@@ -2209,6 +2374,65 @@ private slots:
         const QRect room = QGuiApplication::primaryScreen()->availableGeometry();
         QCOMPARE(fitted.size(), room.size());
         fitted.close();
+
+        // ...and the OTHER answer, added in v30.7. A dialog that sits over
+        // content the user is still reading asks for "card" and gets its
+        // natural size, inset and centred — the planner stays visible behind
+        // the question about it.
+        //
+        // The pairing is the point: these two assertions together are why
+        // the fit is DECLARED and not measured. LoginDialog's minimum is
+        // 234px, so a "shrink to content" rule would hand it the 234px
+        // floating panel that full-screen fitting was introduced to cure,
+        // and this file would have one passing test and one silent
+        // regression.
+        PickActivityDialog card(&data, QDate(2026, 7, 15), 2);
+        card.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&card));
+        QTest::qWait(1);
+        QVERIFY2(card.width() < room.width() || card.height() < room.height(),
+                 "a 'card' dialog still filled the whole screen");
+        QVERIFY2(card.size().width() <= room.width()
+                     && card.size().height() <= room.height(),
+                 "a 'card' dialog grew past the screen it was fitted to");
+        card.close();
+    }
+
+    // v30.7 — the ad-hoc path had exactly one door and a phone has no key
+    // for it. Typing a block's name was bound to QLineEdit::returnPressed,
+    // and the only place that was written down was the placeholder, which
+    // Qt hides as soon as you type. Driven by objectName, like every other
+    // control this suite presses.
+    void aTypedBlockCanBeConfirmedWithoutAnEnterKey()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        data.addActivity("Study", cat);
+
+        PickActivityDialog pick(&data, QDate(2026, 7, 15), 2);
+        auto* plan =
+            pick.findChild<QPushButton*>(QStringLiteral("pickPlanAdHoc"));
+        auto* field = pick.findChild<QLineEdit*>();
+        QVERIFY(plan && field);
+
+        // Disabled with nothing to plan: the button teaches the rule rather
+        // than failing silently the way Enter did.
+        QVERIFY(!plan->isEnabled());
+
+        field->setText(QStringLiteral("   ")); // whitespace is not an answer
+        QVERIFY(!plan->isEnabled());
+
+        field->setText(QStringLiteral("Fix the bike"));
+        QVERIFY(plan->isEnabled());
+
+        QSignalSpy accepted(&pick, &QDialog::accepted);
+        plan->click();
+        QCOMPARE(accepted.count(), 1);
+        QCOMPARE(pick.chosenKind(), PickActivityDialog::Kind::AdHoc);
+        QCOMPARE(pick.enteredTitle(), QStringLiteral("Fix the bike"));
+        // The caller performs the write; the dialog only answers. Unchanged,
+        // and worth re-asserting beside a new confirm path.
+        QVERIFY(data.events().isEmpty());
     }
 
     // ---- planning by touch --------------------------------------------------
@@ -2422,8 +2646,22 @@ private slots:
         QVERIFY2(action->isVisible(), "the calendar offers Glance");
         QCOMPARE(action->text(), QStringLiteral("Glance"));
 
+        // ...but NOT on Activities any more (v30.7). That page carried a ≡
+        // here, and being the only door to the area sheet — in the app
+        // header, diagonally opposite the area name it changed, wearing a
+        // glyph that means "menu" in general and nothing in particular — is
+        // exactly what made switching areas hard to find. The page's own
+        // heading is the switcher now, so this corner goes quiet rather than
+        // offering a second, worse door to the same job.
         w.showPage(2);
-        QVERIFY2(action->isVisible(), "Activities offers the area switcher");
+        QVERIFY2(!action->isVisible(),
+                 "Activities switches areas from its own heading, so the "
+                 "header action must stay hidden there");
+        auto* areaSwitcher =
+            w.findChild<QPushButton*>(QStringLiteral("areaSwitcher"));
+        QVERIFY2(areaSwitcher && areaSwitcher->isVisible(),
+                 "the life-area heading must BE the switcher — removing the "
+                 "header ≡ without it would leave no door at all");
 
         // Special days has no tab of its own; Upcoming's header is its door.
         w.showPage(1);

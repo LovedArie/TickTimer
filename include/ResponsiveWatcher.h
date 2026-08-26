@@ -182,12 +182,33 @@ extern const char* const kModeProperty;
 // modal with no visible way out is a soft-lock rather than a dialog. That is
 // already a reported bug on SyncDialog.
 //
-// Two opt-outs, both dynamic properties set by the dialog itself:
-//   noCompactFit    — leave it entirely alone (a deliberately small floater)
-//   compactTopSheet — full WIDTH, natural HEIGHT, pinned to the top of the
-//                     screen. For dialogs you type one line into rather than
-//                     work inside; filling the screen for those wastes the
-//                     whole page on a single field.
+// HOW A DIALOG ASKS FOR SOMETHING ELSE (v30.7): one dynamic property,
+// `compactFit`, set by the dialog on itself. Absent means "screen", so a
+// dialog that has never heard of it behaves exactly as it did in v30.5.
+//
+//   (absent) / "screen" — the whole available screen. The default, and right
+//                     for a dialog that REPLACES the app while it is up:
+//                     login, settings, sync.
+//   "card"          — natural size, inset a little, centred. For a modal
+//                     that sits OVER content the user is still reading —
+//                     the block picker over its planner. Seeing what you are
+//                     deciding about is the point.
+//   "sheet"         — full WIDTH, natural HEIGHT, left where the caller put
+//                     it vertically. For dialogs you type one line into
+//                     rather than work inside; filling the screen for those
+//                     wastes the whole page on a single field.
+//   "none"          — leave it entirely alone (a deliberately small floater).
+//
+// WHY A DECLARATION AND NOT A MEASUREMENT, since the measurement is the
+// obvious idea: "give a dialog the smaller of what it asks for and what
+// fits" sounds strictly better and regresses the login screen. Its minimum
+// is 234px, and a 234px panel adrift on a 360px phone is the exact bug
+// full-screen fitting was introduced to cure (see the test that pins it).
+// What separates login from the block picker is not size, it is whether the
+// app is still behind them — and no size hint can answer that.
+//
+// One property with a closed set of names, not three booleans: at most one
+// answer can be given, so "screen and also none" cannot be written down.
 void installCompactDialogFitter(QObject* owner);
 
 // PRECONDITION FOR NESTING, recorded now and deliberately not yet exercised:

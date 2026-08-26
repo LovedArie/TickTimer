@@ -83,8 +83,11 @@ class ActivitiesPage : public QWidget
 public:
     // Opened from the app header's top-right button, not from a control
     // inside the panel — the switcher belongs to the screen, not to the card.
-    void openAreaDrawer(); // toggles: the ≡ both opens and closes it
-    bool hasAreaDrawer() const { return m_areaDrawer != nullptr; }
+    // Toggles: the control that opens the sheet also closes it. That control
+    // is the page's own heading now — "Work / Study ▼" — after v30.7 removed
+    // the ≡ from the app header, which was a second door to one job in the
+    // corner furthest from the thing it acted on.
+    void openAreaDrawer();
 
     explicit ActivitiesPage(AppData* data, QWidget* parent = nullptr);
 

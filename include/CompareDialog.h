@@ -15,7 +15,7 @@ class TrackerService;
 // CompareDialog v2 — no longer a scoreboard: a PLANNING screen.
 //
 // Two real AgendaWidgets side by side in ONE shared scroll (same widget, same
-// kSlotHeight — the rows align to the pixel, so "are we both free at 7?" is
+// slotHeight() — the rows align to the pixel, so "are we both free at 7?" is
 // answered by your eyes). The stats ride in a side column.
 //
 // The asymmetry is the design:

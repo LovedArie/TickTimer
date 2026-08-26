@@ -9,6 +9,7 @@
 #include <QLayout>
 #include <QPointer>
 #include <QScreen>
+#include <QStyle> // alignedRect — centring the "card" fit
 #include <QMetaObject>
 #include <QVariant>
 #include <QWidget>
@@ -170,8 +171,18 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
         auto* dialog = qobject_cast<QDialog*>(watched);
-        if (!dialog || !dialog->isWindow()
-            || dialog->property("noCompactFit").toBool())
+        if (!dialog || !dialog->isWindow())
+            return QObject::eventFilter(watched, event);
+
+        // ONE property, named values, at most one answer (v30.7). This used
+        // to be two independent booleans — noCompactFit and compactTopSheet —
+        // and adding "card" would have made three mutually-exclusive flags
+        // where setting two is legal and means nothing. A closed set of names
+        // cannot express the contradiction. Absent reads as "screen", so
+        // every dialog that never heard of this property keeps the v30.5
+        // behaviour exactly.
+        const QString fit = dialog->property("compactFit").toString();
+        if (fit == QLatin1String("none"))
             return QObject::eventFilter(watched, event);
 
         // Android delivers its Back gesture as Qt::Key_Back. QDialog maps only
@@ -198,14 +209,52 @@ protected:
             QPointer<QDialog> guarded(dialog);
             QMetaObject::invokeMethod(
                 dialog,
-                [guarded]() {
+                [guarded, fit]() {
                     if (!guarded || !guarded->isVisible())
                         return;
                     const QScreen* screen = QGuiApplication::primaryScreen();
                     if (!screen)
                         return;
                     const QRect room = screen->availableGeometry();
-                    if (!guarded->property("compactTopSheet").toBool()) {
+
+                    // ---- "card": a modal you can see the app BEHIND -------
+                    // For dialogs that sit OVER content the user is still
+                    // reading — the block picker over its planner. Filling
+                    // the screen for those hides the very thing being edited
+                    // and reads as a page, not a decision.
+                    //
+                    // Why this is a declaration and not a size test: the
+                    // obvious rule is "give a dialog the smaller of what it
+                    // asks for and what fits", and it is wrong. LoginDialog's
+                    // minimum is 234px, and shrinking it to that is precisely
+                    // the "small floating panel adrift on a phone" bug the
+                    // full-screen fit was introduced to cure. The difference
+                    // between the two is not how big they are, it is what
+                    // they ARE: login REPLACES the app for its duration, the
+                    // picker sits over it. No sizeHint can answer that, so
+                    // the dialog says.
+                    if (fit == QLatin1String("card")) {
+                        if (QLayout* l = guarded->layout())
+                            l->activate();
+                        const QSize want = guarded->sizeHint()
+                                               .expandedTo(guarded->minimumSizeHint());
+                        // The inset is what makes it read as a card. It is a
+                        // nicety, though, and never worth clipping for: a
+                        // dialog whose hard minimum needs the whole width
+                        // gets the whole width.
+                        const int inset = 16;
+                        const QSize box(qMax(1, room.width() - 2 * inset),
+                                        qMax(1, room.height() - 2 * inset));
+                        QSize size = want.boundedTo(box);
+                        size = size.expandedTo(
+                            guarded->minimumSizeHint().boundedTo(room.size()));
+                        guarded->setGeometry(
+                            QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter,
+                                                size, room));
+                        return;
+                    }
+
+                    if (fit != QLatin1String("sheet")) {
                         // setGeometry, not showFullScreen(): the dialog stays
                         // an ordinary dialog — exec(), reject(), the caller's
                         // result handling all unchanged — and only its

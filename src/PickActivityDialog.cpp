@@ -20,6 +20,12 @@ PickActivityDialog::PickActivityDialog(const AppData* data, QDate date,
     , m_slotIndex(slotIndex)
 {
     setWindowTitle(tr("Plan a block"));
+    // A modal you can see the planner BEHIND (v30.7). This dialog asks about
+    // a slot you just touched, and covering the day you touched it in makes
+    // the question harder to answer. Unlike login — which IS the app while it
+    // is up, and rightly takes the screen — this one is a decision laid over
+    // something still worth reading.
+    setProperty("compactFit", "card");
     // Same reasoning as QuickCaptureOverlay's input: 400 is a good desktop
     // shape and an impossible one on a 360px phone, where it pushed the
     // duration chips and the "What exactly?" field off the right edge.
@@ -40,7 +46,7 @@ PickActivityDialog::PickActivityDialog(const AppData* data, QDate date,
     title->setObjectName("h2");
     auto* sub = new QLabel(
         tr("Pick how long, then choose an activity or a task — "
-           "or just type what you're doing."), this);
+           "or type what you're doing and tap Plan it."), this);
     sub->setObjectName("sub");
     // An unwrapped QLabel's minimum width IS its text width, and this sentence
     // is ~330px of it. Wrapping is right on every screen; it only became
@@ -71,17 +77,52 @@ PickActivityDialog::PickActivityDialog(const AppData* data, QDate date,
     makeTouchScrollable(pillHost);
 
     // ONE text field, two jobs — deliberately (block-labels addendum):
-    //   type + click an activity  ->  activity block WITH that label
-    //   type + press Enter        ->  spontaneous ad-hoc block
+    //   type + click an activity      ->  activity block WITH that label
+    //   type + "Plan it" (or Enter)   ->  spontaneous ad-hoc block
     // Two separate fields ("label" and "or something else?") would ask the
     // user to classify their own intent before typing; one field lets them
     // just say what they're doing and decide with the NEXT gesture.
     m_titleEdit = new QLineEdit(this);
-    m_titleEdit->setPlaceholderText(
-        tr("What exactly? (shows on the block — or press Enter to plan it as-is)"));
+    m_titleEdit->setPlaceholderText(tr("What exactly? (shows on the block)"));
     m_titleEdit->setClearButtonEnabled(true);
     connect(m_titleEdit, &QLineEdit::returnPressed,
-            this, &PickActivityDialog::onTitleReturnPressed);
+            this, &PickActivityDialog::confirmAdHoc);
+
+    // THE BUTTON THIS DIALOG SPENT ELEVEN VERSIONS WITHOUT (v30.7).
+    //
+    // The ad-hoc path — type what you're doing, plan it as its own block —
+    // was reachable only by pressing Enter, and the only place that was ever
+    // written down was this field's PLACEHOLDER, which Qt hides the moment
+    // you type the first character. So the instruction disappeared exactly
+    // when it became relevant.
+    //
+    // On a phone it was not merely undiscoverable but unreachable: there is
+    // no Enter key, and what a soft keyboard offers instead is its own
+    // decision. The owner found this by trying to type an activity and
+    // having no way to confirm it.
+    //
+    // WHY IT IS NOT PHONE-ONLY. §3.30 says decide by geometry, not platform,
+    // and this is not even a layout question: a hint that vanishes when you
+    // start typing is broken on a desktop too, it is just survivable there.
+    // One affordance, every platform, one code path.
+    //
+    // Disabled until there is something to plan, so the button teaches the
+    // rule rather than failing silently the way Enter did.
+    m_planBtn = new QPushButton(tr("Plan it"), this);
+    m_planBtn->setObjectName(QStringLiteral("pickPlanAdHoc"));
+    m_planBtn->setCursor(Qt::PointingHandCursor);
+    m_planBtn->setEnabled(false);
+    connect(m_planBtn, &QPushButton::clicked,
+            this, &PickActivityDialog::confirmAdHoc);
+    connect(m_titleEdit, &QLineEdit::textChanged, this,
+            [this](const QString& text) {
+                m_planBtn->setEnabled(!text.trimmed().isEmpty());
+            });
+
+    auto* titleFieldRow = new QHBoxLayout;
+    titleFieldRow->setSpacing(8);
+    titleFieldRow->addWidget(m_titleEdit, 1);
+    titleFieldRow->addWidget(m_planBtn, 0);
 
     m_list = new QListWidget(this);
     // Draggable by thumb, and no bar: the gesture IS the affordance on a
@@ -109,7 +150,7 @@ PickActivityDialog::PickActivityDialog(const AppData* data, QDate date,
     layout->addLayout(titleRow);
     layout->addWidget(sub);
     layout->addWidget(pillHost);
-    layout->addWidget(m_titleEdit);
+    layout->addLayout(titleFieldRow);
     layout->addWidget(m_list, /*stretch=*/1);
 }
 
@@ -118,10 +159,12 @@ QString PickActivityDialog::enteredTitle() const
     return m_titleEdit->text().trimmed();
 }
 
-void PickActivityDialog::onTitleReturnPressed()
+void PickActivityDialog::confirmAdHoc()
 {
-    // Enter with an empty field is a no-op, not an error dialog: the field's
-    // placeholder already explains itself, and nothing was lost.
+    // An empty field is a no-op, not an error dialog: nothing was lost, and
+    // the button is disabled in that state anyway. The guard stays because
+    // Enter can still reach here, and because a slot that trusts its only
+    // caller to have checked is a slot waiting for a second caller.
     if (enteredTitle().isEmpty())
         return;
     m_kind = Kind::AdHoc;

@@ -13,6 +13,7 @@
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScroller>
 #include <QVBoxLayout>
 
 namespace
@@ -84,6 +85,44 @@ SlidePanel::SlidePanel(QWidget* host)
     m_content->setSpacing(6);
     m_content->addStretch(1); // rows insert ABOVE this; slack pools below
     scroll->setWidget(body);
+
+    // ---- A DRAWER THAT DID NOT FLICK, and then flicked wrongly (v30.7) -----
+    // Every other scrollable surface in the app was made touch-scrollable one
+    // at a time; this one — which exists ONLY on a phone — never was. The
+    // surface that can never be used with a mouse was the surface with no
+    // touch scrolling.
+    //
+    // WHICH GESTURE, and this is the whole lesson. Widgets.h offers two
+    // grabs and they are not interchangeable:
+    //
+    //   TouchGesture           reacts to real QTouchEvents. Right for a
+    //                          widget that handles touch itself, like
+    //                          AgendaWidget, which is why the agenda flicks.
+    //   LeftMouseButtonGesture reacts to MOUSE events, and delays the press:
+    //                          it pans if the finger travels, and replays
+    //                          press-and-release to the child if it does not.
+    //
+    // A sheet holds item views — a QTreeWidget of life areas, task lists —
+    // and Qt on Android SYNTHESISES mouse events for widgets that do not
+    // accept touch. A QTreeWidget does not. So the tree receives a mouse
+    // press, selects the row under the finger on the spot, and a
+    // TouchGesture grab up here never sees the event at all: the first fix
+    // made the sheet scrollable and the list still lit up an area every time
+    // it was dragged ("still have the problem where I want to scroll down and
+    // it's highlighting an item").
+    //
+    // LeftMouseButtonGesture is the one that owns the press long enough to
+    // decide what it was. That is exactly why makeTouchScrollable's
+    // QAbstractItemView overload uses it and its QScrollArea overload does
+    // not — the distinction was already in the codebase and this call site
+    // picked the wrong side of it.
+    QScroller::grabGesture(scroll->viewport(),
+                           QScroller::LeftMouseButtonGesture);
+    // Owner's request, and the house rule anyway: on a touchscreen the
+    // gesture IS the affordance, so the bar is a stripe of noise down the
+    // side of every drawer. PlannerPage switches the agenda's off for the
+    // same reason.
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     v->addWidget(scroll, 1);
 
     // Sliding animates the sheet's POSITION, not its size: resize would

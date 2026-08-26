@@ -70,7 +70,7 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
 
     // ---- the two agendas, ONE scroll ---------------------------------------
     // One QScrollArea holding both columns: they scroll together, and since
-    // both are the same widget with the same kSlotHeight, 09:00 on your side
+    // both are the same widget with the same slotHeight(), 09:00 on your side
     // is 09:00 on theirs to the pixel. Two scrollbars would break exactly
     // the alignment this screen exists for.
     auto* agendaHost = new QWidget;

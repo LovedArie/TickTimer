@@ -447,6 +447,227 @@ plausible guesses that both shipped broken to the phone.
 
 ---
 
+## 3.51 The block picker was on the wrong side of §3.50's line
+
+*Reported (v30.7):* "it takes the whole screen for a modal, would it be
+possible to make it a little smaller."
+
+*§3.50 named the block picker specifically* as a dialog you WORK INSIDE, and
+therefore one that should fill the screen. That was wrong, and the reason it
+was wrong is worth more than the fix: the taxonomy was built around how much
+CONTENT a dialog has, and the property that actually matters is whether the
+app is still behind it. Quick capture and the picker both got classified by
+size — one line versus a list — when what separates login from the picker is
+that login IS the app while it is up, and the picker is a question about a
+planner you are still looking at. Covering the day you just touched makes the
+question harder to answer.
+
+*Decision:* a third fit, `card` — natural size, inset 16px, centred. The
+picker and `EventDialog` ask for it; login, settings and sync keep the screen.
+
+*The alternative rejected, and it is the tempting one:* drop the declaration
+entirely and give every dialog `min(sizeHint, room)`. It sounds strictly
+better and it silently reinstates the original bug — `LoginDialog`'s minimum
+is 234px, so the rule would hand it the "small floating panel adrift on a
+phone" that §3.47 was written to cure. **No size hint can answer a question
+that is not about size.** The test that pins §3.47 caught this before the
+change was written, which is the whole argument for having pinned it.
+
+*Also folded in:* `noCompactFit` and `compactTopSheet` became one property,
+`compactFit`, with named values. Three mutually-exclusive booleans is a state
+space with legal nonsense in it ("no fit, and also a top sheet"); a closed set
+of names cannot express the contradiction. Absent still means "screen", so
+nothing that never heard of the property changed behaviour.
+
+## 3.52 Four dialogs were over the phone budget, and nothing was measuring them
+
+*Found while fixing §3.51, not reported.* `EventDialog` and `SharingDialog`
+asked for a 420px minimum, `SyncDialog` and `TaskDetailDialog` for 380px,
+against a 360px screen — and §3.48's own gate had been measuring **pages**
+only. TROUBLESHOOTING predicted this exact hole after v30.5.1 ("a dialog is
+its own top-level window with its own minimum, and nothing measures it") and
+it stayed open for two versions.
+
+*Decision:* the gate grows dialogs, and the fixes follow the recipes §3.32
+already established — `isCompactScreen() ? 0 : N` for the hard minimums, word
+wrap for the sentences, and for rows that cannot promise their width, either
+a direction flip or a fold.
+
+*The one new judgement:* `EventDialog`'s four reschedule nudges became a **2x2
+grid** rather than a stack. Direction-flipping is the recipe for a row of
+unequal things; these four are short and pair naturally (two earlier, two
+later), so folding costs no height in a dialog that was already gaining eight
+stacked buttons. A rule applied without asking what the row IS produces a
+correct dialog nobody wants to scroll.
+
+*And the gate now names its culprit.* A budget test that reports only the
+total ("EventDialog is 402px") leaves the same hunt §3.32 burned a session on
+before the layout probe existed. It now lists the widest offending widgets AND
+layouts, because they fail differently: one unwrapped label is a wide widget,
+while four reasonable buttons in a row is a wide layout. That distinction is
+what turned "402px, somewhere" into "the row is 362, the grid fixes it" in one
+run.
+
+*A note on how close this was.* Before the last fix the dialog measured 378px
+standalone and passed under ctest, because the two runs resolve fonts
+differently and a four-button row moves ~20px between them. A gate that
+depends on which font environment ran it is not a gate. The fix is not a wider
+budget, it is a layout that is not near the line.
+
+---
+
+## 3.53 A confirm the keyboard used to provide
+
+*Reported (v30.7):* "if I want to write the activity instead of selecting it,
+there's no way to confirm."
+
+*The picker deliberately has no OK button* — §UC1's "a click on an activity
+confirms" is one tap fewer than a select-then-OK dance, and that is still
+right for the LIST. It was never true of the text field. Typing your own block
+was bound to `QLineEdit::returnPressed`, and the only place that was written
+down was the field's placeholder, which Qt hides the moment you type the first
+character. **The instruction disappeared exactly when it became relevant.**
+
+On a phone there is no Enter key at all, so a path that was merely
+undiscoverable on a desktop was closed.
+
+*Decision:* an explicit "Plan it" button beside the field, disabled until
+there is something to plan. Enter still works.
+
+*Why not phone-only,* which §3.30 would seem to invite: this is not a layout
+question and geometry has nothing to say about it. A hint that vanishes when
+you start typing is broken on a desktop too — it is merely survivable there,
+because the key exists. One affordance, one code path, every platform.
+
+*The general lesson, and it is not about phones:* an affordance documented
+only in a placeholder is documented nowhere. Placeholders are hints for an
+EMPTY field; anything that is still true once the user starts typing needs to
+live somewhere that does not disappear.
+
+---
+
+## 3.54 A touch standard, and a gate that keeps it
+
+*Asked for (v30.7):* "go through every functionality and make sure its UI is
+user friendly and comfortable to use... I'm sure there's a norm."
+
+There is, and none of it is in the books this project usually reasons from.
+Bass/Clements/Kazman genuinely applies one level up — usability is a quality
+attribute with tactics, and "support user initiative" is exactly what a
+missing confirm button fails — but the numbers come from the platform:
+**48x48dp** is Material's minimum touch target and WCAG 2.5.5 (AAA); **24dp**
+is WCAG 2.5.8's Level AA floor.
+
+*The measurement that made the audit arithmetic rather than judgement.* On
+this device one Qt logical pixel is exactly one Android dp — dpr 3.00, a
+360x800 logical screen on a 1080x2400 panel at density 480 — so **every pixel
+number in the codebase is already a dp** and can be compared to the guideline
+with no conversion. Verified against the app's own `EventDialog` swatch:
+`setFixedSize(15, 15)`, measured 45 physical px in a screengrab.
+
+That identity holds only because nothing in this repo sets `QT_SCALE_FACTOR`
+or a high-DPI rounding policy. Any of them would break it silently, which is
+why `Touch.h` says so at the top.
+
+*What the audit found.* The stylesheet contained exactly two `min-height`
+rules and both were scrollbar handles: **no interactive control in the app
+had any minimum size at all.** Every button's height was font plus padding.
+The delete ✕ on every list row was ~22dp; the only door to Settings on a
+phone was 34; the only door to Special days was 32.
+
+*Decision:* `include/Touch.h` — the rule as a pure value, `compact` as a
+parameter, in the Core-only suite beside `Responsive.h`. Then three
+applications of it: a `min-height` floor in the compact stylesheet,
+`touch::sizeFor` at the fixed-size call sites, and `touch::expand` at the
+delegates' hit-test (paint stays small — a 48dp checkbox drawn on a task card
+looks like a bug).
+
+*Rejected: editing the ~25 failing `setFixedSize` calls to 48.* It fixes
+today and nothing else. Four dialog minimums had already drifted over the
+360px width budget in the two versions after §3.48 fixed the pages, for
+exactly that reason — the gate covered pages and nothing measured dialogs.
+
+*The keystone is therefore the gate, not the fix.*
+`everyTouchTargetIsBigEnoughForAThumb` builds the real window at 360x800,
+walks every page, and **names each offender with its size**. Its first run
+listed 33. "Something is too small" costs an afternoon; `profileBtn 34x34`
+costs a minute. It stands opposite `everyPageFitsAPhoneScreen` and the two
+pull against each other on purpose — narrower to fit, taller to touch — which
+turns out to be survivable because they act on different axes.
+
+*Two mechanical things learned by running the gate rather than reasoning:*
+
+- **QSS `min-height` is the CONTENT box for a button and the TOTAL for a
+  `QCheckBox`.** `QPushButton { padding: 7px 9px; min-height: 34px }` yields
+  48; `QCheckBox { min-height: 34px }` yields 34. Every rule in the compact
+  block is tuned to its own padding, one gate run at a time.
+- **The compact stylesheet had been nearly inert.** Its whole delta was two
+  padding reductions, and QSS implements CSS specificity — so
+  `QPushButton { padding }` lost to `QPushButton#primary` in the base sheet.
+  `#primary`, `#quiet`, `#danger`, `#segment` and the rest had never received
+  a single compact rule. Every id is spelled out now, which looks like
+  repetition and is the only thing that works.
+
+## 3.55 Two compromises, named rather than rounded up
+
+Not everything can be 48, and saying which and why is the difference between
+a standard and a slogan. `touch::meetsFloor()` exists to express it: above
+WCAG's 24dp AA floor, below Material's 48.
+
+**The agenda's half-hour slot: 30 → 44, not 48.** A timeline is a canvas, not
+a row of buttons. Every pixel per slot is an hour less of the day on screen,
+and at 48 an 18-hour day needs nearly two full screens of scrolling before
+the afternoon is visible. 44 keeps the day readable and lands within 4dp.
+
+**The category row's right-hand cluster.** Delete, Archive and Due sit
+side by side with a 9px gap. Growing them to 48 wide would overlap them, and
+Material is explicit that sub-48 targets must not overlap — a tap in the
+overlap goes silently to whichever zone is tested first, which is how a
+due-date tap becomes a delete. So they take the full row height and only half
+the gap sideways. The checkbox, whose only neighbour is the row's own "edit"
+action, takes the full 48: the worst case there is that a near-miss means
+"done" instead of "open", and that is what the user was aiming at.
+
+*The real fix for that cluster is fewer affordances per row on a phone* —
+archive and due belong in the task's own sheet — which is a behaviour change
+rather than a size change. Named here as the next step instead of smuggled
+into a size pass.
+
+## 3.56 Two pages a phone could not reach, and a window drawn under the clock
+
+Found by inventory rather than by report, which is the point of doing one.
+
+**`ArchivePage` had no door at all on a phone.** Its single entry point was a
+button on the desktop nav rail, and the rail is force-hidden on compact. Both
+*restore* and *delete forever* were unreachable. **Special days** was one step
+better: reachable only through the header action, and only while standing on
+the Upcoming page. Both now sit in the profile menu — the phone's "everything
+else" door, which already existed. Not the bottom bar: that is five
+destinations you visit constantly, and these are two you visit rarely.
+
+**targetSdk 35 → 34.** Android 15 forces edge-to-edge on any app targeting
+35 or higher: the app is handed the whole panel and made responsible for
+insetting itself out from under a 26dp status bar and a 48dp gesture bar.
+Every layout here assumes an already-inset window, so what it produced was
+content quietly underneath the system chrome. Targeting 34 opts out entirely
+and Android insets the window for us.
+
+This also retires §3.50's unsolved corner — the sheet that landed under the
+status bar because `availableGeometry().y()` reads 0 while Android draws over
+that strip. It was never a positioning bug; it was edge-to-edge, unhandled.
+The cost is that Google removes the opt-out for apps targeting 36, which
+never binds here: those deadlines belong to the Play Store, and this app is
+sideloaded (`docs/ANDROID.md`).
+
+**The Pomodoro mini-window is not offered on a phone.** Its whole premise —
+`Qt::WindowStaysOnTopHint`, "visible over other apps while you work
+elsewhere" — is impossible on Android without the `SYSTEM_ALERT_WINDOW`
+overlay permission. What it actually floated over was TickTimer's own modal
+dialogs; it was found sitting exactly on the block picker's "Plan it" button,
+which is how a working control came to look like a missing one.
+
+---
+
 ## What changed where
 
 | Layer | File(s) | Change |
@@ -492,13 +713,20 @@ Domain, storage, sync, AI: **zero changes.**
   affordance, and a shape that reads as native rather than "a desktop dialog
   stretched to fill the screen". `QuickCaptureOverlay` full-screen currently
   leaves a large empty area with its hint line floating in the middle.
-- **Touch density, in the direction that matters.** `appStyleSheet(compact)`
-  exists, but it currently only *removes* padding so a crowded row fits. The
-  work still owed pulls the other way: at dpr 3.0 a 24px close button is 8
-  logical px of thumb target, and ~48dp is the guideline. Reconciling "narrower
-  so it fits" with "bigger so it can be hit" is that stage's real problem —
-  probably fewer controls on screen at once rather than smaller ones. After
-  this work the phone looks **correct-and-clumsy, not correct-and-good.**
+- ~~**Touch density, in the direction that matters.**~~ **Done in v30.7 —
+  see §3.54.** The bullet that stood here was right about the gap and wrong
+  about its size, and the arithmetic error is worth preserving rather than
+  quietly deleting: it said *"at dpr 3.0 a 24px close button is 8 logical px
+  of thumb target"*. That divides by the ratio in the wrong direction.
+  Nothing anywhere in Qt divides a widget size by the device pixel ratio —
+  this document's own measurement table, two hundred lines above, records
+  that Qt reports **logical** px on Android at dpr 3.00 on a 360x800 screen,
+  which makes one Qt px exactly one dp. A 24px button is **24dp**: half the
+  48dp guideline, not one sixth of it. The code always had it right
+  (`MainWindow.cpp`'s FAB reasons "56x56 → 168 physical against a 144
+  minimum"); only the prose was inverted. Planning off the wrong number
+  would have overstated every gap threefold and sent someone hunting for a
+  density division that does not happen.
 - **`ActivitiesPage` is still a permanent two-column split**, which is the
   wrong shape on a 384 px screen however the width is divided. Narrowing its
   rail is a mitigation and is labelled as one in the code.

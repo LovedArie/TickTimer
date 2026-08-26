@@ -5,6 +5,8 @@
 #include "Task.h"          // Priority / Repeat enums + labels
 #include "TaskListModel.h" // role keys
 #include "Theme.h"
+#include "Touch.h"   // v30.7 — the 48dp minimum
+#include "Widgets.h" // isCompactScreen
 
 #include <QMouseEvent>
 #include <QPainter>
@@ -329,11 +331,17 @@ bool TaskCardDelegate::editorEvent(QEvent* event, QAbstractItemModel* /*model*/,
     const QPoint  p = me->pos();
     const QString id = index.data(IdRole).toString();
 
-    if (g.check.adjusted(-4, -4, 4, 4).contains(p)) { // generous touch target
+    // v30.7 — "generous" was 28dp against Android's 48. The card is 86 tall
+    // so there is room on both axes here, unlike the crowded category rows:
+    // both zones take the full minimum, and the card's own "edit" action
+    // absorbs whatever they borrow. Paint is untouched — the checkbox still
+    // draws at 20, because a 48dp box on this card would look like a bug.
+    const bool compact = isCompactScreen();
+    if (touch::expand(g.check, compact).contains(p)) {
         emit doneToggled(id, true); // every task here is undone → clicking = done
         return true;
     }
-    if (g.del.contains(p)) {
+    if (touch::expand(g.del, compact).contains(p)) {
         emit deleteRequested(id);
         return true;
     }

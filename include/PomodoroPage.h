@@ -80,6 +80,14 @@ private:
     // constructor argument is the entire difference between the desktop
     // strip and the phone stack.
     QBoxLayout*   m_settingsRow = nullptr;
+
+    // v30.7 — the phone's two settings cards, built instead of the desktop
+    // strip and null on a desktop. The spin boxes and check boxes they stand
+    // in for are still alive and hidden: those carry the value, the range and
+    // the prefs wiring, and these only present them.
+    bool          m_phoneShell    = false;
+    class QFrame* m_settingsCard  = nullptr;
+    class QFrame* m_togglesCard   = nullptr;
 };
 
 // The countdown ring: progress arc, mm:ss, and the round number — one more

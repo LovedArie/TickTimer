@@ -62,25 +62,87 @@ inline QColor deep(const QColor& c)
 
 // The stylesheet, optionally in its NARROW variant.
 //
-// `compact` does one job and is not the touch-density pass: it takes padding
-// OFF the controls whose padding is width-critical, so a row of them fits a
-// phone. `UpcomingPage`'s four filter chips carried 112px of horizontal
-// padding between them — a third of the page's whole minimum width — which is
-// generous on a desktop and unaffordable at 360px.
+// `compact` used to do one job — take padding OFF the controls whose padding
+// is width-critical, so a row of them fits a phone. `UpcomingPage`'s four
+// filter chips carried 112px of horizontal padding between them, a third of
+// the page's whole minimum width, generous on a desktop and unaffordable at
+// 360px.
 //
-// Worth naming the tension now, because the two pulls are opposite: the
-// touch-target work still owed wants controls BIGGER (≈48dp is a thumb), while
-// this wants a crowded row NARROWER. Reconciling them is that stage's real
-// problem — probably fewer controls visible at once rather than smaller ones —
-// and this flag is not an answer to it.
+// v30.7 GIVES IT THE OTHER HALF, the one earlier versions kept naming as
+// still owed: a MINIMUM HEIGHT, so a thumb can hit what it aims at. The two
+// pulls really are opposite — narrower to fit, taller to touch — and the
+// reconciliation turns out to be that they act on different axes. Nothing
+// here gets wider; things get taller and the width budget is untouched.
+// (`everyPageFitsAPhoneScreen` and `everyTouchTargetIsBigEnoughForAThumb`
+// are the two gates, and they now hold each other honest.)
+//
+// WHY EVERY ID IS SPELLED OUT BELOW, which looks like repetition and is not:
+// QSS implements CSS specificity, so `QPushButton#primary` in the base sheet
+// beats a later, less specific `QPushButton` here. That is exactly why the
+// old two-line compact block reached almost nothing — `#primary`, `#quiet`,
+// `#danger`, `#segment` and the rest kept their desktop padding no matter
+// what the narrow variant said. An ID rule can only be overridden by another
+// ID rule.
+//
+// 48px is 48dp on the phone this is written for (Touch.h explains the
+// identity), and 48dp is Material's minimum touch target.
 inline QString appStyleSheet(bool compact = false)
 {
     // The narrow overrides are appended, not interleaved: later rules win in
     // QSS, so the base sheet stays exactly one readable thing and the diff
     // between desktop and phone is a short list you can read in one go.
     const QString narrow = compact ? QStringLiteral(R"CSS(
-        QToolButton#nav { padding: 9px 6px; }
-        QPushButton     { padding: 7px 9px; }
+        QToolButton#nav { padding: 9px 6px; min-height: 34px; min-width: 36px; }
+        QPushButton     { padding: 7px 9px;  min-height: 34px; }
+
+        /* Every ID that overrides padding in the base sheet has to be named
+           again here, or specificity leaves it at its desktop height. */
+        QPushButton#primary,
+        QPushButton#breakBtn,
+        QPushButton#quiet,
+        QPushButton#segment,
+        QPushButton#viewSwitcher,
+        QPushButton#attentionStrip,
+        QPushButton#pickClose   { min-height: 34px; }
+
+        /* Each rule is tuned to its OWN padding, because QSS min-height is
+           the CONTENT box: the number that reaches 48 differs per control.
+           #headerAction carries 6px top and bottom, so 36 lands on 48.
+           Measured by the gate, one run at a time, not calculated.
+           min-width too — on the life-areas page this button is a single ≡
+           glyph with 4px either side and came to 17dp. Height alone does not
+           make a target hittable. */
+        QPushButton#headerAction { min-height: 36px; min-width: 40px; }
+
+        /* The delete ✕ of every list row in the app. 4px of padding around a
+           12px glyph came to ~22dp — the smallest live target in the app, and
+           attached to the most destructive action. */
+        QPushButton#danger { padding: 4px 10px; min-height: 40px; }
+
+        /* A checkbox's target is the whole row, label included, so the height
+           goes on the control and the indicator only has to be findable — it
+           was 13px inside a 20px row.
+           Note 48 here, not 34: a QCheckBox has no padding of its own, so
+           min-height IS the total. The same property means a different box
+           depending on the widget, which is worth knowing before trusting
+           any number in this block. */
+        QCheckBox { min-height: 48px; }
+        QCheckBox::indicator { width: 22px; height: 22px; }
+
+        /* Rows people tap: the life-areas drawer and the settings nav. */
+        QTreeWidget#railTree::item      { padding: 12px 6px; }
+        QListWidget#settingsNav::item   { padding: 13px 10px; }
+
+        /* NO HOVER WASH ON A TOUCHSCREEN. There is no such thing as hovering
+           with a finger: Qt synthesises mouse moves from touch, so a row
+           lights up as the finger passes over it during a scroll and then
+           STAYS lit, because nothing ever moves the pointer away again.
+           Reported as "it hovers over the items instead of actually
+           scrolling" — half of which was a real scroll bug and half was this
+           afterglow. Selection still shows; only the pointer feedback that a
+           phone cannot produce honestly is removed. */
+        QTreeWidget#railTree::item:hover    { background: transparent; }
+        QListWidget#settingsNav::item:hover { background: transparent; }
     )CSS") : QString();
 
     return QStringLiteral(R"CSS(
@@ -272,6 +334,23 @@ inline QString appStyleSheet(bool compact = false)
             font-weight: 700;
         }
         QPushButton#headerAction:pressed { color: #276B5D; }
+
+        /* v30.7 — the life-area name, dressed as a heading and behaving as a
+           button. Same costume trick as #viewSwitcher: it must READ as the
+           title of the page, because that is what it is, while being the
+           thing you press to change it. No border and no fill; the ▾ is the
+           only cue that it does anything, which is the cue every phone
+           calendar uses for exactly this. */
+        QPushButton#areaSwitcher {
+            background: transparent;
+            border: none;
+            padding: 0px;
+            min-height: 48px;
+            text-align: left;
+            font-size: 15px;
+            font-weight: 700;
+            color: #272C33;
+        }
 
         QPushButton#areaSwitchBtn {
             background: #EEF2F0; border: none; border-radius: 8px;

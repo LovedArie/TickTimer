@@ -138,7 +138,7 @@ int drawFlowedText(QPainter& p, const QRect& area, const QString& raw,
 
 namespace
 {
-// kSlotHeight and kTopPad now live in AgendaWidget as public statics, so the
+// slotHeight() and kTopPad now live in AgendaWidget as public statics, so the
 // week view's axis shares the EXACT same grid. The gutter became per-instance
 // (m_gutter) so a column can drop its label gutter. Only kRadius stays
 // file-private — nobody outside needs it.
@@ -263,7 +263,7 @@ int AgendaWidget::slotTop(int slotIndex) const
     // — grid lines, labels, hover, event blocks, hit-testing — goes through
     // here, so painting and clicking can never drift apart. Window-aware:
     // the first SHOWN slot sits at the top pad, whatever its index.
-    return kTopPad + (slotIndex - firstShownSlot()) * kSlotHeight;
+    return kTopPad + (slotIndex - firstShownSlot()) * slotHeight();
 }
 
 void AgendaWidget::syncHeight()
@@ -296,7 +296,7 @@ QSize AgendaWidget::sizeHint() const
     // Height follows the SHOWN window, not the whole domain grid — that is
     // the entire visible payoff of the hours setting.
     const int width = (m_gutter > 0) ? 560 : 150;
-    return {width, kTopPad + shownSlotCount() * kSlotHeight + 12};
+    return {width, kTopPad + shownSlotCount() * slotHeight() + 12};
 }
 
 QRect AgendaWidget::spanRect(int startMin, int endMin) const
@@ -307,7 +307,7 @@ QRect AgendaWidget::spanRect(int startMin, int endMin) const
         (startMin - plan::kDayStartMinutes) / plan::kSlotMinutes;
     const int slotCount = (endMin - startMin) / plan::kSlotMinutes;
     return QRect(m_gutter, slotTop(startSlot) + 2,
-                 width() - m_gutter - 4, slotCount * kSlotHeight - 4);
+                 width() - m_gutter - 4, slotCount * slotHeight() - 4);
 }
 
 QRect AgendaWidget::eventRect(const Event& e) const
@@ -320,7 +320,7 @@ int AgendaWidget::minutesAtY(int y) const
     // Snap to the NEAREST slot line so dragging feels magnetic to the grid.
     // Slot indices stay DOMAIN indices (0 == 6 AM) — the window only shifts
     // which of them y == kTopPad lands on.
-    int slot = firstShownSlot() + qRound(double(y - kTopPad) / kSlotHeight);
+    int slot = firstShownSlot() + qRound(double(y - kTopPad) / slotHeight());
     slot = qBound(firstShownSlot(), slot,
                   firstShownSlot() + shownSlotCount());
     return plan::kDayStartMinutes + slot * plan::kSlotMinutes;
@@ -356,7 +356,7 @@ int AgendaWidget::slotAt(const QPoint& pos) const
     // boundary bug in C++ and Java alike.
     if (pos.x() < m_gutter || pos.y() < kTopPad)
         return -1;
-    const int slot = firstShownSlot() + (pos.y() - kTopPad) / kSlotHeight;
+    const int slot = firstShownSlot() + (pos.y() - kTopPad) / slotHeight();
     return (slot < firstShownSlot() + shownSlotCount()) ? slot : -1;
 }
 
@@ -422,7 +422,7 @@ void AgendaWidget::paintEvent(QPaintEvent*)
             // true where the hint matters most.
             const bool armed = (m_armedSlot == hintSlot);
             const QRect r(m_gutter, slotTop(hintSlot) + 2,
-                          width() - m_gutter - 4, kSlotHeight - 4);
+                          width() - m_gutter - 4, slotHeight() - 4);
             p.setPen(Qt::NoPen);
             p.setBrush(QColor(47, 126, 110, armed ? 34 : 18));
             p.drawRoundedRect(r, kRadius, kRadius);
@@ -590,7 +590,7 @@ void AgendaWidget::paintEvent(QPaintEvent*)
         // place on every block; the free-text detail reads below it.
         // Consequence, accepted: a 2-slot (1h) block only has room for the
         // time line, so the description shows on blocks of 3+ slots.
-        if (rect.height() >= 2 * kSlotHeight - 6)
+        if (rect.height() >= 2 * slotHeight() - 6)
             p.drawText(inner.adjusted(0, 18, 0, 0), Qt::AlignLeft | Qt::AlignTop,
                        smallFm.elidedText(timeLine, Qt::ElideRight,
                                           inner.width()));
@@ -601,7 +601,7 @@ void AgendaWidget::paintEvent(QPaintEvent*)
         // simply shows as much as the block is tall enough to hold: resize
         // the block, see more.
         int lineY = 36; // first slot under the time line
-        const bool tallEnough = rect.height() >= 3 * kSlotHeight - 6;
+        const bool tallEnough = rect.height() >= 3 * slotHeight() - 6;
         const QString desc = (m_showTaskDescriptions && linkedTask)
                                  ? linkedTask->description
                                  : QString();
@@ -730,6 +730,35 @@ void AgendaWidget::paintEvent(QPaintEvent*)
                                     timeLabel(run.second)));
             }
         }
+    }
+
+    // 6) THE EMPTY DAY'S ONE INSTRUCTION (v30.7).
+    //
+    // Press-and-hold is how you plan a block on a phone, and it is not
+    // discoverable — docs/ANDROID.md had to write it down for exactly that
+    // reason. It used to be said in a permanent two-line caption above the
+    // grid, which cost 60dp of every day forever to teach something once.
+    //
+    // So it moved in here, and only for a day with nothing on it. That is
+    // the whole trick: an empty timeline has room going spare and a person
+    // looking at one has nothing else to act on, while a day with blocks in
+    // it needs no explanation and gets none. The hint disappears the moment
+    // it stops being useful, which no permanently-placed label can do.
+    //
+    // Only where the gesture is real: a week column (m_gutter == 0) is too
+    // narrow for the sentence, and on a desktop the caption above is still
+    // there because there is room for it.
+    if (m_gutter > 0 && m_data->eventsOn(m_date).isEmpty()) {
+        p.setPen(theme::inkSoft());
+        p.setFont(small);
+        const QRect room(m_gutter + 16, kTopPad,
+                         width() - m_gutter - 32, height() - kTopPad);
+        p.drawText(room, Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap,
+                   isCompactScreen()
+                       ? tr("Nothing planned yet.\n"
+                            "Press and hold a free slot to say what you're doing.")
+                       : tr("Nothing planned yet.\n"
+                            "Click a free slot to say what you're doing."));
     }
 }
 

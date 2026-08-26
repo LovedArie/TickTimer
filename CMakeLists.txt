@@ -97,6 +97,7 @@ set(DOMAIN_SOURCES
     include/Mood.h
     include/CheckIn.h
     include/Alarms.h
+    include/Touch.h
     include/ReturnPolicy.h
     include/Stats.h
     include/DayBriefing.h
@@ -393,7 +394,26 @@ if(ANDROID)
         # targetSdk is a DECLARATION that the app was written for that
         # platform's rules; it should be raised deliberately, after a run on
         # a real phone, never inherited.
-        QT_ANDROID_TARGET_SDK_VERSION "35"
+        #
+        # 34, NOT 35, and this is a design decision rather than caution
+        # (v30.7). Android 15 forces EDGE-TO-EDGE on any app targeting 35 or
+        # higher: the app is handed the whole panel and becomes responsible
+        # for insetting itself out from under a 26dp status bar and a 48dp
+        # gesture bar. Every layout in this codebase assumes an already-inset
+        # window, so what that produced on the phone was content quietly
+        # underneath the system chrome — "Delete this block" behind the
+        # gesture pill, and the quick-capture sheet under the clock (the
+        # bug §3.50 could only work around, because Qt Widgets has no
+        # safe-area API to ask and Qt's own SafeArea support is documented
+        # as returning zero on Android until the first resize event).
+        #
+        # Targeting 34 opts out: Android insets the window for us and the
+        # layouts are correct exactly as written. The cost is that Google
+        # removes this opt-out for apps targeting 36 — which never binds
+        # here, because those deadlines belong to the Play Store and this
+        # app is sideloaded to a handful of known people (docs/ANDROID.md).
+        # Raise it the day someone builds real inset handling, not before.
+        QT_ANDROID_TARGET_SDK_VERSION "34"
         # v30.6 — our own AndroidManifest.xml and the Java that backs the
         # notification alarms. Qt overlays this directory onto the generated
         # Gradle project, so `android/src/**.java` is compiled with no
@@ -569,6 +589,11 @@ qt_add_executable(test_nlp
     # judgement that compiles without Gui or Widgets cannot have learned
     # anything about widgets. Same admission rule as LlmProvider above.
     include/Responsive.h
+    # v30.7 — the touch-target standard, admitted on exactly the same rule:
+    # plain ints and a bool, no screen and no QApplication, so Android's
+    # minimums are pinned in the suite that cannot accidentally learn about
+    # widgets.
+    include/Touch.h
     tests/test_nlp.cpp
 )
 target_include_directories(test_nlp PRIVATE include)

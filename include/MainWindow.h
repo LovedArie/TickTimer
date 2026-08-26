@@ -128,6 +128,19 @@ protected:
     void changeEvent(QEvent* event) override;
 
 private:
+    // ---- one door for transient status text (v30.7) ------------------------
+    // A QStatusBar reserves its strip whether or not it is saying anything,
+    // and on a phone that was 14dp of the day spent on an empty grey band —
+    // measured, while the agenda had 47% of the screen. So on a phone there
+    // is no status bar, and these lines have to go somewhere: they go to the
+    // same NotificationToast the alarms use, which is transient by nature and
+    // costs nothing when silent.
+    //
+    // A helper rather than an #ifdef at seven call sites: the callers say
+    // WHAT happened, and this decides where a message of that kind belongs
+    // on this shell.
+    void say(const QString& text, int msecs = 5000);
+
     void setupNotifications(); // three clients: the Pomodoro's phaseEnded,
                                // and the agenda's own voice (AlarmService::
                                // due, carrying both starts and ends). The

@@ -386,6 +386,53 @@ Deliberate simplifications (candidates for your first solo features):
   the private `QtAndroidPrivate::requestPermission`; the route this codebase
   took is four lines of its own Java, which cannot break on a Qt upgrade
   (`AndroidNotifier.cpp`, `android/src/org/ticktimer/app/TickNotifier.java`).
+- **QSS `min-height` is the CONTENT box on a button and the TOTAL on a
+  `QCheckBox`.** `QPushButton { padding: 7px 9px; min-height: 34px }` comes
+  out 48 tall; `QCheckBox { min-height: 34px }` comes out 34. The same
+  property means a different box depending on the widget, so a stylesheet
+  minimum is a number to *measure*, not to calculate — every rule in
+  `Theme.h`'s compact block was tuned by rerunning the gate
+  (`tests/test_ui.cpp::everyTouchTargetIsBigEnoughForAThumb`).
+- **Android's default font has a narrower glyph set than a desktop's, and a
+  missing codepoint draws as an empty box.** U+2715 ✕ caught `SlidePanel`;
+  U+25BE ▾ caught the life-area switcher two years later. The rule that would
+  have prevented both: **reuse a codepoint the app already draws somewhere on
+  that device** rather than picking the best-looking one — U+00D7 × and
+  U+25BC ▼ are both proven here. Anything new needs a look on the phone
+  before it is trusted (`SlidePanel.cpp`, `ActivitiesPage.cpp`).
+- **A widget's OWN `setStyleSheet` beats the application stylesheet
+  outright** — it is not merged and it is not overridden by specificity.
+  So an app-wide compact rule reaches every styled button *except* the
+  handful that carry inline sheets (the "Archive"/"Edit" pills in
+  `ActivitiesPage`, `TaskRow`, `SpecialDaysPage`), and those have to repeat
+  the rule themselves. Found by the touch gate, not by reading the sheet.
+- **QSS implements CSS specificity, so a type selector cannot override an id
+  selector — no matter how late it appears.** The compact stylesheet was two
+  `padding` rules for a year and reached almost nothing, because
+  `QPushButton { padding }` loses to `QPushButton#primary` in the base sheet.
+  Every id that sets a property must be named again to change it. A compact
+  rule that "does not seem to apply" is this, every time (`Theme.h`).
+- **One Qt logical pixel is one Android dp**, on any normal Android device:
+  Qt reports logical px and derives its device pixel ratio from the same
+  `DisplayMetrics.density` that defines dp. Nothing divides a widget size by
+  the ratio. So a `setFixedWidth(24)` is 24dp against Material's 48dp
+  minimum — the numbers in this codebase can be compared to the guideline
+  directly. The identity survives only while nothing sets `QT_SCALE_FACTOR`
+  or a high-DPI rounding policy (`include/Touch.h`).
+- **An affordance documented only in a placeholder is documented nowhere.**
+  A `QLineEdit`'s placeholder is a hint for an EMPTY field — Qt hides it the
+  moment the first character arrives. The block picker's only way to confirm
+  a typed block was "press Enter", said only in the placeholder, so the
+  instruction vanished exactly when it became relevant; on a phone, with no
+  Enter key, the path was closed outright. Anything still true once the user
+  starts typing needs a home that does not disappear
+  (`PickActivityDialog.cpp`, `docs/design-addendum-responsive.md` §3.53).
+- **A dialog is its own top-level window and a page budget does not cover
+  it.** "Every page fits a phone screen" said nothing about the eleven
+  QDialogs, each with its own `setMinimumWidth`, and four of them sat over
+  the 360px budget for two versions after the pages were fixed. When a gate
+  measures a *kind* of surface, write down which kinds it does not
+  (`tests/test_ui.cpp::dialogsFitAPhoneScreen`, responsive addendum §3.52).
 - **`Notification.Builder.setSmallIcon` is mandatory, and a Qt app has no
   launcher icon to borrow.** `getApplicationInfo().icon` is `0` when no
   `QT_ANDROID_APP_ICON` is set, and `setSmallIcon(0)` throws — killing the

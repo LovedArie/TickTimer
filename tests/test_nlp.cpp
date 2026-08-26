@@ -19,6 +19,7 @@
 #include "LlmQuickAdd.h"
 #include "QuickAddParser.h"
 #include "Responsive.h"
+#include "Touch.h" // v30.7 — the Android touch-target standard
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -1509,6 +1510,73 @@ private slots:
             }
         }
         QCOMPARE(changes, 0);
+    }
+
+    // ---- touch:: — how big a thing must be before a thumb can hit it ------
+    // Same admission rule as responsive:: above: Touch.h is ints and a bool,
+    // so the Android minimums are pinned in the suite that links neither
+    // Widgets nor Gui. What is asserted here is the RULE; the gate that
+    // asserts every real control obeys it lives in test_ui.
+
+    void touchTargetsGrowOnAPhoneAndAreLeftAloneOnADesktop()
+    {
+        // 48dp is Material's minimum touch target and WCAG 2.5.5 (AAA).
+        QCOMPARE(touch::kMinTarget, 48);
+        // 24dp is WCAG 2.5.8 (AA) — the line between a compromise and a bug.
+        QCOMPARE(touch::kFloor, 24);
+
+        // On a phone, anything smaller is raised...
+        QCOMPARE(touch::sizeFor(24, /*compact=*/true), 48);
+        QCOMPARE(touch::sizeFor(47, true), 48);
+        // ...and anything already big enough is NOT shrunk. A rule that
+        // clamped both ways would quietly cap the 56px capture FAB.
+        QCOMPARE(touch::sizeFor(56, true), 56);
+
+        // On a desktop the pointer is exact and the visual size IS the right
+        // size: this must be the identity, or every mouse-driven surface in
+        // the app grows for no reason.
+        QCOMPARE(touch::sizeFor(24, /*compact=*/false), 24);
+        QCOMPARE(touch::sizeFor(15, false), 15);
+    }
+
+    void touchHitRectGrowsAboutItsCentreSoPaintAndHitTestAgree()
+    {
+        // A 20x20 checkbox drawn at (100,100) must still LOOK 20x20 — the
+        // delegates paint small on purpose — while the area that responds to
+        // a finger reaches 48.
+        const QRect drawn(100, 100, 20, 20);
+        const QRect hit = touch::expand(drawn, /*compact=*/true);
+
+        QCOMPARE(hit.width(), 48);
+        QCOMPARE(hit.height(), 48);
+        // Centred, so a tap that LOOKED like it landed on the checkbox did.
+        QCOMPARE(hit.center(), drawn.center());
+        QVERIFY(hit.contains(drawn));
+
+        // An ODD shortfall must still reach the minimum. Splitting 29 as
+        // 14/14 would land a pixel short — the kind of off-by-one that only
+        // ever shows up as "sometimes it doesn't respond".
+        const QRect odd = touch::expand(QRect(0, 0, 19, 19), true);
+        QCOMPARE(odd.width(), 48);
+        QCOMPARE(odd.height(), 48);
+
+        // Already big enough: untouched, on either platform.
+        const QRect big(0, 0, 86, 60);
+        QCOMPARE(touch::expand(big, true), big);
+        QCOMPARE(touch::expand(drawn, /*compact=*/false), drawn);
+    }
+
+    void touchPredicatesSeparateADefectFromACompromise()
+    {
+        QVERIFY(touch::meets(48, 48));
+        QVERIFY(!touch::meets(47, 48));
+        QVERIFY(!touch::meets(48, 47)); // both axes, not just the larger one
+
+        // The distinction that lets the agenda keep a 44px half-hour slot and
+        // still be honest about it: above the AA floor, below the target.
+        QVERIFY(touch::meetsFloor(44, 44));
+        QVERIFY(!touch::meets(44, 44));
+        QVERIFY(!touch::meetsFloor(22, 22));
     }
 };
 

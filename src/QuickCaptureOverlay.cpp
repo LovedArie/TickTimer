@@ -28,7 +28,7 @@ QuickCaptureOverlay::QuickCaptureOverlay(AppData* data, QWidget* parent)
     setObjectName("quickCapture");
     // A command palette is a line of text, not a screen. On a phone it takes
     // the full width (it needs it) and only the height it actually uses.
-    setProperty("compactTopSheet", true);
+    setProperty("compactFit", "sheet");
     setStyleSheet(
         "#quickCapture { background: white; border: 1px solid #D8DDD6; "
         "border-radius: 12px; }");

@@ -6,6 +6,8 @@
 #include "Stats.h"
 #include "TrackerService.h"
 
+#include <QGridLayout>
+#include <QScrollArea>
 #include <QHBoxLayout>
 #include <QComboBox>
 #include <QLabel>
@@ -114,9 +116,36 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     , m_eventId(eventId)
 {
     setWindowTitle(tr("Planned block"));
-    setMinimumWidth(420);
+    // 420 is a good desktop shape and 60px wider than a 360px phone. Qt
+    // honours a minimum it cannot fit by letting the surplus hang off the
+    // edge -- no scrollbar, no warning -- so this was the responsive
+    // addendum's own trap, still armed in four dialogs after v30.5 fixed it
+    // in the pages. On compact the layout decides instead (v30.7).
+    setMinimumWidth(isCompactScreen() ? 0 : 420);
+    // NO `compactFit` here, and that is a decision made twice (v30.7). The
+    // first attempt gave this dialog "card" alongside the block picker,
+    // because both open over the planner. It came back from the phone
+    // wrong: a card is capped to the screen, this dialog's content is
+    // TALLER than the screen, and everything inside was crushed -- the
+    // four tracking buttons squeezed to coloured slivers, "Delete this
+    // block" behind the system nav bar.
+    //
+    // §3.50's taxonomy already had the answer and it was misapplied: a
+    // card is for a modal you can see the app BEHIND, and this is a dialog
+    // you WORK INSIDE. Title, note, reschedule, repeats, the PvA bar, four
+    // tracking buttons, a segment editor and a delete. That earns the
+    // screen. The picker -- pick a duration, pick a thing -- does not.
 
-    auto* layout = new QVBoxLayout(this);
+    // The content is TALLER than a phone, and a QVBoxLayout asked for more
+    // height than it has does not scroll -- it squeezes every child toward
+    // its minimum until the tall ones are slivers. A QScrollArea severs
+    // that contract entirely, which is the same recipe the month review and
+    // the duration pills already use (§3.32).
+    //
+    // Built on a content widget rather than on `this`, so the dialog itself
+    // holds only the scroller.
+    auto* content = new QWidget(this);
+    auto* layout = new QVBoxLayout(content);
     layout->setContentsMargins(20, 18, 20, 16);
     layout->setSpacing(10);
 
@@ -132,32 +161,57 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
 
     m_plannedLine = new QLabel(this);
     m_plannedLine->setObjectName("sub");
+    m_plannedLine->setWordWrap(true);
 
-    // Reschedule row — the four nudge buttons from the prototype. Each is
+    // Reschedule — the four nudge buttons from the prototype. Each is
     // wired to the same slot with a different delta; the domain's isFree()
     // decides (via refresh) which are enabled.
-    auto* moveRow = new QHBoxLayout;
-    moveRow->setSpacing(6);
+    //
+    // Four nudges in a row measure ~338px, and with the dialog's 40px of
+    // margins that is 378 against a 360px phone \u2014 the last row keeping
+    // EventDialog over budget after the tracking buttons were stacked.
+    //
+    // A 2x2 GRID rather than \u00A73.32's direction flip, and the difference is
+    // worth stating: stacking works, and it would have made a dialog that
+    // is already eight stacked buttons tall taller still. These four are
+    // SHORT and they pair naturally \u2014 two earlier, two later \u2014 so folding
+    // the row in half costs no height at all and reads as the pairs it
+    // already is. Direction-flipping is the recipe for rows of unequal
+    // things; a grid is the recipe for a row that is secretly a table.
+    auto* moveGrid = new QGridLayout;
+    moveGrid->setSpacing(6);
+    moveGrid->setContentsMargins(0, 0, 0, 0);
     auto* moveCaption = new QLabel(tr("Reschedule"), this);
     moveCaption->setObjectName("sub");
     const struct { const char* text; int delta; } moves[] = {
         {"\u25B2 1h", -2}, {"\u25B2 30m", -1},
         {"30m \u25BC", +1}, {"1h \u25BC", +2},
     };
+    const bool foldMoves = isCompactScreen();
+    int moveIndex = 0;
     for (const auto& m : moves) {
         auto* b = new QPushButton(QString::fromUtf8(m.text), this);
         const int delta = m.delta;
         connect(b, &QPushButton::clicked, this,
                 [this, delta]() { moveBySlots(delta); });
         m_moveButtons.append(b);
-        moveRow->addWidget(b);
+        if (foldMoves)
+            moveGrid->addWidget(b, moveIndex / 2, moveIndex % 2);
+        else
+            moveGrid->addWidget(b, 0, moveIndex);
+        ++moveIndex;
     }
 
     m_pva = new PvaBar(this);
     m_legend = new QLabel(this);
     m_legend->setObjectName("sub");
+    m_legend->setWordWrap(true);
 
     m_stateLabel = new QLabel(this);
+    // An unwrapped label's minimum width IS its text width, and these
+    // sentences are wider than a phone. Wrapping is right on every
+    // screen; it only became a BUG on one (v30.7).
+    m_stateLabel->setWordWrap(true);
 
     m_focusBtn = new QPushButton(tr("Start focus"), this);
     m_focusBtn->setObjectName("primary");
@@ -167,7 +221,13 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     m_distractedBtn->setObjectName("danger"); // lost time wears the danger hue
     m_stopBtn = new QPushButton(tr("Stop"), this);
     m_stopBtn->setObjectName("quiet");
-    auto* btnRow = new QHBoxLayout;
+    // FOUR BUTTONS IN A ROW IS 362px, and a phone has 360 (v30.7). The
+    // house recipe for a row that cannot promise its width is §3.32's:
+    // keep every control and flip the box's DIRECTION, exactly as the
+    // Pomodoro settings strip does. Stacked, these become four full-width
+    // targets, which on a touchscreen is better than the row ever was.
+    auto* btnRow = new QBoxLayout(isCompactScreen() ? QBoxLayout::TopToBottom
+                                                    : QBoxLayout::LeftToRight);
     btnRow->addWidget(m_focusBtn);
     btnRow->addWidget(m_breakBtn);
     btnRow->addWidget(m_distractedBtn);
@@ -216,6 +276,7 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     // Link status: visible only while a task is linked; Unlink undoes it.
     m_taskLine = new QLabel(this);
     m_taskLine->setObjectName("sub");
+    m_taskLine->setWordWrap(true);
     m_unlinkBtn = new QPushButton(tr("Unlink"), this);
     m_unlinkBtn->setObjectName("quiet");
     m_unlinkBtn->setCursor(Qt::PointingHandCursor);
@@ -242,7 +303,9 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     m_segList = new QVBoxLayout;
     m_segList->setSpacing(2);
 
-    auto* addSegRow = new QHBoxLayout;
+    auto* addSegRow = new QBoxLayout(isCompactScreen()
+                                         ? QBoxLayout::TopToBottom
+                                         : QBoxLayout::LeftToRight);
     m_segKind = new QComboBox(this);
     m_segKind->addItem(tr("Focus"));       // == SegmentKind::Focus (0)
     m_segKind->addItem(tr("Break"));       // == SegmentKind::Break (1)
@@ -253,12 +316,21 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     m_segEnd->setDisplayFormat(QStringLiteral("HH:mm"));
     auto* addSegBtn = new QPushButton(tr("Add"), this);
     addSegBtn->setCursor(Qt::PointingHandCursor);
+    // The start→end pair is ONE idea and now says so with its own row, so
+    // that the outer box can stack on a phone without stranding the arrow
+    // on a line of its own. On a desktop the nesting is invisible: the same
+    // five controls in the same order.
+    auto* timeRange = new QHBoxLayout;
+    timeRange->setContentsMargins(0, 0, 0, 0);
+    timeRange->addWidget(m_segStart);
+    timeRange->addWidget(new QLabel(QStringLiteral("→"), this));
+    timeRange->addWidget(m_segEnd);
+
     addSegRow->addWidget(m_segKind);
-    addSegRow->addWidget(m_segStart);
-    addSegRow->addWidget(new QLabel(QStringLiteral("→"), this));
-    addSegRow->addWidget(m_segEnd);
+    addSegRow->addLayout(timeRange);
     addSegRow->addWidget(addSegBtn);
-    addSegRow->addStretch(1);
+    if (!isCompactScreen())
+        addSegRow->addStretch(1); // stacked, a stretch would only add a gap
 
     auto* deleteBtn = new QPushButton(tr("Delete this block"), this);
     deleteBtn->setObjectName("danger");
@@ -269,7 +341,7 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     layout->addWidget(m_titleEdit);
     layout->addLayout(taskRow);
     layout->addWidget(moveCaption);
-    layout->addLayout(moveRow);
+    layout->addLayout(moveGrid);
 
     // ---- repeat (v19.10) ----------------------------------------------------
     // The combo APPLIES ON CHANGE, like the nudge buttons around it — this
@@ -309,6 +381,20 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     layout->addLayout(addSegRow);
     layout->addWidget(m_note);
     layout->addWidget(deleteBtn, 0, Qt::AlignLeft);
+
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidget(content);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // setWidget() switches the child's autoFillBackground on behind your
+    // back -- the mechanism that once painted the agenda black (Theme.h).
+    content->setAutoFillBackground(false);
+    makeTouchScrollable(scroll);
+
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->addWidget(scroll);
 
     // Wiring. Note the shape of every connection: UI event -> service call.
     // The dialog never edits its own labels in these slots — it lets the

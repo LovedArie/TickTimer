@@ -10,6 +10,7 @@
 #include "TrackerService.h"
 #include "ResponsiveWatcher.h"
 #include "Widgets.h"
+#include "Touch.h" // v30.7 — the 48dp minimum, for the stepper buttons
 
 #include <QCheckBox>
 #include <QScrollArea>
@@ -49,6 +50,11 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
     , m_tracker(tracker)
     , m_data(data)
 {
+    // Asked once, about the DEVICE: which of two presentations this page is
+    // built as. Not a container-width question — the cards and the desktop
+    // strip are different widget trees, and a ResponsiveModeEvent handler may
+    // not create or destroy widgets (ResponsiveWatcher.h's rule).
+    m_phoneShell = isCompactScreen();
     // Load remembered settings FIRST and TELL the services — the page is
     // the doctrine's reader; the engine and the link stay QSettings-free.
     QSettings settings;
@@ -94,6 +100,18 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
     miniBtn->setObjectName("quiet");
     miniBtn->setToolTip(
         tr("A small always-on-top timer you can park over other apps"));
+    // NOT OFFERED ON A PHONE (v30.7), because the sentence in that tooltip
+    // is the whole feature and Android will not honour it. An ordinary app
+    // cannot draw over other apps there without the SYSTEM_ALERT_WINDOW
+    // overlay permission, so what the card actually floats over is
+    // TickTimer itself — including its own modal dialogs. It was found
+    // sitting exactly on top of the block picker's "Plan it" button, which
+    // is how a working control came to look like a missing one.
+    //
+    // Hidden rather than deleted: on a desktop it does exactly what it
+    // promises, and this is a phone-shaped device question, not a
+    // container-width one.
+    miniBtn->setVisible(!isCompactScreen());
     auto* buttons = new QHBoxLayout;
     buttons->setSpacing(8);
     buttons->addStretch(1);
@@ -102,6 +120,72 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
     buttons->addWidget(skipBtn);
     buttons->addWidget(miniBtn);
     buttons->addStretch(1);
+
+    // ---- the phone's settings-row vocabulary (v30.7) -----------------------
+    // Three pieces, used by everything below: a hairline, a row that carries
+    // a label on the left and a control on the right, and a stepper. Android
+    // settings screens are built from exactly this and nothing else, which is
+    // most of why they read as one system rather than as a form.
+    const auto makeDivider = [content]() {
+        auto* line = new QFrame(content);
+        line->setFixedHeight(1);
+        line->setStyleSheet(
+            QStringLiteral("background:%1;").arg(theme::line().name()));
+        return line;
+    };
+
+    const auto makeRow = [content](const QString& text, QWidget* control) {
+        auto* row = new QWidget(content);
+        // 56, not 48: the row is not itself a target, it HOLDS one, and a
+        // 48dp control needs somewhere to sit without touching the divider.
+        row->setMinimumHeight(56);
+        auto* h = new QHBoxLayout(row);
+        h->setContentsMargins(14, 4, 8, 4);
+        h->setSpacing(8);
+        auto* label = new QLabel(text, row);
+        // Wrapping matters here and nowhere on the desktop version: these
+        // labels are full sentences on a 360dp screen, and an unwrapped
+        // QLabel's minimum width is its whole text.
+        label->setWordWrap(true);
+        h->addWidget(label, 1);
+        h->addWidget(control, 0);
+        return row;
+    };
+
+    // − 25 min + . The buttons drive the hidden QSpinBox through stepDown()
+    // and stepUp(), so the range, the clamping and every connect() already
+    // wired to it keep working untouched; the value label just listens.
+    const auto makeStepperRow = [&](const QString& text, QSpinBox* spin) {
+        auto* box = new QWidget(content);
+        auto* h   = new QHBoxLayout(box);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(2);
+
+        const auto stepBtn = [&](const QString& glyph) {
+            auto* b = new QPushButton(glyph, box);
+            b->setObjectName("quiet");
+            b->setCursor(Qt::PointingHandCursor);
+            b->setFixedSize(touch::kMinTarget, touch::kMinTarget);
+            return b;
+        };
+        auto* minus = stepBtn(QStringLiteral("−")); // U+2212, a real minus
+        auto* value = new QLabel(box);
+        value->setAlignment(Qt::AlignCenter);
+        value->setMinimumWidth(76);
+        value->setStyleSheet(QStringLiteral("font-weight:700;"));
+        auto* plus = stepBtn(QStringLiteral("+"));
+
+        const auto show = [value, spin]() { value->setText(spin->text()); };
+        show();
+        connect(spin, &QSpinBox::valueChanged, value, [show](int) { show(); });
+        connect(minus, &QPushButton::clicked, spin, &QSpinBox::stepDown);
+        connect(plus, &QPushButton::clicked, spin, &QSpinBox::stepUp);
+
+        h->addWidget(minus);
+        h->addWidget(value);
+        h->addWidget(plus);
+        return makeRow(text, box);
+    };
 
     // ---- duration controls: adjustable, and remembered across runs -------
     // A small factory so the three spin boxes are configured identically —
@@ -149,9 +233,38 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
         pair->addStretch(1);
         settingsRow->addLayout(pair);
     };
-    addPair(tr("Focus"), focusSpin);
-    addPair(tr("Break"), shortSpin);
-    addPair(tr("Long break"), longSpin);
+    if (!m_phoneShell) {
+        addPair(tr("Focus"), focusSpin);
+        addPair(tr("Break"), shortSpin);
+        addPair(tr("Long break"), longSpin);
+    } else {
+        // ---- the phone presents these as Android list rows (v30.7) ---------
+        // A QSpinBox is a desktop control end to end: its value is a text
+        // field you are expected to type into, and its up/down arrows are
+        // each half of a ~30dp box — about 15dp of thumb, a third of the
+        // guideline. Reported as the page "not feeling like a modern Android
+        // UI", and this is the largest single reason why.
+        //
+        // The spin boxes SURVIVE, hidden. They still hold the value, the
+        // range, the clamping and every connect() that writes the setting
+        // through to QSettings and the engine — so the visible stepper below
+        // drives them rather than replacing them, and there is still exactly
+        // one place that knows what a duration is. Two controls writing the
+        // same setting is how they drift.
+        focusSpin->hide();
+        shortSpin->hide();
+        longSpin->hide();
+        m_settingsCard = new QFrame(content);
+        m_settingsCard->setObjectName("panel");
+        auto* cardV = new QVBoxLayout(m_settingsCard);
+        cardV->setContentsMargins(0, 0, 0, 0);
+        cardV->setSpacing(0);
+        cardV->addWidget(makeStepperRow(tr("Focus"), focusSpin));
+        cardV->addWidget(makeDivider());
+        cardV->addWidget(makeStepperRow(tr("Break"), shortSpin));
+        cardV->addWidget(makeDivider());
+        cardV->addWidget(makeStepperRow(tr("Long break"), longSpin));
+    }
 
     // Each control writes ONE setting through, then re-tells the engine.
     // In Qt6 QSpinBox::valueChanged is the int overload — the function-
@@ -231,9 +344,54 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
 
     auto* toggles = new QVBoxLayout;
     toggles->setSpacing(4);
-    toggles->addWidget(notifyCheck, 0, Qt::AlignHCenter);
-    toggles->addWidget(linkCheck, 0, Qt::AlignHCenter);
-    toggles->addWidget(m_linkStatus, 0, Qt::AlignHCenter);
+    if (!m_phoneShell) {
+        toggles->addWidget(notifyCheck, 0, Qt::AlignHCenter);
+        toggles->addWidget(linkCheck, 0, Qt::AlignHCenter);
+        toggles->addWidget(m_linkStatus, 0, Qt::AlignHCenter);
+    } else {
+        // A TICK MEANS "I HAVE CHOSEN"; A SWITCH MEANS "THIS IS ON" (v30.7).
+        // Both of these take effect the instant they are touched — there is
+        // no OK button on this page — which on Android is a switch, not a
+        // checkbox. The shape is the part that says whether anything has
+        // happened yet, so the wrong one is a lie about state rather than a
+        // style preference.
+        //
+        // The QCheckBoxes stay alive and hidden, exactly like the spin boxes
+        // above, because they carry the prefs wiring. The switch mirrors and
+        // drives; the checkbox remains the one thing that writes.
+        notifyCheck->hide();
+        linkCheck->hide();
+
+        const auto mirror = [this](QCheckBox* box) {
+            auto* sw = new ToggleSwitch(this);
+            sw->setChecked(box->isChecked());
+            sw->setToolTip(box->toolTip());
+            connect(sw, &ToggleSwitch::toggled, box, &QCheckBox::setChecked);
+            // Both directions: something else may flip the preference, and a
+            // switch showing the opposite of the truth is worse than no
+            // switch. setChecked on an unchanged value emits nothing, so this
+            // cannot loop.
+            connect(box, &QCheckBox::toggled, sw, &ToggleSwitch::setChecked);
+            return sw;
+        };
+
+        m_togglesCard = new QFrame(content);
+        m_togglesCard->setObjectName("panel");
+        auto* cardV = new QVBoxLayout(m_togglesCard);
+        cardV->setContentsMargins(0, 0, 0, 0);
+        cardV->setSpacing(0);
+        cardV->addWidget(makeRow(notifyCheck->text(), mirror(notifyCheck)));
+        cardV->addWidget(makeDivider());
+        cardV->addWidget(makeRow(linkCheck->text(), mirror(linkCheck)));
+        // The live sentence belongs UNDER the row it explains, indented to
+        // read as its subtitle rather than as a new setting.
+        auto* statusWrap = new QWidget(content);
+        auto* statusH    = new QHBoxLayout(statusWrap);
+        statusH->setContentsMargins(14, 0, 14, 12);
+        m_linkStatus->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        statusH->addWidget(m_linkStatus);
+        cardV->addWidget(statusWrap);
+    }
 
     m_hint = new QLabel(this);
     m_hint->setObjectName("sub");
@@ -246,9 +404,35 @@ PomodoroPage::PomodoroPage(PomodoroEngine* engine, PomodoroLink* link,
     layout->addLayout(dotsRow);
     layout->addLayout(buttons);
     layout->addLayout(settingsRow);
+    if (m_settingsCard)
+        layout->addWidget(m_settingsCard);
     layout->addLayout(toggles);
+    if (m_togglesCard)
+        layout->addWidget(m_togglesCard);
     layout->addWidget(m_hint, 0, Qt::AlignHCenter);
     layout->addStretch(1);
+
+    // ---- THE OVERLAPPING SENTENCES (v30.7) ---------------------------------
+    // On the phone the link-status line and the hint below it were drawn on
+    // top of each other, both cut off mid-word. Neither was too long: both
+    // are word-wrapped, and both carried a setMaximumWidth from the desktop
+    // layout (420 and 360).
+    //
+    // That maximum is the bug. Inside a QScrollArea with widgetResizable the
+    // content's height comes from the layout's sizeHint, and a wrapped
+    // QLabel's height is only knowable once its WIDTH is fixed — heightForWidth.
+    // A label narrower than the column it sits in, centred, gives the layout
+    // two different widths to reason about, and it reserves height for the
+    // wrong one. The text then wraps to the real width and runs past the
+    // space allotted, straight over its neighbour.
+    //
+    // Letting them be exactly as wide as the column removes the ambiguity.
+    // The desktop keeps its maximums, where they stop a sentence sprawling
+    // across a 1400px window.
+    if (m_phoneShell) {
+        m_linkStatus->setMaximumWidth(QWIDGETSIZE_MAX);
+        m_hint->setMaximumWidth(QWIDGETSIZE_MAX);
+    }
 
     // The view's whole contract: user gestures go IN as engine calls,
     // repaints come OUT of engine signals. No state lives here.
@@ -351,6 +535,13 @@ PomodoroPage::~PomodoroPage()
 
 void PomodoroPage::showMini()
 {
+    // The second lock on the same door. Hiding the button is what a user
+    // sees; this is what makes it true — a shortcut, a restored session or
+    // a future caller cannot conjure a card that the platform will only let
+    // float over our own dialogs.
+    if (isCompactScreen())
+        return;
+
     if (!m_mini) {
         m_mini = new PomodoroMiniWindow(m_engine);
         // ⤢ on the card brings the real window back (and hides the card).

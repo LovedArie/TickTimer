@@ -1,4 +1,5 @@
 #include "SharingDialog.h"
+#include "Widgets.h" // isCompactScreen
 
 #include "CompareDialog.h"
 
@@ -19,7 +20,7 @@ SharingDialog::SharingDialog(ShareClient* client, AppData* myData,
 {
     setWindowTitle(tr("Share & compare"));
     setModal(true);
-    setMinimumWidth(420);
+    setMinimumWidth(isCompactScreen() ? 0 : 420); // v30.7: 420 > a 360px phone
 
     auto* title = new QLabel(tr("Share & compare planners"), this);
     title->setObjectName("dialogTitle");

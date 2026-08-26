@@ -7,6 +7,9 @@
 // applies to UI code exactly as it does to logic.
 // ---------------------------------------------------------------------------
 
+#include "Theme.h" // ToggleSwitch paints itself in the app's palette
+
+#include <QAbstractButton> // ToggleSwitch's base
 #include <QColor>
 #include <QFrame>
 #include <QLabel>
@@ -17,6 +20,67 @@
 
 // A small stat card: a muted caption over a big coloured value —
 // the "FOCUSED / 2h 05m" boxes from the prototype's sidebar.
+// ---------------------------------------------------------------------------
+// ToggleSwitch — the on/off control Android uses and Qt does not ship (v30.7).
+//
+// A QCheckBox is a square with a tick, which is what a DESKTOP form uses for
+// "include this" — a choice you make before pressing OK. Android reserves the
+// tick for exactly that and uses a SWITCH for a setting that takes effect the
+// instant you touch it, which is what every toggle on the Pomodoro page is.
+// Using the wrong one is not decoration: the shape is what tells you whether
+// something has already happened.
+//
+// Painted rather than styled, because a switch needs a knob that MOVES and QSS
+// can only fill a rounded rectangle — there is no way to draw the travelling
+// circle without an image, and this project ships no image files (the nav bar
+// icons are painted for the same reason). Thirty lines of paintEvent beats a
+// .qrc and a designer.
+//
+// No Q_OBJECT, on the StatBox precedent: everything it needs — checkable,
+// toggled(), click handling — it inherits from QAbstractButton.
+// ---------------------------------------------------------------------------
+class ToggleSwitch : public QAbstractButton
+{
+public:
+    explicit ToggleSwitch(QWidget* parent = nullptr)
+        : QAbstractButton(parent)
+    {
+        setCheckable(true);
+        setCursor(Qt::PointingHandCursor);
+        // 52x32 track inside a 52x48 widget: the visible switch is Material's
+        // size, and the extra height is what makes the TARGET 48dp without
+        // drawing a control that looks oversized (Touch.h's whole argument —
+        // the visual and the target are different questions).
+        setFixedSize(52, 48);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        const int trackH = 32;
+        const QRect track(0, (height() - trackH) / 2, width(), trackH);
+        const int r = trackH / 2;
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(isChecked() ? theme::focus() : theme::track());
+        p.drawRoundedRect(track, r, r);
+
+        // The knob sits at whichever end the state names. No animation: a
+        // QPropertyAnimation would need Q_OBJECT and a property, and the
+        // instant jump reads as responsive rather than cheap at this size.
+        const int pad = 3;
+        const int d   = trackH - 2 * pad;
+        const int x   = isChecked() ? track.right() - pad - d : track.left() + pad;
+        p.setBrush(QColor("#FFFFFF"));
+        p.drawEllipse(QRect(x, track.top() + pad, d, d));
+    }
+
+    QSize sizeHint() const override { return {52, 48}; }
+};
+
 class StatBox : public QFrame
 {
     // No Q_OBJECT macro: this class declares no signals, slots, or
@@ -229,6 +293,14 @@ inline QList<QRect> availableScreenRects()
 inline void makeTouchScrollable(QScrollArea* area)
 {
     QScroller::grabGesture(area->viewport(), QScroller::TouchGesture);
+    // No bar on a phone, for the same reason as the item-view overload below:
+    // where the drag IS the scroll, a 4dp stripe nobody can grab is
+    // decoration with a width. Doing it here rather than at each call site is
+    // what finally caught the last of them — the Pomodoro page's wrapper was
+    // missed twice because it is a plain QScrollArea rather than a list, and
+    // the owner had to report the same stray stripe three times.
+    if (isCompactScreen())
+        area->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 }
 
 // The same idea for an ITEM VIEW, which is not a QScrollArea and so could not
@@ -249,5 +321,17 @@ inline void makeTouchScrollable(QAbstractItemView* view)
 {
     view->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // ...and the VERTICAL one too on a phone (v30.7). It was left on, so
+    // every touch list in the app reserved a 4dp stripe of track down its
+    // right edge — visible on the planner, the life areas and the task
+    // lists alike, which is why it read as a stray artifact rather than a
+    // scrollbar. Where the drag IS the scroll, a bar you cannot grab is
+    // decoration with a width.
+    //
+    // Here rather than at each call site, because every caller of this
+    // function has already declared the thing it is asking for: "this list
+    // is scrolled by finger."
+    if (isCompactScreen())
+        view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     QScroller::grabGesture(view->viewport(), QScroller::LeftMouseButtonGesture);
 }

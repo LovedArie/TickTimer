@@ -46,7 +46,7 @@ public:
         const int slotCount = (m_end - m_start) / plan::kSlotMinutes; // NB: "slots" is a Qt macro — never a variable name
         return {AgendaWidget::kDefaultGutter,
                 AgendaWidget::kTopPad
-                    + slotCount * AgendaWidget::kSlotHeight + 12};
+                    + slotCount * AgendaWidget::slotHeight() + 12};
     }
 
 protected:
@@ -61,7 +61,7 @@ protected:
             const int minutes = m_start + i * plan::kSlotMinutes;
             if (minutes % 60 != 0)
                 continue; // labels on the hour only, wherever the window starts
-            const int y = AgendaWidget::kTopPad + i * AgendaWidget::kSlotHeight;
+            const int y = AgendaWidget::kTopPad + i * AgendaWidget::slotHeight();
             p.drawText(QRect(0, y - 8, width() - 10, 16),
                        Qt::AlignRight | Qt::AlignVCenter,
                        timeLabel(minutes).remove(":00")); // "6 AM"

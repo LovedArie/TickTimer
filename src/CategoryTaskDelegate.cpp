@@ -1,5 +1,8 @@
 #include "CategoryTaskDelegate.h"
 
+#include "Touch.h"   // v30.7 — the 48dp minimum
+#include "Widgets.h" // isCompactScreen
+
 #include "CategoryTaskModel.h"
 #include "Task.h"
 #include "Theme.h"
@@ -12,7 +15,11 @@ using namespace cattask;
 
 namespace
 {
-constexpr int kRowH  = 46;
+// 46 on a desktop, taller on a phone (v30.7). The row is itself a target —
+// tapping it opens the task — and 46 sat 2dp under Android's 48. The extra
+// height is also what lets the affordances inside grow vertically without
+// overlapping each other, which is the only axis where there is room.
+inline int rowHeight(bool compact) { return compact ? 56 : 46; }
 constexpr int kPad   = 4;
 constexpr int kCheck = 18;
 constexpr int kPieceIndent = 24; // v28.7 — a piece's shift under its parent
@@ -225,7 +232,7 @@ QSize CategoryTaskDelegate::sizeHint(const QStyleOptionViewItem& option,
                                      const QModelIndex&) const
 {
     const int w = option.rect.width() > 0 ? option.rect.width() : 480;
-    return {w, kRowH};
+    return {w, rowHeight(isCompactScreen())};
 }
 
 bool CategoryTaskDelegate::editorEvent(QEvent* event,
@@ -243,20 +250,53 @@ bool CategoryTaskDelegate::editorEvent(QEvent* event,
     const QPoint  p = me->pos();
     const QString id = index.data(IdRole).toString();
 
+    // ---- hit zones, widened for a thumb (v30.7) ---------------------------
+    // The rects in RowGeom are what gets PAINTED and must stay small: a 48dp
+    // checkbox drawn on a 56dp row is a checkbox that has eaten the row. So
+    // the growth happens here, at hit-test time only, and paint is untouched.
+    //
+    // Two different expansions, because the two sides have different room:
+    //
+    //   The CHECK sits alone at the left edge, and everything to its right is
+    //   the row's own "edit" action rather than another affordance. It can
+    //   take the full 48 without stealing a distinct target — worst case a
+    //   tap near the box means "done" instead of "open", and that is the
+    //   choice the user was aiming at anyway.
+    //
+    //   The DELETE, ARCHIVE and DUE pills are a cluster on the right with
+    //   kGap between them. Growing those to 48 wide would overlap them, and
+    //   Material is explicit that sub-48 targets must not overlap — a tap in
+    //   the overlap would silently go to whichever is tested first, which is
+    //   how a due-date tap becomes a delete. So they grow to the full row
+    //   height and only half the gap sideways.
+    //
+    // The honest consequence: those three clear WCAG 2.5.8's 24dp floor and
+    // do not reach Material's 48 in WIDTH. The real fix is fewer affordances
+    // per row on a phone — moving archive and due into the task's own sheet —
+    // which is a behaviour change, not a size change, and is named as the
+    // next step in the addendum rather than smuggled in here.
+    const bool compact = isCompactScreen();
+    const auto cluster = [&](const QRect& r) {
+        if (!compact || r.isNull())
+            return r;
+        const int dh = qMax(0, option.rect.height() - r.height());
+        return r.adjusted(-kGap / 2, -dh / 2, kGap / 2, dh - dh / 2);
+    };
+
     // Specific affordances first; the whole remaining row means "edit".
-    if (g.check.adjusted(-4, -4, 4, 4).contains(p)) {
+    if (touch::expand(g.check, compact).contains(p)) {
         emit doneToggled(id, !index.data(DoneRole).toBool());
         return true;
     }
-    if (g.del.contains(p)) {
+    if (cluster(g.del).contains(p)) {
         emit deleteRequested(id);
         return true;
     }
-    if (!g.archive.isNull() && g.archive.contains(p)) {
+    if (!g.archive.isNull() && cluster(g.archive).contains(p)) {
         emit archiveRequested(id);
         return true;
     }
-    if (g.due.contains(p)) {
+    if (cluster(g.due).contains(p)) {
         emit dueDateRequested(id);
         return true;
     }

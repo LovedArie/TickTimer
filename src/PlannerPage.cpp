@@ -19,6 +19,7 @@
 #include "SlidePanel.h"
 #include "ResponsiveWatcher.h"
 #include "Widgets.h"
+#include "Touch.h" // v30.7 — the 48dp minimum, as a value
 
 #include <QFrame>
 #include <QHBoxLayout>
@@ -54,8 +55,11 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
 
     auto* prev = new QPushButton(QStringLiteral("\u2039"), this);
     auto* next = new QPushButton(QStringLiteral("\u203A"), this);
-    prev->setFixedWidth(34);
-    next->setFixedWidth(34);
+    // ‹ and › move the whole day, and they sit either side of the date —
+    // the two controls most likely to be aimed at with a thumb. They were
+    // 34dp wide against a 48dp guideline (v30.7).
+    prev->setFixedWidth(touch::sizeFor(34, m_phoneShell));
+    next->setFixedWidth(touch::sizeFor(34, m_phoneShell));
     connect(prev, &QPushButton::clicked, this, [this]() { shiftPeriod(-1); });
     connect(next, &QPushButton::clicked, this, [this]() { shiftPeriod(+1); });
 
@@ -187,9 +191,36 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     m_agendaHead = agendaHead;
     agendaHead->addWidget(agendaTitle);
     agendaHead->addStretch(1);
-    agendaHead->addWidget(taskNotes);
-    agendaLayout->addLayout(agendaHead);
-    agendaLayout->addWidget(m_agendaSub);
+
+    // ---- what a phone does with this band instead (v30.7) ------------------
+    // On a desktop this row is right, and the comment above says why: the
+    // toggle sits ON the thing it changes. On a 360dp phone the same row —
+    // heading, toggle, and a two-line hint under it — measured 102dp, against
+    // 341dp for the timeline itself. The chrome was taking 53% of the screen
+    // and the day was getting 47%.
+    //
+    // So on compact all three go:
+    //   "Your day"   — the page IS the day, and the tab bar already says so;
+    //   "Task notes" — a display preference, moved into the Glance drawer
+    //                  below, one tap away rather than permanently resident;
+    //   the hint     — moved INSIDE the empty agenda (AgendaWidget's
+    //                  empty state), where it appears exactly when someone
+    //                  has nothing planned and needs to know how to start,
+    //                  and costs nothing once they do.
+    //
+    // Owner's call, and the right one: the space came out of the chrome
+    // instead of out of the touch targets, which is what let the 44dp slot
+    // height stay. Reclaiming this band alone buys back more of the day than
+    // shrinking the slots ever did.
+    if (m_phoneShell) {
+        agendaTitle->hide();
+        m_agendaSub->hide();
+        taskNotes->hide(); // shown again inside the drawer, below
+    } else {
+        agendaHead->addWidget(taskNotes);
+        agendaLayout->addLayout(agendaHead);
+        agendaLayout->addWidget(m_agendaSub);
+    }
 
     // ---- the placing banner (needs-a-block part 3) ------------------------
     // Lives above the due strip, hidden until "Find time" starts a
@@ -267,6 +298,13 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
         // insertWidget, and clearContent() must never be called on this
         // panel — it deletes what it holds. See the header.
         m_glanceDrawer->contentLayout()->insertWidget(0, m_glance);
+        // "Task notes" lands here on a phone (v30.7). It is a planner display
+        // preference and this drawer is the planner's own secondary surface,
+        // so it is the nearest shelf that costs no permanent screen. The
+        // reparent is what insertWidget does; it was hidden above only so it
+        // would not flash in the header first.
+        m_glanceDrawer->contentLayout()->insertWidget(0, taskNotes);
+        taskNotes->show();
         // The cards inside the glance open drawers of their own, and their
         // host used to be the glance panel. Inside this drawer that host is a
         // widget in another SlidePanel's scroll area, so a sheet sized to it
@@ -489,8 +527,12 @@ void PlannerPage::applyLayoutMode(responsive::Mode mode)
         m_agendaPanel->style()->polish(m_agendaPanel);
     }
     if (m_outerLayout)
-        m_outerLayout->setContentsMargins(compact ? 0 : 26, compact ? 8 : 16,
+        // v30.7 — 2px of headroom on a phone, not 8. The date row is not
+        // the top of the screen and does not need to be announced.
+        m_outerLayout->setContentsMargins(compact ? 0 : 26, compact ? 2 : 16,
                                           compact ? 0 : 26, compact ? 0 : 20);
+    if (m_outerLayout)
+        m_outerLayout->setSpacing(compact ? 6 : 12);
     // Only the TIMELINE goes edge to edge. The ‹ › chevrons keep their
     // breathing room, or they sit on the bezel.
     if (m_topBarLayout)
