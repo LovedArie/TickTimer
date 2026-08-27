@@ -42,6 +42,7 @@
 #include <QVector>
 
 class SettingsPage;
+class QComboBox;
 class QListWidget;
 class QStackedWidget;
 
@@ -68,7 +69,10 @@ private:
 
     QString m_memoryPath;
 
+    // Two switchers, one job: the column on a desktop, the picker on a
+    // phone. Both always exist; exactly one is ever visible.
     QListWidget*           m_nav   = nullptr;
+    QComboBox*             m_sectionPicker = nullptr;
     QStackedWidget*        m_stack = nullptr;
     QVector<SettingsPage*> m_pages;
 };

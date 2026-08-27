@@ -2,6 +2,9 @@
 
 #include "SettingsPages.h"
 
+#include "Widgets.h"
+
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QListWidget>
@@ -15,6 +18,8 @@ SettingsDialog::SettingsDialog(QWidget* parent, QString memoryPath)
     setWindowTitle(tr("Settings"));
     setModal(true);
 
+    const bool compact = isCompactScreen();
+
     m_nav = new QListWidget(this);
     m_nav->setObjectName("settingsNav");
     // A fixed, narrow column. Not a splitter: the nav has one job and no
@@ -22,6 +27,24 @@ SettingsDialog::SettingsDialog(QWidget* parent, QString memoryPath)
     // state that has to look right.
     m_nav->setFixedWidth(168);
     m_nav->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    makeTouchScrollable(m_nav);
+
+    // ---- the phone's section switcher (v30.8) ---------------------------
+    // 168px of nav plus 20 of spacing plus 40 of margin leaves 132dp of a
+    // 360dp screen for the settings themselves, so every page scrolled
+    // sideways. A phone gets a single-line picker ABOVE the pages instead —
+    // the same trade the Activities page made when its life-area name
+    // became the switcher: one labelled control that says where you are and
+    // changes it, rather than a permanent column that only says.
+    //
+    // BOTH are built, always, and only one is ever visible. That is the
+    // watcher's rule (a mode change may not create or destroy widgets) and
+    // it also keeps the tests that reach in by objectName working on either
+    // device.
+    m_sectionPicker = new QComboBox(this);
+    m_sectionPicker->setObjectName("settingsSection");
+    m_nav->setVisible(!compact);
+    m_sectionPicker->setVisible(compact);
 
     m_stack = new QStackedWidget(this);
 
@@ -63,6 +86,19 @@ SettingsDialog::SettingsDialog(QWidget* parent, QString memoryPath)
     // them — fewer moving parts, and the compiler checks the signature.
     connect(m_nav, &QListWidget::currentRowChanged,
             m_stack, &QStackedWidget::setCurrentIndex);
+    // The picker drives the same int, and the STACK is what keeps the two
+    // in step — whichever control moved, the other follows the result. Going
+    // control-to-control instead would be a feedback loop; going through the
+    // thing they both change cannot be, because setCurrentIndex to the index
+    // it already holds emits nothing.
+    connect(m_sectionPicker, &QComboBox::currentIndexChanged,
+            m_stack, &QStackedWidget::setCurrentIndex);
+    connect(m_stack, &QStackedWidget::currentChanged, this, [this](int i) {
+        QSignalBlocker navQuiet(m_nav);
+        QSignalBlocker pickerQuiet(m_sectionPicker);
+        m_nav->setCurrentRow(i);
+        m_sectionPicker->setCurrentIndex(i);
+    });
     m_nav->setCurrentRow(0);
 
     auto* buttons = new QDialogButtonBox(
@@ -73,15 +109,20 @@ SettingsDialog::SettingsDialog(QWidget* parent, QString memoryPath)
     });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
-    auto* body = new QHBoxLayout;
+    // Beside on a desktop, above on a phone — one constructor argument, not
+    // two layouts to keep in step.
+    auto* body = new QBoxLayout(compact ? QBoxLayout::TopToBottom
+                                        : QBoxLayout::LeftToRight);
     body->setContentsMargins(0, 0, 0, 0);
-    body->setSpacing(20);
+    body->setSpacing(compact ? 8 : 20);
     body->addWidget(m_nav);
+    body->addWidget(m_sectionPicker);
     body->addWidget(scroll, 1);
 
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(20, 18, 20, 18);
-    layout->setSpacing(14);
+    layout->setContentsMargins(compact ? 10 : 20, compact ? 10 : 18,
+                               compact ? 10 : 20, compact ? 10 : 18);
+    layout->setSpacing(compact ? 8 : 14);
     layout->addLayout(body, 1);
     layout->addWidget(buttons);
 
@@ -94,6 +135,7 @@ SettingsDialog::SettingsDialog(QWidget* parent, QString memoryPath)
 void SettingsDialog::addPage(SettingsPage* page)
 {
     m_nav->addItem(page->title());
+    m_sectionPicker->addItem(page->title());
     m_stack->addWidget(page);
     m_pages.append(page);
 }

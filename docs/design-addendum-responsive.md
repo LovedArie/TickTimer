@@ -668,6 +668,186 @@ which is how a working control came to look like a missing one.
 
 ---
 
+## 3.57 A width budget measured against an empty page certifies nothing
+
+`everyPageFitsAPhoneScreen` had been green for three versions while two pages
+clipped every row on the device. Both failures were the same shape.
+
+The **first** was structural. A page inside a `QScrollArea` reports the scroll
+area's minimum, and that minimum deliberately ignores the content — the
+severing is the whole reason pages use one (§3.32). So the budget test asked
+each page "how narrow can you be?", every page answered "as narrow as you
+like", and the content simply panned sideways underneath. Horizontal scrolling
+on a phone is never an answer; it *hides* an overflow.
+
+**Choice:** ask the scrollbar, not the size hint. For every visible
+`QScrollArea` on a page, `horizontalScrollBar()->maximum() > 0` means there is
+something to scroll sideways, and that is a failure.
+
+**Alternative rejected:** compare `area->widget()->sizeHint().width()` to the
+viewport. Tried first, and it reported `PlannerPage 560px of content in 360px`
+— a false positive. With `setWidgetResizable(true)` the content widget is
+*stretched* to the viewport, so its size hint says what it would like rather
+than what it needs. The scrollbar's range is the direct question, and it
+answers correctly even when the bar is hidden by policy, which on compact it
+always is.
+
+The **second** was the fixture. `ArchivePage` still passed the new check,
+because the test account's `data.json` holds nothing archived — three "nothing
+here yet" labels fit any screen. So the gate grew a sibling,
+`crowdedPagesStillFitAPhoneScreen`, which seeds an archived category, an
+archived task, an archived activity and a special day, deliberately with names
+longer than a phone is wide. Content **is** the width; a page measured empty is
+not measured.
+
+Both pages then failed for the same root cause, worth stating once because it
+will recur: **an unwrapped `QLabel` reports its entire text as its minimum
+width.** A row pairing a free-text title with "Wednesday, September 17, 2026"
+before a countdown and two buttons cannot fit, and no margin change saves it.
+`setWordWrap(true)` drops the minimum to the longest single word.
+
+The same hole existed for dialogs, and closing it there caught a live defect
+nothing had reported: the block picker's four duration pills came to 344dp
+inside a 360dp phone, so the last one sat off-screen. 16px of side padding is
+generous on a desktop and is the whole budget on a phone.
+
+---
+
+## 3.58 `QBoxLayout` takes its direction as a constructor argument
+
+Four surfaces needed the same thing on a phone — a row of controls that has to
+become a column — and Qt already had the answer.
+
+`QHBoxLayout` and `QVBoxLayout` are not two classes; they are `QBoxLayout` with
+a fixed direction. Constructing `QBoxLayout` directly and passing
+`compact ? TopToBottom : LeftToRight` means the *same* sequence of `addWidget`
+calls builds a row on a desktop and a column on a phone. One word of
+difference, and — the part that matters — no second layout to keep in step with
+the first when someone adds a control next year.
+
+Applied to `SpecialDaysPage`'s add form (a line edit, a date, a checkbox with a
+two-word label and a button: past 400dp side by side), `SpecialDaysPage`'s day
+cards, `SettingsDialog`'s nav-beside-pages body, and `CompareDialog`'s
+agendas-beside-stats body.
+
+**One trap it carries:** a stretch factor is a horizontal instruction in a row
+and a vertical one in a column. `addWidget(nameInput, 1)` gives the input the
+spare width on a desktop and balloons a one-line field to fill the page on a
+phone. The stretch has to be conditional too.
+
+**Alternative rejected:** a `QStackedLayout` holding both arrangements, which
+is what the watcher's "build both, swap between them" rule prescribes for a
+*container* whose mode can change while it is on screen. These four are not
+that: three are dialogs that live and die inside one presentation, and the
+fourth is a page rebuilt from data. Building each surface twice to support a
+transition that cannot happen is cost with no buyer.
+
+---
+
+## 3.59 Settings: a fixed nav column is a quarter of a phone
+
+`SettingsDialog` spent 168dp on its nav column, 20 on spacing and 40 on
+margins, leaving **132dp of a 360dp screen for the settings themselves**. It
+passed the dialog budget test the whole time, for §3.57's reason: its scroll
+area absorbed the overflow.
+
+**Choice:** on a compact device the column is replaced by a single-line
+`QComboBox` above the pages. Both controls are built, always; exactly one is
+ever visible. That is the watcher's rule, and it also keeps the tests that
+reach into settings by `objectName` working on either device.
+
+The two switchers are kept in step **through the stack**, not through each
+other: each drives `setCurrentIndex`, and `currentChanged` writes both back
+under a `QSignalBlocker`. Control-to-control would be a feedback loop; going
+through the thing they both change cannot be, because setting an index to the
+one already held emits nothing.
+
+This is the same preference the Activities page settled on — a labelled control
+that says where you are and changes it, rather than a permanent column that
+only says.
+
+**And the forms inside it:** `QFormLayout` puts a label beside its field, so a
+row needs the longest label *plus* the widest field. Qt's own answer for a
+small screen is `WrapAllRows` — label above field — which makes a row's minimum
+the *wider* of the two rather than their sum. One helper, `makePhoneFriendly`,
+applied to all five settings forms.
+
+---
+
+## 3.60 The week view's axis, and what a column is for
+
+Seven day columns plus an hour axis have to share 360dp however tidy each one
+is. Measured: **41dp per column**, because the axis was still 64dp — the
+desktop `kDefaultGutter` — even though the day view had had a 44dp
+`kCompactGutter` since v30.5 and simply never told the week view about it.
+
+**Choice:** one helper, `AgendaWidget::gutterWidth(bool compact)`, and both
+views ask it. 20dp back off the axis is ~3dp onto every one of the seven
+columns.
+
+`compact` is a **parameter**, not a lookup, and the distinction is the one
+`Responsive.h` keeps: `PlannerPage` knows its container's mode and passes that,
+because a desktop window dragged narrow should get the narrow gutter too; the
+week view has no mode plumbing and asks the device. Taking the argument lets
+both be right. `slotHeight()` deliberately does **not** take one — seven
+columns and one shared axis must agree on a row height or 9 AM stops being one
+horizontal line.
+
+**The gate asserts 40dp, not 48**, and the reason is the one §3.55 already
+made for the agenda's slot height: a day column is a **canvas**, not a button.
+The blocks drawn inside it are the targets. 40 clears WCAG 2.5.8's 24dp floor
+comfortably and is what seven columns can actually have.
+
+---
+
+## 3.61 The task drawer is the wrong container at 200dp
+
+`TaskDetailPanel` is 440dp wide, capped by "the host's width minus the 220dp it
+refuses to cover" — an overlay that covers everything is a modal with extra
+steps. On a 360dp phone that arithmetic gives 140, floored at **200**, and a
+title, notes, a due date and time, repeat, priority, estimate and two buttons
+do not go in 200dp.
+
+**Choice:** on a compact device, route to the modal the panel was built to
+replace. `installCompactDialogFitter` already gives it the whole screen, which
+is the platform's own answer for a complex form on a small screen.
+
+**Why this is not a retreat:** the panel's justification is swap-in-place
+navigation between tasks *without losing sight of the list*, and at this width
+there is no list left in view. The modal has its own hop loop, so navigation
+survives; only the split-screen premise does not.
+
+The decision lives in one function, `dockedTaskPanelFor()`, shared by both
+entry points — and it is **declared in the header**, which is a testability
+choice worth naming. Both containers end in a working form, so the only
+observable difference is which one opened; and the modal runs its own event
+loop, so a test that let `runTaskDetail` choose would *hang* rather than fail.
+It did, for five minutes, before the routing was exposed. A decision you cannot
+observe without blocking is a decision you cannot test.
+
+The gate asserts **both** directions — nullptr on a phone, the real panel on a
+desktop — because a one-sided assertion would also pass if the function simply
+always said nullptr and every desktop quietly lost its drawer.
+
+---
+
+## 3.62 The compare screen stacks instead of shrinking
+
+Two agendas side by side plus a fixed 250dp stats column plus 48dp of margin.
+On a phone the stats column alone is a quarter of the screen, sitting beside
+the one thing the screen exists to show.
+
+**Choice:** on compact, the numbers go **under** the two days rather than
+beside them (§3.58's direction flip), and the fixed width comes off. The two
+agendas keep the full width, because two days comparable at a glance *is* the
+screen — measured minimum after the change: **215dp**.
+
+**Alternative rejected:** one day at a time with a toggle. It fits trivially
+and destroys the feature: a comparison you have to remember is not a
+comparison.
+
+---
+
 ## What changed where
 
 | Layer | File(s) | Change |
@@ -686,6 +866,14 @@ which is how a working control came to look like a missing one.
 | tools | `tools/screenshot.cpp` | probe moved AFTER the event loop settles (the mode arrives queued); names every **widget** over budget, not just the page; `TICKTIMER_FONTPT` reproduces a phone's text metrics |
 | tests | `test_nlp.cpp` | the breakpoint table + the anti-thrash sweep |
 | tests | `test_ui.cpp` | the budget gate, the mode pipe, the rail-toggle proof |
+| glass | `SpecialDaysPage`, `ArchivePage` | wrapped row labels, compact margins, `touch::sizeFor` on the ✕, add form and day cards stack (v30.8) |
+| glass | `SettingsDialog` + `SettingsPages` | a `QComboBox` section switcher in place of the 168dp nav column; `makePhoneFriendly` on all five forms (v30.8) |
+| glass | `CompareDialog` | stats stack under the agendas, fixed 250dp width dropped, nav arrows to `touch::sizeFor` (v30.8) |
+| glass | `WeekAgendaView` + `AgendaWidget` | `gutterWidth(bool compact)` — one helper both views ask, so the week axis stops being 64dp on a phone (v30.8) |
+| policy | `TaskDetailDialog.cpp` | `dockedTaskPanelFor()` — a phone gets the full-screen modal, not the 200dp drawer (v30.8) |
+| theme | `Theme.h` | `#segment` padding narrowed on compact: four duration pills were 344dp inside a 360dp phone (v30.8) |
+| glass | `Widgets.h` | `makePhoneFriendly(QFormLayout*)` — `WrapAllRows`, label above field (v30.8) |
+| tests | `test_ui.cpp` | the sideways-overflow question added to both budget gates, plus `crowdedPagesStillFitAPhoneScreen`, `theWeekViewFitsAPhoneScreen`, `theCompareScreenFitsAPhoneScreen`, `thePhoneGetsTheTaskModalNotTheDrawer` (v30.8) |
 | build | `CMakeLists.txt` | `QT_QPA_FONTDIR` for the `ui` suite |
 
 `Responsive.h` is pinned by **`test_nlp`**, which links `Qt6::Core Qt6::Test`

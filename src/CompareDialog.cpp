@@ -7,8 +7,10 @@
 #include "PickActivityDialog.h"
 #include "Prefs.h"
 #include "Stats.h"
+#include "Touch.h"
 #include "Widgets.h"
 
+#include <QBoxLayout>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -47,10 +49,15 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
     // subscribes to a snapshot.
     JsonStore::applyJsonObject(m_peer, peerBlob, /*announceChange=*/false);
 
+    const bool compact = isCompactScreen();
+
     setWindowTitle(tr("Plan with %1").arg(m_peerName));
     setModal(true);
     resize(1020, 720);        // a planning surface, not a popup
-    setSizeGripEnabled(true); // and the user decides how big
+    // ...on a desktop. On a phone installCompactDialogFitter() overrides the
+    // size with the screen's, and a grip on a full-screen window is a handle
+    // that cannot move anything.
+    setSizeGripEnabled(!compact);
 
     auto* title = new QLabel(tr("You & %1 — side by side").arg(m_peerName),
                              this);
@@ -59,8 +66,8 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
     // Day navigation, unchanged from v1.
     auto* prev = new QPushButton(QStringLiteral("◀"), this);
     auto* next = new QPushButton(QStringLiteral("▶"), this);
-    prev->setFixedWidth(36);
-    next->setFixedWidth(36);
+    prev->setFixedWidth(touch::sizeFor(36, compact));
+    next->setFixedWidth(touch::sizeFor(36, compact));
     m_dayLabel = new QLabel(this);
     m_dayLabel->setAlignment(Qt::AlignCenter);
     auto* navRow = new QHBoxLayout;
@@ -76,7 +83,7 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
     auto* agendaHost = new QWidget;
     auto* agendaRow  = new QHBoxLayout(agendaHost);
     agendaRow->setContentsMargins(0, 0, 0, 0);
-    agendaRow->setSpacing(14);
+    agendaRow->setSpacing(compact ? 6 : 14);
 
     // YOUR agenda: the live data, the real tracker — a first-class planning
     // surface, not a preview of one.
@@ -126,7 +133,7 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
         return cell;
     };
     auto* headerRow = new QHBoxLayout;
-    headerRow->setSpacing(14); // mirror agendaRow, column for column
+    headerRow->setSpacing(compact ? 6 : 14); // mirror agendaRow, column for column
     headerRow->setContentsMargins(
         0, 0, scroll->style()->pixelMetric(QStyle::PM_ScrollBarExtent), 0);
     headerRow->addWidget(
@@ -162,10 +169,20 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
     statsCol->addStretch(1);
     auto* statsHost = new QWidget(this);
     statsHost->setLayout(statsCol);
-    statsHost->setFixedWidth(250);
+    // 250 fixed is a QUARTER of a phone spent on four numbers, and it is
+    // beside the one thing this screen exists to show. On a phone the
+    // numbers go UNDER the two days instead, at whatever width is left.
+    if (compact)
+        statsCol->addStretch(0); // no trailing stretch: it is not a column now
+    else
+        statsHost->setFixedWidth(250);
 
-    auto* mainRow = new QHBoxLayout;
-    mainRow->setSpacing(16);
+    // Side by side on a desktop, stacked on a phone — the agendas keep the
+    // full width either way, because two days that can be compared at a
+    // glance IS the screen. One constructor argument, not two layouts.
+    auto* mainRow = new QBoxLayout(compact ? QBoxLayout::TopToBottom
+                                           : QBoxLayout::LeftToRight);
+    mainRow->setSpacing(compact ? 10 : 16);
     // agendaSide (headers + scroll) is built just below, then inserted
     // here — declaration order in C++ vs layout order on screen don't have
     // to match; the insert index says where things GO.
@@ -177,10 +194,11 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
     agendaSide->setSpacing(6);
     agendaSide->addLayout(headerRow);
     agendaSide->addWidget(scroll, 1);
-    mainRow->insertLayout(0, agendaSide, 1); // agendas left, stats right
+    mainRow->insertLayout(0, agendaSide, 1); // agendas first, stats after
 
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(24, 20, 24, 20);
+    layout->setContentsMargins(compact ? 10 : 24, compact ? 10 : 20,
+                               compact ? 10 : 24, compact ? 10 : 20);
     layout->setSpacing(10);
     layout->addWidget(title);
     layout->addLayout(navRow);

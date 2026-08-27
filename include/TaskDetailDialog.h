@@ -30,6 +30,7 @@
 #include <QVector>
 
 class AppData; // for the free helpers below — the dialog itself never uses it
+class TaskDetailPanel; // the docked container runTaskDetail prefers
 
 class TaskDetailDialog : public QDialog
 {
@@ -100,6 +101,23 @@ void applyTaskDetailAnswers(AppData& data, const QString& taskId,
 // swap-in-place — openTask and done); falls back to the v28.5 modal loop
 // otherwise. The four call sites still don't know or care which — that
 // was the point of the seam.
+// Which container this device should use for a task form, asked in ONE place
+// (v30.8). Returns the window's docked drawer, or nullptr when the caller
+// should fall through to the modal.
+//
+// It returns nullptr on a compact DEVICE regardless of what the window holds:
+// the drawer is 440dp capped by "the window minus the 220dp it refuses to
+// cover", which on a 360dp phone floors at 200 — and a title, notes, a due
+// date and time, repeat, priority, estimate and two buttons do not go in
+// 200dp. The modal does, full-screen, which is the platform's own answer for
+// a complex form on a small screen.
+//
+// PUBLIC because it is the only part of this routing a test can observe
+// without blocking: both paths end in a working form, and the modal runs its
+// own event loop, so a test that let runTaskDetail choose would hang rather
+// than fail. Exposing the decision is what makes it checkable.
+TaskDetailPanel* dockedTaskPanelFor(QWidget* windowParent);
+
 void runTaskDetail(AppData& data, QString taskId, QWidget* windowParent);
 
 // v28.7 — runTaskDetail plus the naming handoff: when the panel serves

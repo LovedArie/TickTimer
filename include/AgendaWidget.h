@@ -64,6 +64,24 @@ public:
     // 44 still fits the widest label at the theme's 13px and hands 20px back
     // to the part of the page that is actually the day.
     static constexpr int kCompactGutter = 44;
+    // Which of the two applies (v30.8). PlannerPage already chose between
+    // them by hand; the WEEK view did not, and its axis stayed 64dp on a
+    // phone — 64 off the top before seven day columns divide what is left,
+    // which measured 41dp each. One helper so the day view and the week view
+    // cannot drift apart.
+    //
+    // `compact` is a PARAMETER, not a lookup, and the distinction is the one
+    // Responsive.h keeps: a container can be narrow on a wide device (a
+    // docked panel) and the two answers legitimately differ. PlannerPage
+    // knows its container's mode and passes that; the week view has no mode
+    // plumbing of its own and asks the device. Taking the argument is what
+    // lets both be right — slotHeight() above deliberately does NOT, because
+    // seven columns and one axis must agree on a row height or 9 AM stops
+    // being one horizontal line.
+    static int gutterWidth(bool compact)
+    {
+        return compact ? kCompactGutter : kDefaultGutter;
+    }
 
     // Render as a narrow COLUMN with no label gutter (px = 0) for the week
     // view, where one shared axis serves all seven days. The default keeps the
@@ -200,7 +218,7 @@ private:
     const AppData*        m_data;    // read-only view of the data
     const TrackerService* m_tracker; // for the live-growing mini bar
     QDate m_date;
-    int   m_gutter    = kDefaultGutter; // 64 by default; 0 in week-column mode
+    int   m_gutter    = gutterWidth(isCompactScreen()); // 0 in week mode
     // The PREFERENCE window (initialized to the full day in the ctor, so
     // every existing caller and test sees the historical widget). What is
     // actually painted is shownWindow() — the preference stretched over the

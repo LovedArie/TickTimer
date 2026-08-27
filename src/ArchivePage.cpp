@@ -3,6 +3,7 @@
 #include "AppData.h"
 #include "Theme.h"
 #include "Widgets.h"
+#include "Touch.h" // v30.7 — the 48dp minimum
 
 #include <QFrame>
 #include <QHBoxLayout>
@@ -16,7 +17,10 @@ ArchivePage::ArchivePage(AppData* data, QWidget* parent)
     , m_data(data)
 {
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(26, 22, 26, 22);
+    // Desktop breathing room is phone overflow: 26 a side is 52 of 360dp.
+    const bool compact = isCompactScreen();
+    layout->setContentsMargins(compact ? 8 : 26, compact ? 10 : 22,
+                               compact ? 8 : 26, compact ? 10 : 22);
 
     m_scroll = new QScrollArea(this);
     makeTouchScrollable(m_scroll);
@@ -42,8 +46,11 @@ QWidget* ArchivePage::buildContent()
     panel->setObjectName("panel");
     panel->setMaximumWidth(720);
 
+    const bool compact = isCompactScreen();
+
     auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(18, 16, 18, 16);
+    layout->setContentsMargins(compact ? 10 : 18, compact ? 12 : 16,
+                               compact ? 10 : 18, compact ? 12 : 16);
     layout->setSpacing(8);
 
     auto* title = new QLabel(tr("Archive"), panel);
@@ -66,11 +73,17 @@ QWidget* ArchivePage::buildContent()
     };
     const auto quietRow = [&](const QString& main, const QString& detail) {
         auto* row = new QHBoxLayout;
-        row->setSpacing(9);
+        row->setSpacing(compact ? 6 : 9);
         auto* name = new QLabel(main, panel);
         name->setStyleSheet("color:#616974;"); // archived = greyed, on purpose
         auto* meta = new QLabel(detail, panel);
         meta->setStyleSheet("color:#9AA1A9; font-size:11px;");
+        // An unwrapped QLabel reports its whole text as its MINIMUM width,
+        // so a long activity name plus its life area plus two buttons made
+        // this page wider than a phone and clipped every row ("2 activitie",
+        // "GTI35"). Wrapping drops the minimum to the longest single word.
+        name->setWordWrap(true);
+        meta->setWordWrap(true);
         row->addWidget(name, 1);
         row->addWidget(meta);
         return row;
@@ -125,7 +138,8 @@ QWidget* ArchivePage::buildContent()
         // and it lives here, behind a deliberate visit, not on a daily list.
         auto* del = new QPushButton(QStringLiteral("\u00D7"), panel);
         del->setObjectName("danger");
-        del->setFixedWidth(24);
+        del->setFixedSize(touch::sizeFor(24, compact),
+                          touch::sizeFor(24, compact));
         del->setCursor(Qt::PointingHandCursor);
         del->setToolTip(tr("Delete forever"));
         connect(del, &QPushButton::clicked, this, [this, taskId]() {

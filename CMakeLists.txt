@@ -295,6 +295,21 @@ set_target_properties(ticktimer PROPERTIES WIN32_EXECUTABLE ON)
 # matching would otherwise lie in wait until whoever next built for a phone.
 # Out here it fails on the very next configure, on any machine.
 file(READ "${CMAKE_SOURCE_DIR}/include/Version.h" _ticktimer_version_h)
+
+# ...and tell CMake that this build DEPENDS on that file (v30.8). file(READ)
+# happens at CONFIGURE time and leaves no trace in the build graph, so without
+# this line `cmake --build` after a version bump re-links the same C++ against
+# the OLD version name and stamps a stale APK — which is exactly what happened
+# on the 30.8.0 build: Version.h said 30.8.0, the APK said 30.7.0, and nothing
+# anywhere was wrong except that CMake was never asked again.
+#
+# It is worse than a wrong label, because Android's versionCode is monotonic:
+# ship 300800 and then a stale 300700, and the phone refuses the downgrade with
+# an error that names neither file. The claim three paragraphs up — "bump
+# include/Version.h and Android follows, silently and always" — is only true
+# with this line under it.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${CMAKE_SOURCE_DIR}/include/Version.h")
 foreach(_part MAJOR MINOR PATCH)
     string(REGEX MATCH
            "#define[ \t]+TICKTIMER_VERSION_${_part}[ \t]+([0-9]+)"

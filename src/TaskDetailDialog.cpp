@@ -162,18 +162,50 @@ void applyTaskDetailAnswers(AppData& data, const QString& taskId,
     applyTaskDetailAnswers(data, taskId, dialog.form());
 }
 
+// The docked panel, IF this device should use one (v30.8).
+//
+// The panel is a drawer that slides over the page and deliberately never
+// covers it all — kKeepClear reserves 220dp of still-visible content behind
+// it, because an overlay that covers everything is a modal with extra steps.
+// On a 360dp phone that arithmetic leaves the panel its 200dp floor, and a
+// task form — title, notes, due date and time, repeat, priority, estimate,
+// two buttons — does not belong in 200dp.
+//
+// So on a compact DEVICE the answer is the modal the panel was built to
+// replace. That is not a retreat: the panel's whole justification is
+// swap-in-place navigation between tasks WITHOUT losing sight of the list,
+// and there is no list left in view at this width. The modal already knows
+// how to hop from task to task (the loop below), and installCompactDialogFitter
+// gives it the whole screen — which is Material's own answer for a complex
+// form on a small screen.
+//
+// isCompactScreen(), the DEVICE question, not the container's mode: a
+// desktop window dragged narrow still has a pointer, a keyboard and a
+// resize handle, and taking its drawer away would be a worse answer than
+// the one it has.
+//
+// One function, both entry points, so the two can never disagree about
+// which container a phone gets — and declared in the header so a test can
+// ask the question without opening the modal that would block it.
+TaskDetailPanel* dockedTaskPanelFor(QWidget* windowParent)
+{
+    if (isCompactScreen())
+        return nullptr;
+    QWidget* w = windowParent ? windowParent->window() : nullptr;
+    return w ? w->findChild<TaskDetailPanel*>() : nullptr;
+}
+
 void runTaskDetailNaming(AppData& data, const QString& taskId,
                          QWidget* windowParent)
 {
     // Same discovery as runTaskDetail (window() → findChild), then the
     // one extra step the naming flow needs. Falls through to the plain
     // session when no panel exists.
-    if (QWidget* w = windowParent ? windowParent->window() : nullptr)
-        if (auto* panel = w->findChild<TaskDetailPanel*>()) {
-            panel->openTask(taskId);
-            panel->focusTitleForNaming();
-            return;
-        }
+    if (auto* panel = dockedTaskPanelFor(windowParent)) {
+        panel->openTask(taskId);
+        panel->focusTitleForNaming();
+        return;
+    }
     runTaskDetail(data, taskId, windowParent);
 }
 
@@ -185,12 +217,11 @@ void runTaskDetail(AppData& data, QString taskId, QWidget* windowParent)
     // so adding the panel changed ZERO call sites. One panel per window by
     // construction (MainWindow builds it); other windows have none and
     // fall through to the modal loop below.
-    if (QWidget* w = windowParent ? windowParent->window() : nullptr)
-        if (auto* panel = w->findChild<TaskDetailPanel*>()) {
-            panel->openTask(taskId);
-            return; // the panel owns the session from here — no loop:
-                    // navigation is swap-in-place, not close-and-reopen
-        }
+    if (auto* panel = dockedTaskPanelFor(windowParent)) {
+        panel->openTask(taskId);
+        return; // the panel owns the session from here — no loop:
+                // navigation is swap-in-place, not close-and-reopen
+    }
 
     // ---- the modal fallback: the v28.5 loop, verbatim ----------------------
     // Each hop re-reads the task FRESH from AppData rather than trusting a

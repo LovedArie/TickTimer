@@ -452,6 +452,62 @@ Deliberate simplifications (candidates for your first solo features):
   its own persisted copy is not optional, and `MY_PACKAGE_REPLACED` belongs
   in the same filter because sideloading a new APK clears them the same way
   (`android/src/org/ticktimer/app/BootReceiver.java`).
+- **A `QScrollArea` makes its page's width budget meaningless.** Its minimum
+  deliberately ignores its content — that severing is why pages use one — so
+  a page inside one satisfies any minimum-width assertion while its content
+  pans sideways underneath. Ask `horizontalScrollBar()->maximum() > 0`
+  instead; and do **not** compare `area->widget()->sizeHint().width()` to the
+  viewport, because `setWidgetResizable(true)` stretches the content widget
+  and its hint then reports an aspiration, not a need (false positives)
+  (`tests/test_ui.cpp::everyPageFitsAPhoneScreen`, responsive addendum
+  §3.57).
+- **An unwrapped `QLabel` reports its entire text as its MINIMUM width.** Not
+  its preferred width — its minimum. One free-text row label is enough to
+  push a whole page past a phone's budget, and no margin change can save it.
+  `setWordWrap(true)` drops the minimum to the longest single word
+  (`ArchivePage.cpp`, `SpecialDaysPage.cpp`).
+- **A layout gate measured against an empty fixture certifies nothing.**
+  `ArchivePage` passed the width budget for three versions because the test
+  account had nothing archived, so the page was three short labels. Seed the
+  content — deliberately longer than the budget — or the test only proves
+  that emptiness fits (`tests/test_ui.cpp::crowdedPagesStillFitAPhoneScreen`).
+- **A stretch factor changes meaning with a layout's direction.**
+  `QBoxLayout` takes its direction as a constructor argument, which is the
+  cheap way to turn a row into a column on a phone — but `addWidget(w, 1)`
+  then means "take the spare **height**", and a one-line input balloons to
+  fill the page. Make the stretch conditional too (responsive addendum
+  §3.58).
+- **A routing decision you can only observe by opening a modal is a decision
+  you cannot test.** `runTaskDetail` chooses between a docked panel and a
+  modal; the modal runs its own event loop, so a test that let it choose
+  hangs rather than fails. Declare the choice as its own function and assert
+  on that — in **both** directions, or an always-nullptr bug passes
+  (`TaskDetailDialog.h::dockedTaskPanelFor`).
+- **PowerShell 5.1 corrupts UTF-8 sources on a `Get-Content -Raw` →
+  `Set-Content` round-trip.** Without a BOM it reads the file in the system
+  ANSI codepage and writes it back as UTF-8, double-encoding every non-ASCII
+  byte (an ellipsis becomes three mojibake characters), adding a BOM, and
+  flattening CRLF. The failure surfaces far away — a `QString` comparison
+  against a literal that *looks* right in the editor. Use the Edit tool or a
+  Python rewrite that preserves the file's own newline and encoding; if it
+  has already happened, `s.encode('cp1252').decode('utf-8')` reverses it
+  (`docs/TROUBLESHOOTING.md`).
+- **`file(READ)` in CMakeLists is a CONFIGURE-time read, invisible to the
+  build graph.** Bumping `include/Version.h` and running `cmake --build`
+  re-links the new C++ against the *cached* version name, so the APK is
+  stamped with the previous release — and Android's monotonic `versionCode`
+  then refuses the next real upgrade as a downgrade. Any file CMakeLists
+  merely reads needs
+  `set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ...)`.
+  Verify before signing: `aapt2 dump badging <apk> | grep versionName`.
+- **Gradle picks the JDK from `JAVA_HOME`, or from `PATH` when it is unset.**
+  A Java 8 shim in `C:\Program Files (x86)\Common Files\Oracle\Java\java8path`
+  makes a command-line Android build fail at the very last step with "Gradle
+  requires JVM 17 or later" — while Qt Creator builds fine, because it sets
+  `JAVA_HOME` from its own Android preferences. The path it remembers is
+  `OpenJDKLocation` in `%APPDATA%\QtProject\QtCreator.ini`. The "maximum path
+  length ... is 260 characters" note printed alongside is boilerplate that
+  accompanies *any* Gradle failure; it is not the diagnosis.
 
 ## 5. New since v13 — landmarks worth a visit
 

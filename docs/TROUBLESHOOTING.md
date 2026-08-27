@@ -2139,3 +2139,201 @@ picker is whether the app is still behind it, and only the dialog knows that.
 Note also what caught it: the test pinning the full-screen fit for LoginDialog
 failed the moment the blanket rule was tried. A behaviour worth keeping is
 worth a test that argues back.
+
+
+---
+
+### Text is clipped on the phone ("2 activitie", "GTI35") but every width test is green
+
+**SYMPTOM**
+A page renders with its rows cut off at the right edge on the device, and can
+be dragged sideways to reveal the rest. `everyPageFitsAPhoneScreen` passes.
+
+**CAUSE — two of them, and both have to be fixed**
+
+1. **The gate was asking the wrong question.** A page inside a `QScrollArea`
+   reports the scroll area's minimum width, and that minimum deliberately
+   ignores its content — the severing is the whole reason pages use one. So
+   the page truthfully answers "I can be as narrow as you like" and the
+   content pans sideways underneath. Every page in this app is inside one.
+
+2. **An unwrapped `QLabel` reports its whole text as its MINIMUM width.** Not
+   its preferred width. A row that pairs a free-text name with a second
+   free-text field, before a countdown and two buttons, is already past 360dp
+   and nothing about margins will change that.
+
+**FIX**
+
+Ask the scrollbar, not the size hint:
+
+```cpp
+for (QScrollArea* area : page->findChildren<QScrollArea*>()) {
+    if (!area->isVisible())
+        continue;
+    if (area->horizontalScrollBar()->maximum() > 0)
+        over << name;  // there IS something to scroll sideways
+}
+```
+
+Then `setWordWrap(true)` on the row labels.
+
+**DO NOT** compare `area->widget()->sizeHint().width()` against the viewport
+instead. With `setWidgetResizable(true)` the content widget is *stretched* to
+the viewport, so its size hint reports what it would like rather than what it
+needs — the first draft of this check reported `PlannerPage 560px of content
+in 360px` for a page that was perfectly fine.
+
+**PREVENT**
+`ArchivePage` still passed the corrected gate, because the test account has
+nothing archived: the page under test was three "nothing here yet" labels.
+**A layout gate measured against an empty fixture certifies nothing.** Seed
+content deliberately longer than the budget —
+`crowdedPagesStillFitAPhoneScreen` in `tests/test_ui.cpp` does exactly that,
+and it found 105dp of overflow the general gate could not.
+
+---
+
+### A test hangs for minutes instead of failing
+
+**SYMPTOM**
+One test function never returns. `ctest` eventually reports
+`Received a fatal error`, the suite's total time is 300 seconds, and nothing
+in the log says which line.
+
+**CAUSE**
+The code under test reached a modal dialog. `QDialog::exec()` runs its own
+event loop and waits for a human, so the test is not slow — it is blocked
+forever, and the harness kills it.
+
+Here the culprit was `runTaskDetail`, which chooses between a docked panel and
+a modal. The test wanted to assert *which container a phone gets*; letting the
+function choose meant that on the phone branch it opened the modal and stopped.
+
+**FIX**
+Expose the decision, not the outcome. `dockedTaskPanelFor()` is declared in
+`TaskDetailDialog.h` for exactly this reason, and the test asks it directly.
+
+Assert **both** directions. A one-sided "returns nullptr on a phone" would
+also pass if the function simply always returned nullptr and every desktop
+quietly lost its drawer.
+
+**PREVENT**
+Before writing a test that calls into UI routing, ask what the code does at
+the end of each branch. If any branch ends in `exec()`, the branch cannot be
+taken from a test — the choice has to be observable before it is acted on.
+
+---
+
+### A string comparison fails against a literal that looks correct in the editor
+
+**SYMPTOM**
+`'later->text().endsWith(QStringLiteral("…"))' returned FALSE` — and the
+failure output shows something like `â€¦` where the ellipsis should be. The
+source file looks right. Nothing about the feature changed.
+
+**CAUSE**
+A PowerShell 5.1 round-trip over the source file:
+
+```powershell
+(Get-Content $f -Raw) -replace 'a','b' | Set-Content $f -Encoding utf8
+```
+
+With no BOM on the file, `Get-Content -Raw` decodes it in the system **ANSI**
+codepage (Windows-1252), so each byte of a multi-byte UTF-8 character becomes
+its own character. `Set-Content -Encoding utf8` then encodes each of those,
+**double-encoding** the file. It also adds a BOM and flattens CRLF to LF.
+
+The damage is silent: the compiler is happy, the editor may even render it,
+and the failure surfaces wherever some code compares against the literal.
+
+**FIX**
+The double encoding is exactly reversible while the file is still valid UTF-8:
+
+```python
+s = open(p, 'rb').read().decode('utf-8')
+open(p, 'wb').write(s.encode('cp1252').decode('utf-8').encode('utf-8'))
+```
+
+Strip any BOM (`b[:3] == b'\xef\xbb\xbf'`) and restore CRLF in the same pass.
+
+**PREVENT**
+Do not edit source files with PowerShell text cmdlets. Use the editor tooling,
+or a Python rewrite that reads and writes with an explicit `encoding='utf-8'`
+and `newline=''` so the file's own line endings survive. Check afterwards:
+BOM absent, `bareLF == 0`, and no `Â`/`Ã`/`â` sequences in the file.
+
+---
+
+### The APK carries the OLD version number after a version bump
+
+**SYMPTOM**
+`include/Version.h` says 30.8.0, the app's own About box says 30.8.0, and
+`aapt2 dump badging` on the freshly built APK says
+`versionCode='300700' versionName='30.7.0'`. Nothing errored. The build was
+not stale — the C++ recompiled, the `.so` timestamp is minutes old.
+
+**CAUSE**
+`CMakeLists.txt` reads the version with `file(READ include/Version.h ...)`,
+which happens at **configure** time and leaves no trace in the build graph.
+`cmake --build` re-links whatever changed and never asks CMake again, so the
+cached `QT_ANDROID_VERSION_NAME` / `QT_ANDROID_VERSION_CODE` from the previous
+configure are what get stamped into the manifest.
+
+Editing `CMakeLists.txt` itself re-triggers a configure; editing a file that
+CMakeLists merely *reads* does not.
+
+**WHY IT MATTERS MORE THAN A WRONG LABEL**
+Android's `versionCode` is monotonic. Ship 300800 and then a stale 300700, and
+the phone refuses the install as a downgrade — with an error that names neither
+file.
+
+**FIX**
+Declare the dependency, which is now in `CMakeLists.txt` right under the read:
+
+```cmake
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${CMAKE_SOURCE_DIR}/include/Version.h")
+```
+
+To recover an already-built tree, force one configure (`cmake build-android`)
+or just touch `CMakeLists.txt`.
+
+**PREVENT**
+`aapt2 dump badging <apk> | grep versionName` before signing anything. The
+desktop path cannot catch this for you — the Windows resource compiler
+`#include`s `Version.h` directly, so the .exe is always right, and
+`deploy-windows.bat`'s apply check compares `Version.h` against the `.iss`.
+Neither looks at the APK.
+
+---
+
+### Gradle: "requires JVM 17 or later ... currently configured to use JVM 8"
+
+**SYMPTOM**
+The Android build compiles all the C++ successfully and dies on the last step,
+`Creating APK for ticktimer`. It works from Qt Creator and fails from a
+terminal.
+
+**CAUSE**
+`androiddeployqt` hands the job to Gradle, which uses `JAVA_HOME`, or `java`
+on `PATH` when `JAVA_HOME` is unset. On this machine `PATH` starts with
+`C:\Program Files (x86)\Common Files\Oracle\Java\java8path` — a Java 8 shim
+that some unrelated installer put there. Qt Creator does not care because it
+sets `JAVA_HOME` itself, from **Preferences → Devices → Android → JDK
+location**.
+
+**FIX**
+Set the same JDK Qt Creator uses before building. Its remembered path is in
+`%APPDATA%\QtProject\QtCreator.ini` as `OpenJDKLocation`:
+
+```powershell
+$env:JAVA_HOME = "C:\Users\<you>\AppData\Local\Programs\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
+$env:PATH = "$env:JAVA_HOME\bin;" + $env:PATH
+cmake --build build-android --target apk
+```
+
+**Ignore the "path length" note printed alongside.** androiddeployqt prints
+"The maximum path length that can be processed by Gradle on Windows is 260
+characters" and lists the three `android/src/org/ticktimer/app/*.java` files
+whenever the Gradle step fails, whatever the reason. Those paths are ~100
+characters. It is a hint, not the diagnosis.

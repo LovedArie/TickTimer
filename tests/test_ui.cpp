@@ -33,6 +33,7 @@
 #include "TaskDetailPanel.h"  // v28.6 — the docked panel tests
 #include "TaskDetailForm.h"   // v28.6.2 — the background-fill pin
 #include "ArchivePage.h"
+#include "SpecialDaysPage.h"
 #include "ChatPage.h"
 #include "ChatClient.h"
 #include "AppData.h"
@@ -92,6 +93,7 @@
 #include <QToolButton>
 #include <QDialogButtonBox>
 #include <QScrollArea>
+#include <QScrollBar> // the sideways-overflow gate asks its range
 #include <QStackedWidget>
 #include <QFontDatabase>
 #include <QScreen>
@@ -2174,6 +2176,41 @@ private slots:
             all << QStringLiteral("%1=%2").arg(name).arg(min);
             if (min > kPageBudgetPx)
                 over << QStringLiteral("%1 (%2px)").arg(name).arg(min);
+
+            // ---- the hole this measurement leaves (v30.7) ------------------
+            // minimumSizeHint is the PAGE's promise, and a QScrollArea's
+            // minimum deliberately ignores its content — that severing is
+            // the whole reason pages use one (§3.32). So a page wrapped in a
+            // scroll area passes this budget no matter how wide its insides
+            // are, and its content simply scrolls sideways instead.
+            //
+            // ArchivePage did exactly that, unnoticed, because it was
+            // unreachable on a phone until v30.7 put it in the profile menu.
+            // The first thing anyone saw when it became reachable was
+            // clipped text and a horizontal scrollbar.
+            //
+            // Horizontal scrolling is never the answer on a phone: it hides
+            // an overflow rather than fixing it, which is how 522px went
+            // unnoticed for four versions. So assert there is nothing TO
+            // scroll — the honest version of the promise this test makes.
+            // Ask the SCROLLBAR, not the size hint. With widgetResizable the
+            // content is stretched to the viewport, so its sizeHint says what
+            // it would LIKE rather than what it needs — comparing that
+            // reports pages that are perfectly fine. The scrollbar's range is
+            // the direct question: is there anything here to scroll sideways?
+            // It answers correctly even when the bar is hidden by policy,
+            // which on compact it always is.
+            stack->setCurrentIndex(i);
+            QTest::qWait(5);
+            for (QScrollArea* area : page->findChildren<QScrollArea*>()) {
+                if (!area->isVisible())
+                    continue;
+                const int slack = area->horizontalScrollBar()->maximum();
+                if (slack > 0)
+                    over << QStringLiteral("%1 scrolls sideways by %2px")
+                                .arg(name)
+                                .arg(slack);
+            }
         }
         // EVERY offender, not just the first. QVERIFY2 returns on failure, so
         // a per-page assert inside the loop reports page 2 and hides page 6 —
@@ -2236,6 +2273,275 @@ private slots:
         QCOMPARE(w.width(), kPhoneWidthPx);
     }
 
+    // The gate above walks a MainWindow built on whatever data.json the test
+    // account happens to hold — which is EMPTY. So Archive and Special days
+    // were measured as three "nothing here yet" labels, passed, and shipped a
+    // page that clipped every row the moment it had rows ("2 activitie",
+    // "GTI35" on the device). A width budget measured against an empty page
+    // certifies nothing: the content IS the width.
+    //
+    // These two pages are the ones whose rows pair free text with more free
+    // text, so they are the ones seeded here — deliberately with names longer
+    // than a phone is wide, because that is the case that has to wrap rather
+    // than the case that happens to fit.
+    void crowdedPagesStillFitAPhoneScreen()
+    {
+        constexpr int kPhoneWidthPx  = 360;
+        constexpr int kPhoneHeightPx = 800;
+
+        if (QFontDatabase::families().isEmpty()) {
+#ifdef Q_OS_WIN
+            QFAIL("No fonts — see everyPageFitsAPhoneScreen().");
+#else
+            QSKIP("No fonts on this platform; set QT_QPA_FONTDIR.");
+#endif
+        }
+
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+        } compactMode;
+
+        AppData data;
+        const QString cat =
+            data.addCategory("University coursework", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Reading set texts", cat);
+        const QString task =
+            data.addTask("Finish the comparative literature essay", cat);
+        data.setTaskArchived(task, true);
+        data.setActivityArchived(act, true);
+        const QString spare = data.addCategory("Old side projects", QColor("#D9873B"));
+        data.setCategoryArchived(spare, true);
+        data.addSpecialDay("Grandmother's ninetieth birthday",
+                           QDate(2026, 9, 17), false);
+
+        ArchivePage archive(&data);
+        SpecialDaysPage special(&data);
+
+        QStringList over;
+        const auto measure = [&](QWidget* page, const char* name) {
+            page->resize(kPhoneWidthPx, kPhoneHeightPx);
+            page->show();
+            QVERIFY(QTest::qWaitForWindowExposed(page));
+            page->resize(kPhoneWidthPx, kPhoneHeightPx);
+            QTest::qWait(5);
+
+            const int min = page->minimumSizeHint().width();
+            if (min > kPhoneWidthPx)
+                over << QStringLiteral("%1 asks for %2px").arg(name).arg(min);
+
+            // Same question as the page gate: not "how wide would it like to
+            // be" but "is there anything here to scroll sideways".
+            for (QScrollArea* area : page->findChildren<QScrollArea*>()) {
+                if (!area->isVisible())
+                    continue;
+                const int slack = area->horizontalScrollBar()->maximum();
+                if (slack > 0)
+                    over << QStringLiteral("%1 scrolls sideways by %2px")
+                                .arg(name)
+                                .arg(slack);
+            }
+        };
+        measure(&archive, "ArchivePage");
+        measure(&special, "SpecialDaysPage");
+
+        QVERIFY2(over.isEmpty(),
+                 qPrintable(QStringLiteral(
+                     "with real content on a %1px phone: %2. The usual cause "
+                     "is an unwrapped QLabel — its minimum width is its whole "
+                     "text — so setWordWrap(true) on the row's labels is the "
+                     "first thing to check.")
+                     .arg(kPhoneWidthPx)
+                     .arg(over.join(QStringLiteral(", ")))));
+    }
+
+    // CompareDialog is reachable from SharingDialog, which is reachable from
+    // the profile menu, so it is part of the phone app — and it was the
+    // widest surface in it: two agendas side by side plus a 250dp fixed
+    // stats column plus 48dp of margin, on a 360dp screen. Nothing measured
+    // it, because building one needs a peer snapshot and every other width
+    // test builds its surfaces from a bare AppData.
+    //
+    // A peer blob is cheap to fake: JsonStore's own serialisation of a second
+    // AppData IS the wire format, so this asks the app to compare a day
+    // against a real second day rather than an empty one — an empty peer
+    // would prove nothing, the same way an empty Archive proved nothing.
+    void theCompareScreenFitsAPhoneScreen()
+    {
+        constexpr int kPhoneWidthPx = 360;
+
+        if (QFontDatabase::families().isEmpty()) {
+#ifdef Q_OS_WIN
+            QFAIL("No fonts — see everyPageFitsAPhoneScreen().");
+#else
+            QSKIP("No fonts on this platform; set QT_QPA_FONTDIR.");
+#endif
+        }
+
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+        } compactMode;
+
+        const QDate day = QDate::currentDate();
+
+        AppData mine;
+        const QString myCat = mine.addCategory("School", QColor("#4C6FE0"));
+        const QString myAct = mine.addActivity("Study", myCat);
+        mine.addEvent(day, 9 * 60, 10 * 60, myAct);
+        TrackerService tracker(&mine);
+
+        AppData theirs;
+        const QString theirCat = theirs.addCategory("Work", QColor("#D9873B"));
+        const QString theirAct = theirs.addActivity("Standup", theirCat);
+        theirs.addEvent(day, 9 * 60 + 30, 10 * 60 + 30, theirAct);
+
+        CompareDialog compare(&mine, &tracker, QStringLiteral("Phan"),
+                              QStringLiteral("Alex"),
+                              JsonStore::toJsonObject(theirs));
+        compare.resize(kPhoneWidthPx, 720);
+        compare.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&compare));
+        compare.resize(kPhoneWidthPx, 720);
+        QTest::qWait(5);
+
+        QStringList over;
+        const int min = compare.minimumSizeHint().width();
+        if (min > kPhoneWidthPx)
+            over << QStringLiteral("asks for %1px").arg(min);
+        for (QScrollArea* area : compare.findChildren<QScrollArea*>()) {
+            if (!area->isVisible())
+                continue;
+            const int slack = area->horizontalScrollBar()->maximum();
+            if (slack > 0)
+                over << QStringLiteral("scrolls sideways by %1px").arg(slack);
+        }
+        QVERIFY2(over.isEmpty(),
+                 qPrintable(QStringLiteral(
+                     "the compare screen on a %1px phone: %2. The levers are "
+                     "the stats column (250px fixed on a desktop, stacked "
+                     "underneath on a phone) and the outer margins.")
+                     .arg(kPhoneWidthPx)
+                     .arg(over.join(QStringLiteral(", ")))));
+    }
+
+    // The task detail form has TWO containers — a docked drawer beside the
+    // page, and a modal — and on a phone the drawer collapses to its 200dp
+    // floor (kWidth 440 capped by "the window minus kKeepClear 220", which
+    // on 360 is 140, floored at 200). A full form does not go in 200dp, so
+    // a compact device is routed to the modal, which the dialog fitter
+    // gives the whole screen.
+    //
+    // Pinned here rather than left to a screenshot because the routing is
+    // invisible: both paths open a working form, and only the width says
+    // which one you got.
+    void thePhoneGetsTheTaskModalNotTheDrawer()
+    {
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+        } compactMode;
+
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString task = data.addTask("Lab 4", cat);
+
+        QWidget host;
+        auto* panel = new TaskDetailPanel(&data, &host);
+        host.resize(360, 800);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+
+        // The DECISION, not the outcome, and that is the only version of
+        // this test that can exist: the modal fallback runs its own event
+        // loop, so calling runTaskDetail here would block until something
+        // closed a dialog nothing is going to close. (The first draft did
+        // exactly that and hung the suite for five minutes.) So the routing
+        // is a public function and this asks it directly.
+        QVERIFY(panel); // the drawer exists, as MainWindow builds one
+        QVERIFY2(dockedTaskPanelFor(&host) == nullptr,
+                 "a phone was routed to the 200dp docked drawer; "
+                 "dockedTaskPanelFor() in TaskDetailDialog.cpp is the one "
+                 "place that decides this");
+
+        // ...and the other half of the same rule, or the assertion above
+        // would also pass if the function simply always said nullptr and
+        // every desktop lost its drawer.
+        qunsetenv("TICKTIMER_COMPACT");
+        QVERIFY2(dockedTaskPanelFor(&host) == panel,
+                 "a desktop lost its docked drawer");
+        qputenv("TICKTIMER_COMPACT", "1"); // CompactMode's dtor still runs
+    }
+
+    // The week view is the one surface where the phone budget is not a
+    // question of padding: seven day columns plus an hour axis have to share
+    // 360dp however tidy each one is. It is reachable from the planner's view
+    // switcher, so it is part of the phone app whether or not it was designed
+    // for one, and nothing was measuring it — everyPageFitsAPhoneScreen sees
+    // PlannerPage in DAY mode only.
+    void theWeekViewFitsAPhoneScreen()
+    {
+        constexpr int kPhoneWidthPx = 360;
+
+        if (QFontDatabase::families().isEmpty()) {
+#ifdef Q_OS_WIN
+            QFAIL("No fonts — see everyPageFitsAPhoneScreen().");
+#else
+            QSKIP("No fonts on this platform; set QT_QPA_FONTDIR.");
+#endif
+        }
+
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+        } compactMode;
+
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        data.addEvent(QDate::currentDate(), 9 * 60, 10 * 60, act);
+        TrackerService tracker(&data);
+
+        WeekAgendaView week(&data, &tracker);
+        week.resize(kPhoneWidthPx, 700);
+        week.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&week));
+        week.resize(kPhoneWidthPx, 700);
+        QTest::qWait(5);
+
+        // Fitting is the easy half and it already passed: a day column has
+        // no minimum worth the name, so seven of them "fit" 360dp by each
+        // becoming a sliver. The question worth gating is whether a column
+        // is still something a thumb can hit and an eye can read.
+        //
+        // 40dp, not Material's 48: a day column is a CANVAS, the same
+        // argument the agenda's slot height makes for its half-hour rows.
+        // Blocks inside it are targets; the column is the surface they are
+        // drawn on. WCAG's 24dp floor is the hard rule and 40 clears it
+        // comfortably while leaving the axis its labels.
+        QStringList thin;
+        for (const AgendaWidget* col : week.findChildren<AgendaWidget*>())
+            if (col->width() < 40)
+                thin << QString::number(col->width());
+        QVERIFY2(thin.isEmpty(),
+                 qPrintable(QStringLiteral(
+                     "day columns are %1dp wide on a %2dp phone — the axis "
+                     "(AgendaWidget::gutterWidth()) is the lever, it takes "
+                     "its width off the top before the seven columns share "
+                     "what is left.")
+                     .arg(thin.join(QStringLiteral(", ")))
+                     .arg(kPhoneWidthPx)));
+
+        const int min = week.minimumSizeHint().width();
+        QVERIFY2(min <= kPhoneWidthPx,
+                 qPrintable(QStringLiteral(
+                     "the week view needs %1px on a %2px phone. Seven columns "
+                     "plus the hour axis is the whole budget, so the lever is "
+                     "the axis (AgendaWidget::gutterWidth()) and the day "
+                     "header text, not padding.")
+                     .arg(min).arg(kPhoneWidthPx)));
+    }
+
     // A DIALOG IS ITS OWN TOP-LEVEL WINDOW with its own minimum, so
     // everyPageFitsAPhoneScreen() — which measures MainWindow — says nothing
     // about any of these. That gap was not theoretical: with every page under
@@ -2290,12 +2596,21 @@ private slots:
                                  QDate(2026, 7, 20), QTime(), Task::Repeat::None,
                                  Task::Priority::Medium, 0, false);
 
+        // v30.8 — SettingsDialog joins the list, and it is the widest thing
+        // in the app: a 168px nav column, 20px of spacing and 40px of margin
+        // left 132dp of a 360dp phone for the settings themselves. It was
+        // never measured here because it FITS — its scroll area absorbs the
+        // overflow and pans sideways, which is the same hole ArchivePage fell
+        // through. The shown-and-scrolled check below is the one that sees it.
+        SettingsDialog settingsDlg;
+
         const QVector<QPair<QString, QWidget*>> surfaces = {
             {QStringLiteral("LoginDialog"), &login},
             {QStringLiteral("QuickCaptureOverlay"), &capture},
             {QStringLiteral("PickActivityDialog"), &pick},
             {QStringLiteral("EventDialog"), &eventDlg},
             {QStringLiteral("TaskDetailDialog"), &taskDlg},
+            {QStringLiteral("SettingsDialog"), &settingsDlg},
         };
 
         // WHEN THIS FAILS IT NAMES THE CULPRIT (v30.7). "EventDialog is
@@ -2347,6 +2662,32 @@ private slots:
                             .arg(s.first)
                             .arg(min)
                             .arg(blame(s.second));
+        }
+
+        // A minimum a dialog can HONOUR is not the same as content that
+        // FITS. Every surface above is asked the second question too: show
+        // it at phone size and ask each scroll area whether it has anything
+        // to scroll sideways. Answering yes is never right on a phone — it
+        // hides the overflow instead of resolving it, which is exactly how
+        // Settings and Archive stayed broken while passing this test.
+        for (const auto& s : surfaces) {
+            s.second->resize(kPhoneWidthPx, 720);
+            s.second->show();
+            QVERIFY(QTest::qWaitForWindowExposed(s.second));
+            s.second->resize(kPhoneWidthPx, 720);
+            QTest::qWait(5);
+            for (QScrollArea* area : s.second->findChildren<QScrollArea*>()) {
+                if (!area->isVisible())
+                    continue;
+                const int slack = area->horizontalScrollBar()->maximum();
+                if (slack > 0)
+                    over << QStringLiteral("%1 scrolls sideways by %2px "
+                                           "widest: [%3]")
+                                .arg(s.first)
+                                .arg(slack)
+                                .arg(blame(area));
+            }
+            s.second->hide();
         }
 
         QVERIFY2(over.isEmpty(),

@@ -176,6 +176,7 @@ AgendaSettingsPage::AgendaSettingsPage(QWidget* parent) : SettingsPage(parent)
     m_alarmCheck->setChecked(prefs::blockStartNotify());
 
     auto* form = new QFormLayout(this);
+    makePhoneFriendly(form); // label above field on a phone
     form->addRow(tr("Day starts at"), m_startCombo);
     form->addRow(tr("Day ends at"), m_endCombo);
     form->addRow(tr("Week starts on"), m_weekCombo);
@@ -259,6 +260,7 @@ NeedsBlockSettingsPage::NeedsBlockSettingsPage(QWidget* parent)
     m_gate->setChecked(prefs::needsBlockGateEnabled());
 
     auto* form = new QFormLayout(this);
+    makePhoneFriendly(form); // label above field on a phone
     form->addRow(tr("Always flag priorities"),
                  settingsui::rowOf(this, {m_urgent, m_medium, m_low}));
     form->addRow(tr("Also flag anything due within"), m_window);
@@ -364,6 +366,7 @@ CatchUpSettingsPage::CatchUpSettingsPage(QWidget* parent) : SettingsPage(parent)
         qMax(0, m_horizon->findData(prefs::catchUpHorizonDays())));
 
     auto* form = new QFormLayout(this);
+    makePhoneFriendly(form); // label above field on a phone
     form->addRow(tr("A block counts as missed if"), m_threshold);
     form->addRow(tr("Look back over the last"), m_lookBack);
 
@@ -542,6 +545,7 @@ AssistantSettingsPage::AssistantSettingsPage(QWidget* parent)
     }
 
     auto* form = new QFormLayout(this);
+    makePhoneFriendly(form); // label above field on a phone
     form->addRow(tr("Provider"), m_provider);
     form->addRow(QString(), m_customRow);
     form->addRow(tr("Model"), m_modelEdit);
@@ -762,6 +766,7 @@ MemorySettingsPage::MemorySettingsPage(QString filePath, QWidget* parent)
     m_cost->setWordWrap(true);
 
     auto* form = new QFormLayout;
+    makePhoneFriendly(form); // label above field on a phone
     form->addRow(tr("Routines"), m_routines);
     form->addRow(tr("Preferences"), m_preferences);
     form->addRow(tr("Current situation"), m_situation);

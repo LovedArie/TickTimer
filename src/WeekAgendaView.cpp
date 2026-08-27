@@ -24,7 +24,7 @@ class AgendaAxis : public QWidget
 public:
     explicit AgendaAxis(QWidget* parent = nullptr) : QWidget(parent)
     {
-        setFixedWidth(AgendaWidget::kDefaultGutter);
+        setFixedWidth(AgendaWidget::gutterWidth(isCompactScreen()));
         setMinimumHeight(sizeHint().height());
     }
 
@@ -44,7 +44,7 @@ public:
     QSize sizeHint() const override
     {
         const int slotCount = (m_end - m_start) / plan::kSlotMinutes; // NB: "slots" is a Qt macro — never a variable name
-        return {AgendaWidget::kDefaultGutter,
+        return {AgendaWidget::gutterWidth(isCompactScreen()),
                 AgendaWidget::kTopPad
                     + slotCount * AgendaWidget::slotHeight() + 12};
     }

@@ -105,6 +105,18 @@ inline QString appStyleSheet(bool compact = false)
         QPushButton#attentionStrip,
         QPushButton#pickClose   { min-height: 34px; }
 
+        /* The duration pills of the block picker, and the one control whose
+           WIDTH is the problem rather than its height. Up to four sit in a
+           single row, and at the desktop's 16px of side padding they came to
+           80dp each: 344dp of pills inside a 360dp phone, so the picker
+           panned sideways and the last one was off-screen. 6px brings a pill
+           to ~60dp — still well past the 48dp minimum, because the target
+           here is a wide button, not a square one.
+           A separate rule rather than another name in the group above: QSS
+           takes the LAST rule of equal specificity, so this overrides the
+           padding it inherits and keeps the same min-height. */
+        QPushButton#segment { padding: 7px 6px; min-height: 34px; }
+
         /* Each rule is tuned to its OWN padding, because QSS min-height is
            the CONTENT box: the number that reaches 48 differs per control.
            #headerAction carries 6px top and bottom, so 36 lands on 48.

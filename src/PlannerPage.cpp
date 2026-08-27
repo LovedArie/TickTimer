@@ -480,8 +480,7 @@ void PlannerPage::applyLayoutMode(responsive::Mode mode)
 
     // The gutter only has to fit "12 PM". 64px is generous on a desktop and
     // 18% of a phone's width.
-    m_agenda->setGutter(compact ? AgendaWidget::kCompactGutter
-                                : AgendaWidget::kDefaultGutter);
+    m_agenda->setGutter(AgendaWidget::gutterWidth(compact));
 
     // No scrollbar on a touchscreen. It is not an affordance there — the
     // gesture is the affordance, and makeTouchScrollable() already provides

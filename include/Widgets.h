@@ -210,6 +210,7 @@ inline QWidget* wrapLeft(QWidget* panel)
 #include <QScreen>
 #include <QAbstractItemView>
 #include <QScrollArea>
+#include <QFormLayout>
 #include <QScroller>
 
 // "Is this a phone-sized screen?" — asked ONCE per launch, by geometry, not
@@ -334,4 +335,27 @@ inline void makeTouchScrollable(QAbstractItemView* view)
     if (isCompactScreen())
         view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     QScroller::grabGesture(view->viewport(), QScroller::LeftMouseButtonGesture);
+}
+
+// A QFormLayout puts its label beside its field, which needs room for the
+// longest label PLUS the widest field on one line — "Also flag anything due
+// within" plus a combo box is already past 360dp before any margin. Qt's own
+// answer is WrapAllRows: the label moves ABOVE its field, and the row's
+// minimum width becomes the wider of the two rather than their sum. That is
+// the standard phone form and it costs one line per form.
+//
+// Called at build time rather than from a ResponsiveModeEvent handler for a
+// reason the watcher states: a mode handler may only do reversible things,
+// and this one is — but a settings dialog on a phone is full-screen for its
+// whole life, so there is no second arrangement to swap back to.
+inline void makePhoneFriendly(QFormLayout* form)
+{
+    if (!isCompactScreen())
+        return;
+    form->setRowWrapPolicy(QFormLayout::WrapAllRows);
+    // With labels on their own line the columns no longer need to align
+    // across rows, and letting each field span the full width is what
+    // actually reclaims the space.
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    form->setLabelAlignment(Qt::AlignLeft);
 }

@@ -119,6 +119,16 @@ that tests already pin — never a second implementation of them.
 - **JSON persistence grows additively only** (format v14, `src/JsonStore.cpp`).
   A missing key or an unknown enum string must read as a safe default, so old
   files load with no migration branch. Never repurpose a key.
+- **After a version bump, check the APK's stamp before signing it**
+  (`aapt2 dump badging <apk> | grep versionName`). CMake reads `Version.h`
+  with `file(READ)` — a *configure*-time read — so `cmake --build` alone
+  re-links the new code against the cached old version name. A
+  `CMAKE_CONFIGURE_DEPENDS` on `Version.h` now forces the re-configure;
+  the same hazard applies to any file CMakeLists merely reads.
+- **A command-line Android build needs `JAVA_HOME` set** to the JDK in
+  `%APPDATA%\QtProject\QtCreator.ini` (`OpenJDKLocation`). Otherwise Gradle
+  takes the Java 8 shim off `PATH` and fails at the last step; Qt Creator
+  hides this because it sets `JAVA_HOME` itself.
 - **Version lives in `include/Version.h` and must be bumped there *and* in
   `installer/ticktimer.iss`** — Inno Setup can't include a C header, so that
   seam is hand-synced and `deploy-windows.bat` hard-fails on a mismatch (its
@@ -156,6 +166,17 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
 - `QScrollArea::sizeHint` is a cached guess — neutralise it on both axes.
 - Offscreen platform: `setFocus()` no-ops until `activateWindow()` +
   `qWaitForWindowActive`.
+- **A `QScrollArea` voids its page's width budget.** Its minimum ignores its
+  content on purpose, so the page passes any minimum-width assertion while
+  the content pans sideways. Ask `horizontalScrollBar()->maximum() > 0`, not
+  a size hint (`setWidgetResizable(true)` makes the hint an aspiration).
+  And an **unwrapped `QLabel` reports its whole text as its MINIMUM width**
+  — one free-text row label can push a page past a phone's budget.
+- **Never edit a source file with PowerShell text cmdlets.** `Get-Content
+  -Raw` decodes a BOM-less file in the ANSI codepage and `Set-Content
+  -Encoding utf8` re-encodes it, double-encoding every non-ASCII character,
+  adding a BOM and flattening CRLF. It compiles fine and fails much later on
+  a string comparison. `docs/TROUBLESHOOTING.md` has the reversal.
 
 ## Docs worth opening before changing anything
 

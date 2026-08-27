@@ -3,7 +3,9 @@
 #include "AppData.h"
 #include "Theme.h"
 #include "Widgets.h"
+#include "Touch.h" // v30.7 — the 48dp minimum
 
+#include <QBoxLayout>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QDialog>
@@ -21,7 +23,10 @@ SpecialDaysPage::SpecialDaysPage(AppData* data, QWidget* parent)
     , m_data(data)
 {
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(26, 22, 26, 22);
+    // 26px a side is 52px of a 360dp phone spent on nothing. Desktop keeps it.
+    const bool compact = isCompactScreen();
+    layout->setContentsMargins(compact ? 8 : 26, compact ? 10 : 22,
+                               compact ? 8 : 26, compact ? 10 : 22);
 
     m_scroll = new QScrollArea(this);
     makeTouchScrollable(m_scroll); // finger-flick on touch screens
@@ -54,8 +59,11 @@ QWidget* SpecialDaysPage::buildContent()
     panel->setObjectName("panel");
     panel->setMaximumWidth(720);
 
+    const bool compact = isCompactScreen();
+
     auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(18, 16, 18, 16);
+    layout->setContentsMargins(compact ? 10 : 18, compact ? 12 : 16,
+                               compact ? 10 : 18, compact ? 12 : 16);
     layout->setSpacing(8);
 
     auto* title = new QLabel(tr("Special days"), panel);
@@ -70,7 +78,14 @@ QWidget* SpecialDaysPage::buildContent()
     layout->addWidget(sub);
 
     // ---- add form -----------------------------------------------------------
-    auto* addRow = new QHBoxLayout;
+    // A row of four controls — free-text name, a date, a checkbox with a
+    // two-word label and a button — cannot fit 360dp side by side, and a
+    // QHBoxLayout does not wrap. QBoxLayout takes its direction as a
+    // CONSTRUCTOR ARGUMENT, so the same four addWidget calls build a row on
+    // a desktop and a column on a phone: one word of difference, not two
+    // layouts to keep in step.
+    auto* addRow = new QBoxLayout(compact ? QBoxLayout::TopToBottom
+                                          : QBoxLayout::LeftToRight);
     addRow->setSpacing(8);
     auto* nameInput = new QLineEdit(panel);
     nameInput->setPlaceholderText(tr("+ Add a special day…"));
@@ -86,7 +101,9 @@ QWidget* SpecialDaysPage::buildContent()
     };
     connect(addBtn, &QPushButton::clicked, this, addDay);
     connect(nameInput, &QLineEdit::returnPressed, this, addDay);
-    addRow->addWidget(nameInput, 1);
+    // The stretch is a HORIZONTAL instruction on a desktop and a vertical
+    // one in a column, where it would balloon a one-line input.
+    addRow->addWidget(nameInput, compact ? 0 : 1);
     addRow->addWidget(dateInput);
     addRow->addWidget(yearly);
     addRow->addWidget(addBtn);
@@ -131,9 +148,16 @@ QWidget* SpecialDaysPage::buildContent()
         card->setStyleSheet(QStringLiteral(
             "#dayCard { background:#FFFFFF; border:1px solid #E6E9E4; "
             "border-left:4px solid %1; border-radius:12px; }").arg(accent));
-        auto* cardRow = new QHBoxLayout(card);
-        cardRow->setContentsMargins(16, 14, 14, 14);
-        cardRow->setSpacing(12);
+        // On a phone the card is two bands: the day above, its two buttons
+        // below. Side by side, a title, a full date, a countdown and two
+        // buttons need about 465dp and the page scrolled sideways.
+        auto* cardCol = new QVBoxLayout(card);
+        cardCol->setContentsMargins(compact ? 12 : 16, compact ? 12 : 14,
+                                    compact ? 12 : 14, compact ? 12 : 14);
+        cardCol->setSpacing(8);
+        auto* cardRow = new QHBoxLayout;
+        cardRow->setSpacing(compact ? 8 : 12);
+        cardCol->addLayout(cardRow);
 
         auto* dot = new QLabel(card);
         dot->setPixmap(colorDot(QColor(accent), 14)); // bigger than the old 9
@@ -150,6 +174,15 @@ QWidget* SpecialDaysPage::buildContent()
                 : next.toString("dddd, MMMM d, yyyy"),
             card);
         dateLine->setStyleSheet("font-size:12px; color:#7A828C;");
+        // An unwrapped QLabel's minimum width IS its text, and this row pairs
+        // a free-text title with "Wednesday, September 17, 2026" before the
+        // countdown and two buttons even start. That is what made this page
+        // scroll sideways on a phone — caught by the width gate only once it
+        // learned to ask a scroll area whether it has anything to scroll,
+        // because a page inside one passes a minimumSizeHint budget however
+        // wide its insides are (v30.7).
+        name->setWordWrap(true);
+        dateLine->setWordWrap(true);
         textCol->addWidget(name);
         textCol->addWidget(dateLine);
 
@@ -170,7 +203,8 @@ QWidget* SpecialDaysPage::buildContent()
 
         auto* x = new QPushButton(QStringLiteral("\u00D7"), card);
         x->setObjectName("danger");
-        x->setFixedSize(26, 26);
+        x->setFixedSize(touch::sizeFor(26, compact),
+                        touch::sizeFor(26, compact));
         x->setCursor(Qt::PointingHandCursor);
         const QString dayId = day->id;
         connect(x, &QPushButton::clicked, this,
@@ -181,9 +215,12 @@ QWidget* SpecialDaysPage::buildContent()
         // vector, and the edit's rebuild moves the ground under it.
         auto* edit = new QPushButton(tr("Edit"), card);
         edit->setCursor(Qt::PointingHandCursor);
+        // Inline sheets are not reached by the app-wide compact rule.
         edit->setStyleSheet(
-            "background:#EEF0ED; border:none; border-radius:8px; "
-            "padding:5px 10px; color:#616974; font-weight:600;");
+            QStringLiteral(
+                "background:#EEF0ED; border:none; border-radius:8px; "
+                "padding:5px 10px; color:#616974; font-weight:600;%1")
+                .arg(compact ? " min-height:38px;" : ""));
         const SpecialDay snapshot = *day;
         connect(edit, &QPushButton::clicked, this, [this, snapshot]() {
             editDay(snapshot);
@@ -192,8 +229,17 @@ QWidget* SpecialDaysPage::buildContent()
         cardRow->addWidget(dot);
         cardRow->addLayout(textCol, 1);
         cardRow->addWidget(countdown);
-        cardRow->addWidget(edit);
-        cardRow->addWidget(x);
+        if (compact) {
+            auto* actions = new QHBoxLayout;
+            actions->setSpacing(8);
+            actions->addStretch(1);
+            actions->addWidget(edit);
+            actions->addWidget(x);
+            cardCol->addLayout(actions);
+        } else {
+            cardRow->addWidget(edit);
+            cardRow->addWidget(x);
+        }
 
         layout->addSpacing(4);
         layout->addWidget(card);
