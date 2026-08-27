@@ -10,16 +10,16 @@ REM      and out of installer\ticktimer.iss and refuses to continue if they
 REM      disagree. Why this exists: TWICE now a drop has half-applied and
 REM      looked finished (the lost v27; the half-applied v28.3 found sitting
 REM      in the tree). A half-applied drop's most likely symptom is exactly
-REM      these two files disagreeing — they ship together in every drop and
+REM      these two files disagreeing - they ship together in every drop and
 REM      the .iss says "bump BOTH" for the same reason. The check also prints
 REM      the version LOUDLY so you can eyeball it against the drop's filename
 REM      (ticktimer-vX.Y.Z-*.zip) before a stale tree becomes an installer.
 REM   1. Configures + builds a RELEASE build (smaller, faster than Debug).
 REM   2. RUNS THE TEST SUITES (v28.3) and hard-stops on red. The build step
-REM      proves the code compiles; only the tests prove the rules still hold —
+REM      proves the code compiles; only the tests prove the rules still hold -
 REM      and a red suite must never ride into an installer someone installs.
 REM   3. Copies both exes into dist\TickTimer\.
-REM   4. Runs windeployqt on each — THE key step: it scans the exe for the Qt
+REM   4. Runs windeployqt on each - THE key step: it scans the exe for the Qt
 REM      DLLs it needs and copies them (plus plugins) right next to it. This is
 REM      the exact thing that, done by hand, docs/RUNNING.md used to walk you
 REM      through. Now it's automatic.
@@ -36,7 +36,7 @@ echo.
 
 REM --- The apply check (step 0 above) --------------------------------------
 REM findstr /b anchors at line START, so the commented-out "#define AppVersion"
-REM examples in the .iss (they begin with ';') can't match — only the live
+REM examples in the .iss (they begin with ';') can't match - only the live
 REM define can. tokens=3 grabs the third whitespace-separated word, which is
 REM the quoted version; %%~A strips the quotes (that's what the ~ does).
 set "TREEVER="
@@ -137,7 +137,7 @@ set "ROOT=%~dp0.."
 pushd "%ROOT%"
 echo.
 echo   Configuring...
-REM A CMake cache remembers its compiler and REFUSES to switch on re-run —
+REM A CMake cache remembers its compiler and REFUSES to switch on re-run -
 REM so if a previous attempt cached the wrong (MSYS2) toolchain, we must
 REM start clean or the fix above can't take effect.
 if exist "build-release\CMakeCache.txt" (
@@ -179,7 +179,7 @@ REM --- Assemble dist\TickTimer --------------------------------------------
 set "DIST=%ROOT%\dist\TickTimer"
 if exist "%DIST%" rmdir /s /q "%DIST%" 2>nul
 REM If the folder is still there, something running from it holds the files
-REM open — Windows will not delete or replace a loaded exe/DLL. Continuing
+REM open - Windows will not delete or replace a loaded exe/DLL. Continuing
 REM would silently ship the OLD build, so this is a hard stop with the fix.
 if exist "%DIST%" (
     echo.

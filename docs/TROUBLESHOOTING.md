@@ -2337,3 +2337,86 @@ cmake --build build-android --target apk
 characters" and lists the three `android/src/org/ticktimer/app/*.java` files
 whenever the Gradle step fails, whatever the reason. Those paths are ~100
 characters. It is a hint, not the diagnosis.
+
+### A `.bat` script fails on nearly every line: `'the' is not recognized as an internal or external command`
+
+**SYMPTOM**
+`tools\deploy-windows.bat` (or any batch file) dies in a cascade of dozens of
+errors, each quoting a *fragment* of a word that appears in the script — with
+the first character or two chewed off, and more characters missing the further
+down the file you look:
+
+```
+'the' is not recognized as an internal or external command,
+'onfigures' is not recognized as an internal or external command,   <- "Configures"
+'ndstr' is not recognized as an internal or external command,       <- "findstr"
+'/f' is not recognized as an internal or external command,          <- "for /f"
+  [X] Couldn't read a version out of include\Version.h.
+```
+
+The script's own error handling then reports something misleading — here, the
+apply check claimed it could not read `Version.h`, when `Version.h` was
+perfectly fine and it was `for /f` that had been eaten.
+
+**CAUSE**
+**A non-ASCII character anywhere in a `.bat` file, combined with console code
+page 65001 (UTF-8).**
+
+`cmd.exe` does not read a batch file into memory. It reads one line, executes
+it, then *seeks back* to a remembered position to read the next one — and that
+remembered position is a **byte** offset, while the read that produced it
+consumed **characters**. Under code page 65001 the two stop agreeing: an em
+dash (`—`) is three bytes but one character, so after each one the read head is
+2 bytes further along than `cmd` believes. The drift is **cumulative**, which is
+the signature: the first mangled line loses one character, a later one loses
+two, a later one four. Every wound is at the *start* of a line, because that is
+where the bad seek lands.
+
+Six em dashes sat in this script's `REM` comment block. **Comments are not
+inert here** — `cmd` still has to read past them, and reading is exactly what
+goes wrong. `tools\run-tests.bat` and `tools\sign-apk.bat` were pure ASCII and
+had always worked, which is why the failure looked like it belonged to
+`deploy-windows.bat` specifically.
+
+**FIX**
+Make the batch file pure ASCII. From Git Bash, in the repo root:
+
+```sh
+LC_ALL=C sed -i 's/\xe2\x80\x94/-/g' tools/deploy-windows.bat
+```
+
+Verify nothing non-ASCII survives and CRLF was preserved (`cmd` needs CRLF):
+
+```sh
+LC_ALL=C grep -c $'[\x80-\xff]' tools/*.bat   # every file must print 0
+grep -c $'\r' tools/deploy-windows.bat        # must equal its line count
+```
+
+This cleaned 6 em dashes out of `deploy-windows.bat` and 7 out of
+`build-wasm.bat`, which carried the same latent bug.
+
+**PREVENT**
+**`.bat` files are ASCII-only in this repo.** Not "prefer ASCII" — a batch file
+is parsed by an interpreter that cannot be trusted with multibyte characters,
+so the rule has to be absolute rather than stylistic. Before committing a
+change to one:
+
+```sh
+LC_ALL=C grep -n $'[\x80-\xff]' tools/*.bat && echo "NON-ASCII FOUND"
+```
+
+Two fixes that look reasonable and are not:
+
+- **`chcp 437` at the top of the script** — it narrows the window but does not
+  close it. Any non-ASCII character *above* the `chcp` line still corrupts the
+  parse, the setting leaks into the user's console for the rest of the session,
+  and the file stays a landmine for whoever edits it next.
+- **Re-saving the file as Windows-1252** so the em dash becomes one byte — this
+  removes the drift, but it makes the file non-UTF-8 in a UTF-8 tree, and the
+  next editor or tool that normalises it silently re-arms the bug. It also
+  collides head-on with the PowerShell re-encoding trap logged above.
+
+The generalisation is worth keeping: **when an error message quotes a fragment
+of a word rather than a whole one, suspect the reader, not the writer.** No
+amount of staring at `Version.h` would have found this, because `Version.h` was
+never the file being misread.

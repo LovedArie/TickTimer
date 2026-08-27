@@ -509,6 +509,18 @@ Deliberate simplifications (candidates for your first solo features):
   length ... is 260 characters" note printed alongside is boilerplate that
   accompanies *any* Gradle failure; it is not the diagnosis.
 
+- **A `.bat` file must be pure ASCII, or `cmd.exe` misreads the whole script.**
+  `cmd` executes a batch file line by line, seeking back to a remembered
+  **byte** offset for each next line — but under console code page 65001 the
+  read that produced that offset consumed **characters**. Every 3-byte em dash
+  therefore slides the read head 2 bytes forward of where `cmd` thinks it is,
+  cumulatively, and each following line loses that many leading characters:
+  `findstr` becomes `ndstr`, `for /f` becomes `/f`. Comments are not safe
+  either — `cmd` still reads past them. Six em dashes in `deploy-windows.bat`'s
+  `REM` header made it fail on almost every line and then blame `Version.h`
+  (`docs/TROUBLESHOOTING.md`). Check with
+  ``LC_ALL=C grep -n $'[\x80-\xff]' tools/*.bat`` before committing.
+
 ## 5. New since v13 — landmarks worth a visit
 
 - **Event's three identities** — `activityId` / `taskId` / `title`, "at

@@ -177,6 +177,13 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
   -Encoding utf8` re-encodes it, double-encoding every non-ASCII character,
   adding a BOM and flattening CRLF. It compiles fine and fails much later on
   a string comparison. `docs/TROUBLESHOOTING.md` has the reversal.
+- **`.bat` files are ASCII-only.** `cmd.exe` runs a batch file line by line,
+  seeking back to a remembered *byte* offset — but under code page 65001 the
+  read that produced it consumed *characters*, so each 3-byte em dash slides
+  the head 2 bytes ahead, cumulatively, and every later line loses that many
+  leading characters (`findstr` → `ndstr`). Comments are not exempt. Six em
+  dashes in `deploy-windows.bat` made it fail on nearly every line and then
+  blame `Version.h`. Check: ``LC_ALL=C grep -n $'[\x80-\xff]' tools/*.bat``.
 
 ## Docs worth opening before changing anything
 

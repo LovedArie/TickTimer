@@ -5,13 +5,13 @@ REM  build-wasm.bat  --  build the WebAssembly app and lay out a servable
 REM                      folder in build-wasm\serve\.
 REM
 REM  WHY THIS EXISTS: the WASM build needs three things on PATH that no other
-REM  build in this project needs — the Emscripten SDK, a Ninja, and the
+REM  build in this project needs - the Emscripten SDK, a Ninja, and the
 REM  wasm_singlethread Qt kit (which is a DIFFERENT Qt from the desktop one).
 REM  Finding that combination once and then not writing it down is how a build
 REM  becomes "the thing only that one afternoon could do".
 REM
 REM  USAGE:  tools\build-wasm.bat
-REM  OUTPUT: build-wasm\serve\  — copy its CONTENTS to /var/www/ticktimer-app
+REM  OUTPUT: build-wasm\serve\  - copy its CONTENTS to /var/www/ticktimer-app
 REM          on the server (see deploy\Caddyfile.example, the /app block).
 REM ===========================================================================
 
@@ -44,14 +44,14 @@ REM --- 3. The WASM Qt kit -- AND IT MUST HAVE ASYNCIFY -----------------------
 REM
 REM The stock "wasm_singlethread" kit from the Maintenance Tool DOES NOT WORK
 REM for this app, and the failure is ugly: it builds and links fine, loads in
-REM the browser, and then aborts the instant anything calls QDialog::exec() —
+REM the browser, and then aborts the instant anything calls QDialog::exec() -
 REM which for TickTimer is the login window, i.e. immediately. In Release the
 REM message is a bare "Aborted().".
 REM
 REM exec() needs a nested event loop, which a browser's single main thread
 REM cannot do without Emscripten's asyncify. Qt decides that when QT ITSELF is
 REM built (QtWasmHelpers.cmake reads QT_EMSCRIPTEN_ASYNCIFY from qdevice.pri),
-REM so no flag on OUR build can rescue it — the app has 15 exec() call sites
+REM so no flag on OUR build can rescue it - the app has 15 exec() call sites
 REM and rewriting them all would make the desktop code worse for the web's
 REM benefit.
 REM
@@ -70,11 +70,11 @@ if not defined QTWASM (
     if defined QTWASM (
         echo   [X] Found the STOCK WebAssembly kit, which cannot run this app.
         echo       It has no asyncify, so QDialog::exec^(^) aborts at the login
-        echo       window. Build a kit that has it — docs\WEB.md, "Building the
+        echo       window. Build a kit that has it - docs\WEB.md, "Building the
         echo       Qt kit". One configure line, about half an hour, once.
     ) else (
         echo   [X] No Qt for WebAssembly kit found under C:\Qt.
-        echo       You need one built WITH asyncify — see docs\WEB.md.
+        echo       You need one built WITH asyncify - see docs\WEB.md.
     )
     exit /b 1
 )
@@ -117,5 +117,5 @@ echo                     /var/www/ticktimer-app on the server.
 echo.
 echo   FIRST THING TO CHECK, every time: write something, RELOAD the page,
 echo   and confirm it is still there. That is the persistent-storage mount
-echo   (web\index.html) doing its job — without it the app looks perfect and
+echo   (web\index.html) doing its job - without it the app looks perfect and
 echo   forgets everything.
