@@ -114,11 +114,27 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
                 applyTaskNotes(on);
             });
 
+    // One leading stretch pushes this group to the RIGHT, which is where the
+    // owner put the date navigation and where it belongs on a wide page: the
+    // eye finds a date in the same corner every time, and the left of the bar
+    // stays free for whatever the page is actually about.
+    //
+    // A SECOND stretch centres it instead, and v30.6's phone-shell work added
+    // one unconditionally — so a decision made for a 360dp bar, where centred
+    // is right because there is nothing else in the row, quietly moved a
+    // desktop control that had been in its corner since v19. Same shape as
+    // the three touch affordances in §3.63: a phone rule with no gate on it.
+    //
+    // Gated on the shell rather than the container mode on purpose. This is
+    // not "does it fit" — both arrangements fit at any width. It is a
+    // convention that belongs to the device, so it asks the same question the
+    // rest of the shell asks, once, at construction.
     topBar->addStretch(1);
     topBar->addWidget(prev);
     topBar->addWidget(m_viewSwitcher);
     topBar->addWidget(next);
-    topBar->addStretch(1);
+    if (m_phoneShell)
+        topBar->addStretch(1);
 
 
     // The Day/Week/Month segmented control used to live here. Removed by

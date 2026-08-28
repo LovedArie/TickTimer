@@ -18,6 +18,14 @@
 #include <QPixmap>
 #include <QVBoxLayout>
 
+// Declared here, DEFINED ~180 lines below next to its siblings. ToggleSwitch
+// needs it and is the first thing in this file; a member function body is
+// allowed to call members declared later in its own class, but a plain
+// namespace-scope name has to be visible at the point of use, so the
+// declaration has to come first even though the definition need not.
+// One declaration, one definition, no duplicated logic.
+inline bool isCompactScreen();
+
 // A small stat card: a muted caption over a big coloured value —
 // the "FOCUSED / 2h 05m" boxes from the prototype's sidebar.
 // ---------------------------------------------------------------------------
@@ -47,11 +55,7 @@ public:
     {
         setCheckable(true);
         setCursor(Qt::PointingHandCursor);
-        // 52x32 track inside a 52x48 widget: the visible switch is Material's
-        // size, and the extra height is what makes the TARGET 48dp without
-        // drawing a control that looks oversized (Touch.h's whole argument —
-        // the visual and the target are different questions).
-        setFixedSize(52, 48);
+        setFixedSize(preferredSize());
     }
 
 protected:
@@ -78,7 +82,24 @@ protected:
         p.drawEllipse(QRect(x, track.top() + pad, d, d));
     }
 
-    QSize sizeHint() const override { return {52, 48}; }
+    QSize sizeHint() const override { return preferredSize(); }
+
+private:
+    // The visible switch is a 52x32 track at BOTH sizes. What changes is the
+    // invisible padding around it: on a phone the widget is 52x48 so the
+    // TARGET meets Material's 48dp minimum without drawing a control that
+    // looks oversized — Touch.h's whole argument, that the visual and the
+    // target are different questions.
+    //
+    // A mouse pointer has no such minimum; it lands where it is aimed. Left
+    // ungated (v30.7) the padding shipped to the desktop too, where 16px of
+    // dead space above and below reads as a toggle floating in a gap rather
+    // than a bigger target. paintEvent centres the track in height(), so both
+    // sizes draw the identical switch and only the hit area differs.
+    static QSize preferredSize()
+    {
+        return isCompactScreen() ? QSize(52, 48) : QSize(52, 32);
+    }
 };
 
 class StatBox : public QFrame
@@ -320,7 +341,38 @@ inline void makeTouchScrollable(QScrollArea* area)
 // two scrollers fight over one press. Neither applies to a plain list.
 inline void makeTouchScrollable(QAbstractItemView* view)
 {
+    // Pixel-smooth rather than row-by-row. The one line that is right on
+    // every device: it steals no gesture and reserves no space, it just
+    // makes a wheel or a drag move by pixels instead of jumping a whole row.
     view->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+
+    // EVERYTHING BELOW IS FOR A FINGER, and a mouse is actively harmed by it
+    // — so it is gated, and the gate is the same question the rest of the
+    // file asks: how much room is there?
+    //
+    // This was ungated until now, which made phone work reach the desktop in
+    // two ways nobody chose:
+    //
+    //   * LeftMouseButtonGesture is not TouchGesture. TouchGesture — what the
+    //     QScrollArea overload above grabs — is inert under a mouse, which is
+    //     why that one was always safe. This one is the opposite: it exists
+    //     precisely BECAUSE an item view's own gesture is a mouse click, and
+    //     QScroller tells tap from drag by a threshold. On a phone that is
+    //     the only thing that works; on a desktop it silently converts a
+    //     left-drag into a pan in the Activities rail, the activity picker
+    //     and the Settings nav.
+    //   * AlwaysOff on the horizontal bar hides the scrollbar without making
+    //     the content narrower, so anything too wide becomes unreachable
+    //     rather than scrollable. That is exactly the failure v30.8 spent a
+    //     release on, arriving through a different door.
+    //
+    // A desktop with a touchscreen loses finger-scrolling in these lists as a
+    // result. Accepted: this project's devices are two phones and a mouse-
+    // driven Windows desktop, and a mouse user losing drag in three lists is
+    // a certainty against a hypothetical.
+    if (!isCompactScreen())
+        return;
+
     view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     // ...and the VERTICAL one too on a phone (v30.7). It was left on, so
     // every touch list in the app reserved a 4dp stripe of track down its
@@ -332,8 +384,7 @@ inline void makeTouchScrollable(QAbstractItemView* view)
     // Here rather than at each call site, because every caller of this
     // function has already declared the thing it is asking for: "this list
     // is scrolled by finger."
-    if (isCompactScreen())
-        view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     QScroller::grabGesture(view->viewport(), QScroller::LeftMouseButtonGesture);
 }
 

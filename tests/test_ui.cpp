@@ -4863,6 +4863,81 @@ private slots:
         prefsEdit->setPlainText(many.join(QLatin1Char('\n')));
         QVERIFY(cost->text().contains(QStringLiteral("over the limit")));
     }
+
+    // ---- the phone's affordances must not reach a mouse ------------------
+    // Both of these shipped ungated, so phone work changed the desktop app
+    // without anyone choosing that. Neither failure was visible to a test,
+    // because every existing phone test asserts what the PHONE gets; nothing
+    // asserted what the desktop is spared. Two branches, two assertions.
+    void touchAffordancesStayOnThePhone()
+    {
+        const auto fill = [](QListWidget* v) {
+            for (int i = 0; i < 40; ++i)
+                v->addItem(QStringLiteral("a row long enough to overflow %1").arg(i));
+        };
+
+        // DESKTOP. The offscreen platform's fake screen is 800x600, and the
+        // threshold is `< 600`, so this really is the desktop branch.
+        {
+            QVERIFY(!isCompactScreen());
+            QListWidget view;
+            fill(&view);
+            makeTouchScrollable(&view);
+
+            // Pixel-smooth scrolling is the one part that is right everywhere.
+            QCOMPARE(view.verticalScrollMode(), QAbstractItemView::ScrollPerPixel);
+
+            QVERIFY2(view.horizontalScrollBarPolicy() != Qt::ScrollBarAlwaysOff,
+                     "A desktop list must keep the bar that says its content is "
+                     "wider than it looks. Hiding it does not narrow anything - "
+                     "it makes the overflow unreachable, which is the v30.8 bug "
+                     "arriving through a different door.");
+            QVERIFY2(!QScroller::hasScroller(view.viewport()),
+                     "LeftMouseButtonGesture is NOT TouchGesture: under a mouse "
+                     "it converts a left-drag into a pan. A desktop list must "
+                     "not have a scroller attached at all.");
+        }
+
+        // PHONE.
+        {
+            struct CompactMode {
+                CompactMode()  { qputenv("TICKTIMER_COMPACT", "1"); }
+                ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+            } compactMode;
+            QVERIFY(isCompactScreen());
+
+            QListWidget view;
+            fill(&view);
+            makeTouchScrollable(&view);
+
+            QCOMPARE(view.horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
+            QCOMPARE(view.verticalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
+            QVERIFY2(QScroller::hasScroller(view.viewport()),
+                     "A phone list is scrolled by finger; without the gesture it "
+                     "can only be moved by a scrollbar nobody can grab.");
+        }
+    }
+
+    // The switch LOOKS identical on both - a 52x32 track - and only its hit
+    // area grows, which is the distinction Touch.h exists to make.
+    void toggleSwitchPadsOnlyForAThumb()
+    {
+        {
+            QVERIFY(!isCompactScreen());
+            ToggleSwitch sw;
+            QCOMPARE(sw.width(), 52);
+            QCOMPARE(sw.height(), 32); // the track alone: no dead space
+        }
+        {
+            struct CompactMode {
+                CompactMode()  { qputenv("TICKTIMER_COMPACT", "1"); }
+                ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+            } compactMode;
+            ToggleSwitch sw;
+            QCOMPARE(sw.width(), 52);
+            QCOMPARE(sw.height(), touch::kMinTarget); // padded to 48dp
+        }
+    }
 };
 
 QTEST_MAIN(TestUi)

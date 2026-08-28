@@ -848,6 +848,73 @@ comparison.
 
 ---
 
+## 3.63 The gate says what a phone must MEET; nothing said what a desktop is SPARED
+
+**Choice.** `makeTouchScrollable`'s item-view overload and `ToggleSwitch`'s
+padding now sit behind `isCompactScreen()`, like every other phone decision in
+`Widgets.h`. Two `QVERIFY2`s in `test_ui` pin the desktop branch.
+
+**Why.** §3.54 built a gate that asks whether the *phone* meets 48dp. It is a
+floor, and a floor only has a bottom — nothing in it ever asked the opposite
+question, which is what the *desktop* should not receive. So two touch
+decisions shipped unconditionally and changed the desktop app without anyone
+choosing that:
+
+- **`QScroller::grabGesture(..., LeftMouseButtonGesture)`**, at sixteen call
+  sites. The asymmetry with the `QScrollArea` overload two functions above is
+  the whole story: that one grabs `TouchGesture`, which is **inert under a
+  mouse**, which is why it was always safe ungated. `LeftMouseButtonGesture`
+  is the opposite — it exists *because* an item view's own gesture is a mouse
+  click, and `QScroller` tells a tap from a drag by a threshold. On a phone it
+  is the only thing that works. On a desktop it silently converts a left-drag
+  into a pan in the Activities rail, the activity picker and the Settings nav.
+- **`setHorizontalScrollBarPolicy(AlwaysOff)`**, in the same function. Hiding
+  a scrollbar does not narrow anything; it makes overflow unreachable instead
+  of scrollable. That is §3.48's lesson and v30.8's entire release, arriving
+  through a door nobody was watching.
+- **`ToggleSwitch::setFixedSize(52, 48)`.** The visible switch is a 52x32
+  track at both sizes; the extra 16px is invisible padding that exists so the
+  *target* clears 48dp. A pointer has no such minimum — it lands where it is
+  aimed — so on the desktop that padding is dead space that reads as a toggle
+  floating in a gap. `paintEvent` already centres the track in `height()`, so
+  both sizes draw the identical control and only the hit area differs.
+
+**Alternative rejected: leave them ungated — "one app, one shape."** Defensible
+for the toggle, where a single switch at a single size is a real position.
+Not defensible for the gesture: losing left-drag in three lists is a
+behaviour removed from desktop users, not a cosmetic difference. Once the
+gesture had to be gated, gating the toggle in the same breath cost nothing and
+kept one answer to "who is this for?" rather than two.
+
+**Alternative rejected: grab `TouchGesture` for item views too**, so a
+touchscreen desktop keeps finger-scrolling. This is the tempting fix, and it
+is a different design question — the overload exists precisely because the
+item-view case needs tap-versus-drag disambiguation that the plain scroll-area
+case does not. Changing which gesture is grabbed deserves its own measurement
+on a real touchscreen, and this fleet has none: two phones and a mouse-driven
+Windows desktop. A mouse user losing drag is a certainty; a large touchscreen
+user losing flick is a hypothetical. Named here so the trade is visible rather
+than forgotten.
+
+**Alternative rejected: gate on `responsive::Mode` instead.** The most
+interesting one, because it looks more modern — §3.41 argues at length that
+the container's width beats the screen's. It is wrong here, and the reason
+draws the line between the two mechanisms this codebase now runs:
+
+> **Layout is a question about SPACE. Gestures and hit targets are questions
+> about the INPUT DEVICE.** A desktop window dragged narrow, or a page squeezed
+> by the nav rail, genuinely has phone-sized *room* and should get the phone
+> *layout* — that is §3.41 working. It does not thereby acquire a finger. It is
+> still driven by a mouse, and giving it phone *gestures* would be answering a
+> question nobody asked.
+
+So these stay on `isCompactScreen()` — which asks about the screen, once, and
+is the closest proxy for "is there a finger here?" that the app has — while
+layout keeps moving to the container-driven classes. Two questions, two
+mechanisms, on purpose. That is the rule to apply when the next phone
+affordance lands: **if it changes what fits, ask the container; if it changes
+how you touch it, ask the screen.**
+
 ## What changed where
 
 | Layer | File(s) | Change |
@@ -871,6 +938,8 @@ comparison.
 | glass | `CompareDialog` | stats stack under the agendas, fixed 250dp width dropped, nav arrows to `touch::sizeFor` (v30.8) |
 | glass | `WeekAgendaView` + `AgendaWidget` | `gutterWidth(bool compact)` — one helper both views ask, so the week axis stops being 64dp on a phone (v30.8) |
 | policy | `TaskDetailDialog.cpp` | `dockedTaskPanelFor()` — a phone gets the full-screen modal, not the 200dp drawer (v30.8) |
+| glass | `Widgets.h` | `makeTouchScrollable(QAbstractItemView*)` and `ToggleSwitch` gated on `isCompactScreen()` - the touch gesture and the 48dp padding were reaching the desktop (§3.63) |
+| tests | `test_ui.cpp` | `touchAffordancesStayOnThePhone`, `toggleSwitchPadsOnlyForAThumb` - the first assertions about what the DESKTOP is spared |
 | theme | `Theme.h` | `#segment` padding narrowed on compact: four duration pills were 344dp inside a 360dp phone (v30.8) |
 | glass | `Widgets.h` | `makePhoneFriendly(QFormLayout*)` — `WrapAllRows`, label above field (v30.8) |
 | tests | `test_ui.cpp` | the sideways-overflow question added to both budget gates, plus `crowdedPagesStillFitAPhoneScreen`, `theWeekViewFitsAPhoneScreen`, `theCompareScreenFitsAPhoneScreen`, `thePhoneGetsTheTaskModalNotTheDrawer` (v30.8) |
