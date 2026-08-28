@@ -1,6 +1,6 @@
 {
   "_comment": "Copy this file to the SERVER'S DATA DIRECTORY as version.json to enable update notices. The server re-reads it on every /version request, so edits take effect immediately - no restart. 'latest' must be major.minor.patch; 'url' is where the Get-it button sends people (your GitHub Releases page); 'notes' is an optional one-liner shown in the banner.",
-  "latest": "30.8.0",
+  "latest": "30.8.1",
   "url": "https://github.com/LovedArie/TickTimer/releases",
   "notes": "Desktop fixes: the planner date is back in the top right, and lists no longer pan when you drag them with the mouse."
 }
