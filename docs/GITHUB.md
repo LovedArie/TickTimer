@@ -111,8 +111,28 @@ that PROVES it took — skip the proofs and you'll ship ghosts.
    *Proof: download from `releases/latest` yourself — `releases/latest`
    serves whatever you last PUBLISHED, and announcing a version the shelf
    doesn't hold yet makes the banner promise what "Get it" can't deliver.*
-6. Edit `version.json` on the server: `"latest": "X.Y.Z"` (the server
-   window prints the folder). No restart.
+6. Announce it: **`tools\publish-version.bat`**. No restart, and nothing
+   to retype — it reads the number out of `Version.h`, rewrites the
+   `latest` line of `server/version.json`, copies that to the box, and
+   then reads the public `/version` back.
+   *Proof: the script's own exit code. It stops before touching anything
+   if `Version.h` and the `.iss` disagree, or if the GitHub release tag
+   doesn't exist yet with files attached; and it fails at the end unless
+   the server really is announcing the version you just declared. Run
+   `tools\publish-version.bat -VerifyOnly` any time to re-check all of
+   that without publishing.*
 
 Everyone on the old version sees the banner at next launch. That's the
 whole loop the networked arc was building toward.
+
+**Why step 6 is a script and steps 1-5 aren't.** For a long time it read
+"edit `version.json` on the server" and was the only step with no proof
+point — and on 2026-08-27 it was the step that was wrong: `/version` had
+been announcing 30.7.0 for a day while the shelf still held v20.0.1, so
+the banner offered an update that 404'd. The same day, `TickTimer-Setup.exe`
+was found carrying the 30.4.0 binaries under a 30.8.0 label, because Inno
+takes `AppVersion` from the hand-copied literal in the `.iss` and never
+from the exe it wraps. Both failures are one shape: **a version claim that
+nothing checked.** Steps 1-5 end at artifacts you can open and eyeball;
+step 6 ends at a live HTTPS endpoint, which is the one thing here a machine
+can verify better than you can.

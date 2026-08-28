@@ -25,6 +25,8 @@ They both operate on the **`build-release/`** tree, not `build/`:
 tools\run-tests.bat            :: rebuilds changed files, then runs all six suites
 tools\run-tests.bat ui         :: ctest -R filter — one suite while debugging
 tools\deploy-windows.bat       :: apply check + Release build + tests + windeployqt -> dist\TickTimer\
+tools\publish-version.bat      :: release step 6 - announce the version, and PROVE the server took it
+tools\publish-version.bat -VerifyOnly  :: same checks, publishes nothing
 ```
 
 `run-tests.bat` writes `test-results.txt` in the repo root. `build/` is the Qt
@@ -183,7 +185,10 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
   the head 2 bytes ahead, cumulatively, and every later line loses that many
   leading characters (`findstr` → `ndstr`). Comments are not exempt. Six em
   dashes in `deploy-windows.bat` made it fail on nearly every line and then
-  blame `Version.h`. Check: ``LC_ALL=C grep -n $'[\x80-\xff]' tools/*.bat``.
+  blame `Version.h`. **`.ps1` files too**, for a different reason: Windows
+  PowerShell 5.1 decodes a BOM-less script in the ANSI codepage, so a stray
+  em dash there becomes mojibake in whatever the script prints or matches.
+  Check both: ``LC_ALL=C grep -n $'[\x80-\xff]' tools/*.bat tools/*.ps1``.
 
 ## Docs worth opening before changing anything
 
