@@ -122,29 +122,68 @@ that PROVES it took — skip the proofs and you'll ship ghosts.
    `tools\publish-version.bat -VerifyOnly` any time to re-check all of
    that without publishing.*
 7. **Redeploy the phones' copies**, because neither updates itself and the
-   banner does not know that. Two folders on the box:
+   banner does not know that. **Two separate copies on the box, and the APK
+   also lives on GitHub — three places, all easy to half-finish.**
 
    ```
    tools\build-wasm.bat
    ```
    ```sh
-   scp -r build-wasm/serve/*    root@YOUR.SERVER.IP:/var/www/ticktimer-app/
-   scp  <signed-release>.apk     root@YOUR.SERVER.IP:/var/www/ticktimer/ticktimer.apk
+   # the iPhone app
+   scp -r build-wasm/serve/* root@YOUR.SERVER.IP:/var/www/ticktimer-app/
+
+   # the Android APK — rotate the old one so a rollback is one mv
+   scp build-android/ticktimer-X.Y.Z.apk root@YOUR.SERVER.IP:/tmp/new.apk
+   ssh root@YOUR.SERVER.IP 'cd /var/www/ticktimer && \
+       mv -f ticktimer.apk ticktimer-previous.apk && mv -f /tmp/new.apk ticktimer.apk'
+
+   # BOTH folders: scp carries the sending machine's modes, and a dir that
+   # lands 700 root-only is a 403 for every file under it (see below)
+   ssh root@YOUR.SERVER.IP 'find /var/www/ticktimer /var/www/ticktimer-app -type d -exec chmod 755 {} + ; \
+       find /var/www/ticktimer /var/www/ticktimer-app -type f -exec chmod 644 {} +'
    ```
 
-   *Proof: `ls -l --time-style=long-iso /var/www/ticktimer-app/ticktimer.wasm`
-   — written just now. Not the browser, which caches, and not the banner,
-   which is the symptom rather than the evidence.*
+   *Proof — read it back off the wire, not off your disk and not from the
+   browser (which caches) and not from the banner (which is the symptom, not
+   the evidence):*
 
-   **Why this step exists.** `/app/` and `server/version.json` are two
-   independent copies of "what version is current", and step 6 bumps only
-   the second. The WebAssembly app then asks `/version`, sees a newer
-   number, and shows an update banner **it cannot act on** — its Get-it
-   button opens a Releases page of Windows installers and Android APKs.
-   This was live: `/app/` served v30.4.2 for three feature versions while
-   `/version` announced 30.8.1. Unlike step 1's seam, nothing hard-fails on
-   it, because the stale copy is on another machine — so the protection is
-   this line and the proof point beside it.
+   ```sh
+   # the APK you published is the APK you built, and says so
+   curl -sL -o /tmp/served.apk https://your-domain/download/ticktimer.apk
+   sha256sum /tmp/served.apk build-android/ticktimer-X.Y.Z.apk
+   aapt2 dump badging /tmp/served.apk | head -1        # versionName=X.Y.Z
+
+   # the web app is compressed, cached correctly, and its icons are reachable
+   curl -sI -H "Accept-Encoding: zstd,gzip" https://your-domain/app/ticktimer.wasm \
+     | grep -i 'content-encoding\|cache-control'
+   curl -s -o /dev/null -w '%{http_code}\n' https://your-domain/app/icons/ticktimer-192.png
+   ```
+
+   **Before any APK goes out, check the signing key.** An APK signed with a
+   different key will not upgrade in place — Android refuses it and the only
+   route is uninstall, which takes the person's local planner with it:
+
+   ```sh
+   apksigner verify --print-certs build-android/ticktimer-X.Y.Z.apk
+   ```
+
+   The SHA-256 digest must equal the one on the copy already deployed.
+
+   **Why this step exists.** Steps 1–6 make a version *true* and *announced*;
+   nothing in them makes it *reachable*. Both halves have failed in production:
+
+   - `/app/` served v30.4.2 for three feature versions while `/version`
+     announced 30.8.1, so the web app showed an update banner it could not act
+     on — its Get-it button opens a Releases page of Windows installers and
+     APKs, which a browser cannot use.
+   - `/download/ticktimer.apk` served v30.7.0 **while the v30.8.1 GitHub
+     release already carried the correct signed APK.** The artefact was built,
+     stamped, signed and published — to one of its two homes. Publishing to one
+     feels like publishing.
+
+   Unlike step 1's seam, nothing hard-fails on any of this, because the stale
+   copies are on another machine. The protection is this step and the proof
+   points beside it. `design-addendum-deployment.md` §B.
 
 Everyone on the old version sees the banner at next launch. That's the
 whole loop the networked arc was building toward.

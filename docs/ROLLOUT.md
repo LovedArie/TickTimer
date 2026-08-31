@@ -382,6 +382,19 @@ Follow **`docs/ANDROID.md`**, which now has the whole path. In short:
       taking their local planner with them — and there is no recovery.
 - [x] Build a signed release APK.
 - [x] Copy it to `/var/www/ticktimer/ticktimer.apk` on the server.
+      - **This is a SECOND publish, and it is the one people forget.** The APK
+        also goes on the GitHub release, and those two copies are unlinked. On
+        2026-08-31 the v30.8.1 release carried the correct signed APK while
+        `/download/ticktimer.apk` had been serving **v30.7.0** since 26 August
+        — and `docs/ANDROID.md` tells people to use the `/download/` link.
+        Publishing to one home feels like publishing. Release step 7 in
+        `docs/GITHUB.md` now names both.
+      - Rotate rather than overwrite, so a rollback is one `mv`:
+        `mv -f ticktimer.apk ticktimer-previous.apk` first.
+      - **Check the signing key matches the deployed copy**
+        (`apksigner verify --print-certs`). A different key does not upgrade
+        in place — Android refuses it, and uninstalling takes the local
+        planner with it.
 - [x] On the phone: open `https://your-domain/download/ticktimer.apk`, tap it,
       allow "install unknown apps" once.
 - [x] Log in against `https://your-domain`, tick **Remember this device**.

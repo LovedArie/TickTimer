@@ -50,39 +50,77 @@ recurring obligation.
 nothing auto-updates. Every channel ends with a human choosing to install
 something. §C is about the one mechanism that tries to prompt that choice.
 
-## B. One version number, four claims about it, and only two are checked
+## B. Two different questions, and only one of them is checked
 
 *Decision:* `include/Version.h` is the single source. Everything else derives
 from it or is checked against it.
 
-*The four places a version claim ends up, and what protects each:*
+The important structure here is that **"what version does this artefact say it
+is?" and "which artefact is actually published?" are different questions**, and
+this project answers them with wildly different rigour. Conflating them is how
+the second one rots unnoticed for weeks.
+
+### B.1 What an artefact claims about itself — checked, and well
 
 | Claim | Where it comes from | Protected by |
 |---|---|---|
 | The exe's file metadata | `Version.h` via `RC_INVOKED` and `ticktimer.rc` | compiler; `static_assert` pins the string against the macros |
 | The installer's `AppVersion` | **hand-copied** into `installer/ticktimer.iss` | `deploy-windows.bat` **hard-fails**; `installerVersionMatchesTheHeader()` pins it in the suite |
-| The APK's `versionName` | `Version.h` read by CMake at **configure** time | `CMAKE_CONFIGURE_DEPENDS`, plus "check the stamp before signing" |
-| The bytes under `/app/` | whatever was last copied there | **nothing** |
+| The APK's `versionName` | `Version.h` read by CMake at **configure** time | `CMAKE_CONFIGURE_DEPENDS`, plus "check the stamp with `aapt2 dump badging` before signing" |
 
-*Why the asymmetry is real and not an oversight to be fixed by adding a check:*
-the first three seams live inside one build on one machine, where a script can
-compare two files and refuse. `/app/` is a directory on another host that no
-local build can see. A check would have to be a network call from a build to a
-production server, which is a much larger idea than the problem deserves.
+These seams all live inside one build on one machine, where a script can
+compare two files and refuse. They work: on 2026-08-31 all three were verified
+correct, including the APK stamp that the configure-time trap is famous for
+getting wrong.
 
-*So the protection is procedural, and named as such.* Redeploying `/app/` is
-**release step 7** in `docs/GITHUB.md`, with a proof point that reads the
-server rather than the browser:
+### B.2 Which artefact is published — checked by nothing at all
+
+| Published thing | Set by | Protected by |
+|---|---|---|
+| The bytes under `/app/` | whatever was last `scp`'d | **nothing** |
+| The bytes at `/download/ticktimer.apk` | whatever was last `scp`'d | **nothing** |
+| The GitHub Releases assets | whatever was last uploaded | **nothing** |
+| `version.json`'s `latest` | `publish-version.bat` | reads `/version` back, and refuses if the release tag has no files |
+
+*Why the asymmetry is real, and not an oversight to be closed by adding a
+check:* B.1's seams are two files on one disk. B.2's are directories on another
+host and a page on someone else's website. A build-time check would have to be
+a network call from a build to production, which is a much larger idea than the
+problem deserves. So the protection is **procedural** — release step 7 in
+`docs/GITHUB.md` — and saying so is better than implying a gate exists.
+
+*Recorded because both failed, on the same day, in different directions:*
+
+- **`/app/` served v30.4.2 from 21 to 31 August** while `/version` announced
+  30.8.1. The web app showed an update banner it could not act on (§C).
+- **`/download/ticktimer.apk` served v30.7.0** while the **GitHub release for
+  v30.8.1 already carried the correct signed APK.** This one is the more
+  interesting failure: the artefact was built, stamped, signed, and published —
+  to *one* of its two homes. Nothing links the two, so the self-hosted link
+  that `docs/ANDROID.md` tells people to use was two versions behind a release
+  that looked complete.
+
+*The lesson beyond the fix:* an artefact with **two distribution channels has
+two chances to be stale**, and publishing to one feels like publishing. Step 7
+now names both copies explicitly for that reason. **A seam with no check is a
+seam that will be wrong**, and the honest response is to write down that it has
+no check rather than to imply it has one.
+
+*The verification that does work, and costs nothing:* hash the thing you
+published against the thing you built, and read the stamp back out of what the
+**wire** returns rather than out of what is on your disk.
 
 ```sh
-ls -l --time-style=long-iso /var/www/ticktimer-app/ticktimer.wasm
+curl -sL -o /tmp/served.apk https://<domain>/download/ticktimer.apk
+sha256sum /tmp/served.apk build-android/ticktimer-<version>.apk   # must match
+aapt2 dump badging /tmp/served.apk | head -1                      # versionName
 ```
 
-*Recorded because it happened:* `/app/` served v30.4.2 from 21 August to 31
-August while `/version` announced 30.8.1. Nothing alerted; the app simply
-showed an update banner it could not act on. **A seam with no check is a seam
-that will be wrong, and the honest response is to write down that it has no
-check rather than to imply it has one.**
+*And one thing that must be checked before any APK goes out:* the **signing
+key**. An APK signed with a different key does not upgrade in place — Android
+refuses it, and the only route is uninstall, which takes the local planner with
+it. Compare `apksigner verify --print-certs` against the copy already deployed;
+identical SHA-256 digests mean it upgrades silently.
 
 ## C. The update banner is single-platform, and that is now a defect
 
