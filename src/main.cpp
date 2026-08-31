@@ -12,6 +12,7 @@
 #include "ResponsiveWatcher.h"
 #include "SessionStore.h"
 #include "MainWindow.h"
+#include "ProbeOverlay.h"
 #include "Theme.h"
 
 #include <QApplication>
@@ -66,6 +67,19 @@ int main(int argc, char* argv[])
     // the screen on a compact device and maps Android's Back key to reject().
     // Installed before the login dialog, which is the first one shown.
     responsive::installCompactDialogFitter(&app);
+
+    // TICKTIMER_PROBE (or `?probe` in the URL on the web build): draw the
+    // screen readings on top of the app. Nothing is constructed unless the
+    // switch is set, so this line costs an `if` on every other launch.
+    //
+    // BEFORE the login dialog, not after, and that ordering is the whole
+    // point: the numbers it reports — availableGeometry, device pixel ratio,
+    // the isCompactScreen() verdict — are what decide the layout, and someone
+    // holding a borrowed phone must be able to read them without an account,
+    // a password or a reachable server. It is also the only moment guaranteed
+    // to happen: login.exec() below can return without ever building a
+    // window. See ProbeOverlay.h for why a console cannot do this job.
+    ProbeOverlay::showIfRequested();
 
     // The server address lives in QSettings (a preference, not domain data —
     // same rule as everything else): localhost by default, editable to a

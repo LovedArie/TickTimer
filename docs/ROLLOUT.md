@@ -449,20 +449,100 @@ recorded as *suspected, not measured* — nothing has yet printed
 
 ## Stage 4 — Her iPhone
 
-- [ ] Copy the contents of `build-wasm\serve\` to `/var/www/ticktimer-app/`
-      on the server.
-- [ ] Open `https://your-domain/app/` in **Safari** on the iPhone.
-- [ ] **Share → Add to Home Screen.** This is not optional decoration: an
-      installed web app is the only kind that can ever receive push
-      notifications on iOS.
-- [ ] Open it from the Home Screen. It should have no Safari chrome.
-- [ ] She creates her own account (give her the invite code). **Her own
-      account, not yours** — sharing a login means sharing a planner.
-- [ ] Change something, close the app, reopen: still there?
+**The phone is borrowed, so treat the session as expensive.** Everything below
+is ordered so the facts that cannot be learned any other way come first, and
+the facts a desktop browser could have told you are already done before the
+phone is in your hand. Android's first run cost an evening rather than the
+promised forty minutes, and three of its four problems were things only a real
+device could reveal — the fourth was a doc that promised something nobody had
+measured.
+
+### 4a. Before the phone exists — do this on your own machine
+
+- [ ] **Rebuild and redeploy `/app/`.** It has been stale before: v30.4.2 sat
+      there for three feature versions while `version.json` advertised 30.8.1,
+      which makes the app show an update banner it cannot act on.
+
+      ```
+      tools\build-wasm.bat
+      ```
+      ```sh
+      scp -r build-wasm/serve/* root@YOUR.SERVER.IP:/var/www/ticktimer-app/
+      ```
+
+- [ ] **Verify from the server's side, not the browser's:**
+      `ls -l --time-style=long-iso /var/www/ticktimer-app/ticktimer.wasm`
+      — written just now, ~23 MB.
+- [ ] Open `https://your-domain/app/` in a **desktop** browser and run the
+      whole `docs/WEB.md` first-run checklist there. Every finding here is one
+      the borrowed phone does not have to pay for.
+- [x] Open `https://your-domain/app/?probe` on the desktop too, with the window
+      narrowed to roughly 360x800, and note what the overlay says. You now have
+      a known-good reading to compare the phone's against.
+      - *(2026-08-31, done against the local build: the overlay appears, and
+        `available geometry` **tracks the browser window** — resize, reload,
+        and the number changes. So Qt reports the viewport in CSS pixels, not
+        the display in device pixels, which is the opposite of the Android
+        bug. Step 1 below is now a confirmation rather than an open question.)*
+- [ ] Have the invite code to hand — she creates **her own account**, not
+      yours. Sharing a login means sharing a planner.
+
+### 4b. With the phone — in this order
+
+- [ ] **1. `https://your-domain/app/?probe` FIRST, before logging in.**
+      Screenshot the overlay. Ten seconds, and it is the only chance to capture
+      the layout inputs while someone is holding the device.
+      - The question it answers: does iOS Safari report the **visual viewport**
+        the way a desktop browser does? A desktop browser tracks the window in
+        CSS pixels (measured 2026-08-31), which is what makes the phone shell
+        appear on its own. Unknown here: what the URL bar hiding and returning
+        does to the height, what the chrome-less Home Screen mode reports, and
+        whether a device pixel ratio of 3 changes anything.
+      - If the numbers look like a phone and `compact` says **yes**, the entire
+        v30.7 phone shell is present and this stage gets much shorter.
+      - If it says **no**, that is the Android bug on a third platform. Log it
+        and keep going — the rest of the checks still work in the wide layout.
+      - Worth repeating **after** step 6, from the Home Screen icon: that mode
+        has different chrome and may well report a different height.
+- [ ] **2. Does the phone shell actually look right?** Touch targets big
+      enough, no content clipped off the right edge, the nav reachable.
+      Screenshot anything that looks wrong; a screenshot is evidence and a
+      description is not.
+- [ ] **3. Log in and type something real.** Text entry in a canvas is
+      Qt-for-WebAssembly's known roughest edge and the thing most likely to
+      decide whether she will actually use this. Does the on-screen keyboard
+      appear, cover the right field, and dismiss?
+- [ ] **4. IT REMEMBERS.** Change something, reload the page. Still there?
+      - There is **no console on an iPhone** to explain a failure. If it
+        forgets, compare against `/app/?nostore` — identical behaviour with
+        and without means the IndexedDB mount never happened.
+- [ ] **5. Sync arrives.** Change something on the desktop, sync, reload the
+      web app on the phone.
+- [ ] **6. Add to Home Screen**, then open it from the icon. No Safari chrome,
+      TickTimer's own icon.
+- [ ] **7. Backgrounded and back.** Switch apps for a minute, lock the screen,
+      come back. Still there? That is the `visibilitychange` sync — the one
+      that matters on a phone, where "switched apps" and "locked the screen"
+      look identical.
+- [ ] **8. Record the iOS version** (Settings → General → About). Web Push
+      needs **16.4 or newer**, and Phase 5 is unplannable without this number.
 
 **STOP IF** it forgets between sessions. iOS can evict browser storage after
 about a week of not being used; if it forgets *immediately*, that is the
 Stage 0a bug and not iOS.
+
+### 4c. What she should be told before she relies on it
+
+Not caveats to bury — things that will otherwise look like the app breaking:
+
+- **The icon needs the server.** There is no service worker, so tapping the
+  Home Screen icon fetches the page from the origin every launch. With the
+  server unreachable she gets **Safari's error page**, not TickTimer. Her data
+  is safe in the phone the whole time — intact and unreachable, which looks
+  worse than it is.
+- **No notifications.** Block alarms, nudges and the check-in fire only while
+  the app is open. Same on Android until v30.6; still true here.
+- **No sound.** Qt Multimedia is not in the WebAssembly kit.
 
 ---
 
@@ -515,8 +595,13 @@ hour once went into diagnosing "a broken feature" that was a month-old exe.
 - **No revoke screen.** The server can forget a device, but nothing surfaces
   it yet. If a phone is lost, the account's devices can be cleared by editing
   `devices.json` on the server.
-- **The web UI is the desktop UI**, drawn in a canvas. Usable, not native.
-  Text entry on a touchscreen is its roughest edge.
+- **The web UI is drawn in a canvas** — Qt Widgets paints its own controls, so
+  nothing imitates iOS's look, and text entry on a touchscreen is its roughest
+  edge. It is no longer true that it is *the desktop UI*: `isCompactScreen()`
+  decides by screen size rather than by platform, so an iPhone-sized canvas
+  **should** get the whole v30.7 phone shell for free. Whether it does is
+  unmeasured — that is Stage 4b step 1, and it is the same input Android got
+  wrong.
 
 - **The Android UI has the same shape and two live bugs** (2026-08-22, found
   on the first real device run). The nav rail does not auto-collapse, so it

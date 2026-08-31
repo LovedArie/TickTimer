@@ -121,6 +121,30 @@ that PROVES it took — skip the proofs and you'll ship ghosts.
    the server really is announcing the version you just declared. Run
    `tools\publish-version.bat -VerifyOnly` any time to re-check all of
    that without publishing.*
+7. **Redeploy the phones' copies**, because neither updates itself and the
+   banner does not know that. Two folders on the box:
+
+   ```
+   tools\build-wasm.bat
+   ```
+   ```sh
+   scp -r build-wasm/serve/*    root@YOUR.SERVER.IP:/var/www/ticktimer-app/
+   scp  <signed-release>.apk     root@YOUR.SERVER.IP:/var/www/ticktimer/ticktimer.apk
+   ```
+
+   *Proof: `ls -l --time-style=long-iso /var/www/ticktimer-app/ticktimer.wasm`
+   — written just now. Not the browser, which caches, and not the banner,
+   which is the symptom rather than the evidence.*
+
+   **Why this step exists.** `/app/` and `server/version.json` are two
+   independent copies of "what version is current", and step 6 bumps only
+   the second. The WebAssembly app then asks `/version`, sees a newer
+   number, and shows an update banner **it cannot act on** — its Get-it
+   button opens a Releases page of Windows installers and Android APKs.
+   This was live: `/app/` served v30.4.2 for three feature versions while
+   `/version` announced 30.8.1. Unlike step 1's seam, nothing hard-fails on
+   it, because the stale copy is on another machine — so the protection is
+   this line and the proof point beside it.
 
 Everyone on the old version sees the banner at next launch. That's the
 whole loop the networked arc was building toward.

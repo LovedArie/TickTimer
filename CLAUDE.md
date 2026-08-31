@@ -189,6 +189,17 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
   PowerShell 5.1 decodes a BOM-less script in the ANSI codepage, so a stray
   em dash there becomes mojibake in whatever the script prints or matches.
   Check both: ``LC_ALL=C grep -n $'[\x80-\xff]' tools/*.bat tools/*.ps1``.
+- **An iPhone has no browser console, so a `console.log` diagnostic is
+  invisible on the platform the WebAssembly build exists for.** Safari's Web
+  Inspector needs a Mac and a cable — the dependency this whole approach
+  avoids. Anything a phone user must report has to be drawn **on the page**;
+  the switches are URL-borne (`?nostore`, `?probe`) because a browser tab has
+  no environment to set `TICKTIMER_PROBE` in.
+- **`/app/` and `server/version.json` are two copies of "the current version"
+  and nothing syncs them.** A release bumps the second; the deployed WASM
+  folder changes only when someone copies it. The app then shows an update
+  banner it cannot act on. Redeploy is **release step 7** (`docs/GITHUB.md`);
+  unlike the `Version.h`/`.iss` seam, nothing hard-fails on it.
 
 ## Docs worth opening before changing anything
 

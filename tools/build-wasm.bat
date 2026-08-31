@@ -5,8 +5,10 @@ REM  build-wasm.bat  --  build the WebAssembly app and lay out a servable
 REM                      folder in build-wasm\serve\.
 REM
 REM  WHY THIS EXISTS: the WASM build needs three things on PATH that no other
-REM  build in this project needs - the Emscripten SDK, a Ninja, and the
-REM  wasm_singlethread Qt kit (which is a DIFFERENT Qt from the desktop one).
+REM  build in this project needs - the Emscripten SDK, a Ninja, and a
+REM  wasm_asyncify Qt kit (a DIFFERENT Qt from the desktop one, and one you
+REM  have to BUILD; the Maintenance Tool's stock wasm_singlethread kit cannot
+REM  run this app - see section 3 below and docs\WEB.md).
 REM  Finding that combination once and then not writing it down is how a build
 REM  becomes "the thing only that one afternoon could do".
 REM

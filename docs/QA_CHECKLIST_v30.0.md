@@ -7,11 +7,15 @@ are independent: Part A needs no AI and no memory, Part B needs no AI, and only
 Part C needs a model at all. If you have twenty minutes, do 1–2 and Part B —
 that is where the new user-facing surface is.
 
-The automated suites cover the logic — six suites green, 448 passing test
-functions (205 + 22 + 76 + 98 + 25 + 22). *Measured, not remembered: that is
+The automated suites cover the logic — six suites green, 487 passing test
+functions (218 + 22 + 82 + 118 + 25 + 22). *Measured, not remembered: that is
 what QTest reports across the six binaries, and it includes each suite's
 synthesized `initTestCase`/`cleanupTestCase` pair. Re-measure before editing
-this line.* What they cannot cover is your real file, your real editor, and a
+this line.* **Re-measured 2026-08-31 at v30.8.1** — it was 448 when this file
+was written at v30.0, and the growth is v30.1–v30.8 (chiefly `test_ui`, 98 →
+118, from the responsive, touch and layout-probe gates). To re-measure: run
+each binary with `-functions` (which lists the slots only, so **add 2 per
+suite** for the synthesized pair). What they cannot cover is your real file, your real editor, and a
 real model.
 
 > **Read this before you start, it will save you an hour.** When the assistant

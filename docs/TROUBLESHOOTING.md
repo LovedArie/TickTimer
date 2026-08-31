@@ -2420,3 +2420,171 @@ The generalisation is worth keeping: **when an error message quotes a fragment
 of a word rather than a whole one, suspect the reader, not the writer.** No
 amount of staring at `Version.h` would have found this, because `Version.h` was
 never the file being misread.
+
+### The web app misbehaves on an iPhone and there is no way to see why
+
+**SYMPTOM**
+The WebAssembly app does something wrong on an iPhone — forgets after a
+reload, opens in the desktop layout, shows a stuck progress bar — and the
+instruction in `docs/WEB.md` is "open the browser console." There is no way to
+do that. The person holding the phone can only describe what they see, and a
+description is not evidence.
+
+**CAUSE**
+Two facts that are individually fine and jointly blinding.
+
+1. **Safari on iOS has no developer console.** Reaching one needs a Mac, a
+   cable and Safari's Web Inspector — precisely the dependency the whole
+   WebAssembly approach exists to avoid. There is no F12, no long-press, no
+   setting. Chrome and Firefox on iOS do not help: they are Safari's engine in
+   a different wrapper.
+2. **`web/index.html` reports its three most important failures to
+   `console.error` and nowhere else** — storage not persisting
+   (`web/index.html`, the `persist` path), the IndexedDB mount failing, and
+   "could not read stored data". The boot screen shows a headline and a
+   sentence for *hard* failures only, so the app that boots successfully and
+   then silently forgets everything says nothing on screen at all.
+
+The result is that the check `WEB.md` itself calls *"the one thing most likely
+to be wrong"* is the one an iPhone cannot explain. This is not a bug in either
+file; it is a diagnostic written for the platform that has a console, deployed
+to the platform that does not.
+
+**FIX**
+Use the two URL switches, which need no console and no cable. They are the
+WebAssembly form of this codebase's environment-variable hooks, because a
+browser tab has no environment to set one in:
+
+| URL | What it answers |
+|---|---|
+| `https://<your-domain>/app/?nostore` | "Is it the storage layer or the app?" Skips the IndexedDB mount entirely. If behaviour is identical with and without it, the mount never happened. |
+| `https://<your-domain>/app/?probe` | "What does the app think the screen is?" Draws the layout probe over the app: `QScreen::geometry()`, `availableGeometry()`, device pixel ratio, logical DPI, the `isCompactScreen()` verdict, and the window size. |
+
+Screenshot the probe. That single image carries every input the layout
+decision uses, and it is the thing to send rather than a description.
+
+**PREVENT**
+**Anything a phone user has to report must be drawn on the page.** When adding
+a diagnostic that a non-developer might ever need, ask which platform will be
+holding it — and if the answer includes an iPhone, `console.log` is the same
+as no diagnostic at all.
+
+The general shape is one this repo already believes: *a behaviour you cannot
+produce on demand is a behaviour you cannot verify* (`TICKTIMER_COMPACT`,
+`TICKTIMER_AI_DOWN`, `TICKTIMER_PROBE`, the Ctrl+Shift+D panel). The web adds
+one clause — **and a diagnosis you cannot READ on the device is not a
+diagnosis.** Detail and the rejected alternative (`EM_ASM` into the DOM) are in
+`design-addendum-web.md` §E.
+
+### A WebAssembly build option has no effect, and nothing warns
+
+**SYMPTOM**
+`web/index.html` passes `qt: { environment: { TICKTIMER_PROBE: '1' } }`, the
+build succeeds with no warning, and the app behaves as if the variable were
+never set. Poking at it from the console gives `Module.ENV` as `undefined`, or
+qtloader throws:
+
+```
+ENV must be exported if environment variables are passed, add it to the
+QT_WASM_EXTRA_EXPORTED_METHODS CMake target property
+```
+
+...even though `CMakeLists.txt` plainly contains
+`target_link_options(ticktimer PRIVATE -sEXPORTED_RUNTIME_METHODS=ENV)`.
+
+**CAUSE**
+`-sEXPORTED_RUNTIME_METHODS` takes a **list**, and passing it *replaces* the
+list rather than adding to it. Qt appends its own after ours, so the final link
+line reads
+
+```
+-s EXPORTED_RUNTIME_METHODS=UTF16ToString,stringToUTF16,JSEvents,specialHTMLTargets,FS,callMain
+```
+
+and `ENV` is gone. Last flag wins, nothing warns, and the failure is total and
+silent — `Module["ENV"]=ENV` simply never appears in the generated
+`ticktimer.js`.
+
+The near-miss is worse than the failure: had our flag come *last*, it would
+have replaced **Qt's** list, taking `FS` with it — and `FS` is what
+`web/index.html` mounts IndexedDB through. The app would then have compiled,
+loaded, and forgotten every planner.
+
+**FIX**
+Use Qt's append-instead-of-replace seam, which is what the error message above
+is telling you to do:
+
+```cmake
+set_target_properties(ticktimer PROPERTIES
+                      QT_WASM_EXTRA_EXPORTED_METHODS "ENV")
+```
+
+Verify in the artefact rather than in the source, because the whole failure
+mode is a source line that looks right:
+
+```sh
+grep -o 'EXPORTED_RUNTIME_METHODS=[^ ]*' build-wasm/build.ninja   # ...,callMain,ENV
+grep -o 'Module\["ENV"\]=ENV'            build-wasm/serve/ticktimer.js
+```
+
+**PREVENT**
+**A flag whose value is a list is a flag someone else can overwrite.** When a
+build option takes a comma-separated list, assume something upstream also sets
+it and look for the append seam before reaching for the raw flag — a framework
+that offers a *property* for a setting is telling you the flag composes badly.
+
+Also worth keeping: `grep -c` on a generated `.js` is not a count. Emscripten
+output is one enormous line, so `grep -c` reports 1 for "present at all" and 1
+for "present forty times". Use `grep -o ... | wc -l`; the first pass at
+diagnosing this read `getenv: 1` and drew the wrong conclusion from it.
+
+### The web app shows an update banner for a version it cannot install
+
+**SYMPTOM**
+The WebAssembly app at `/app/` displays the "a newer version is available"
+banner. Tapping the button opens a GitHub Releases page containing a Windows
+installer and an Android APK — nothing a browser can do anything with. The
+banner cannot be satisfied, and returns on the next launch.
+
+**CAUSE**
+There are **two independent copies of "what version is current"** and nothing
+keeps them in step:
+
+- `server/version.json` on the box, which a release bumps (and
+  `tools\publish-version.bat` verifies).
+- The `.wasm` under `/var/www/ticktimer-app/`, which changes only when someone
+  copies `build-wasm\serve\` over it.
+
+The app asks `/version`, compares the answer against its own compiled-in
+`TICKTIMER_VERSION_STRING`, and `version::decideBanner` correctly reports that
+it is behind — because it *is*. The banner is right; the deployment is stale.
+This was live: `/app/` served v30.4.2 for three feature versions while
+`version.json` advertised 30.8.1.
+
+**FIX**
+Rebuild and redeploy the web app, then confirm from the server side rather
+than from the banner:
+
+```sh
+tools\build-wasm.bat
+scp -r build-wasm/serve/* root@YOUR.SERVER.IP:/var/www/ticktimer-app/
+```
+
+```sh
+ls -l --time-style=long-iso /var/www/ticktimer-app/ticktimer.wasm
+```
+
+The timestamp is the evidence; the banner disappearing is the symptom. Reload
+with a hard refresh — the Caddyfile sends `no-cache` for the wasm precisely so
+this works.
+
+**PREVENT**
+Put the redeploy in the release routine (`docs/GITHUB.md`), not in memory.
+
+This is the same family as `Version.h` versus `installer/ticktimer.iss`: two
+places holding one fact, hand-synced. That one was solved by making
+`deploy-windows.bat` **hard-fail** on a mismatch, and
+`installerVersionMatchesTheHeader()` pins it in the suite. `/app/` has no
+equivalent check — the deployed folder is on another machine — so the
+protection here is procedural rather than mechanical, and saying so plainly is
+better than implying a gate exists. `design-addendum-web.md` §H.

@@ -165,6 +165,28 @@
         let mod = null;                    // the module, captured in preRun
         let syncing = false;
 
+        // ---- the URL as this platform's command line ------------------------
+        //
+        // Every diagnostic switch in this project is an environment variable —
+        // TICKTIMER_PROBE, TICKTIMER_COMPACT, TICKTIMER_AI_DOWN — because on a
+        // desktop or over adb there is a shell to set one in. A browser tab has
+        // neither a shell nor an environment, and — the fact that forces the
+        // issue — SAFARI ON iOS HAS NO DEVELOPER CONSOLE, so the app cannot
+        // answer through qInfo() either. The URL is the only surface a person
+        // holding an iPhone can edit, so the URL is where the switches live.
+        const params = new URLSearchParams(location.search);
+
+        // ?probe draws the layout probe over the app (screen geometry, device
+        // pixel ratio, the isCompactScreen() verdict). It is handed over as a
+        // real environment variable rather than as a web-only flag, so the C++
+        // keeps asking exactly ONE question on all three platforms:
+        // qEnvironmentVariableIsSet("TICKTIMER_PROBE"). See ProbeOverlay.h.
+        //
+        // qtloader copies this into the module's ENV before main() runs, and
+        // throws a named error if ENV was not exported — which is what
+        // QT_WASM_EXTRA_EXPORTED_METHODS in CMakeLists.txt is for.
+        const qtEnvironment = params.has('probe') ? { TICKTIMER_PROBE: '1' } : {};
+
         const persist = () => {
           if (!mod || !mod.FS || syncing) return;
           syncing = true;
@@ -186,7 +208,7 @@
                 // editing a URL instead of doing a five-minute rebuild. The
                 // session runs in memory and forgets on reload, which is the
                 // pre-v30.4 behaviour and useless for real work.
-                if (new URLSearchParams(location.search).has('nostore')) {
+                if (params.has('nostore')) {
                   console.warn('TickTimer: ?nostore — storage NOT mounted, '
                                + 'this session will be forgotten.');
                   note.textContent = 'Diagnostic mode: nothing will be saved.';
@@ -223,6 +245,7 @@
             qt: {
               entryFunction: window.ticktimer_entry,
               containerElements: [screen],
+              environment: qtEnvironment,
               onLoaded: () => {
                 boot.style.display = 'none';
                 screen.style.display = 'block';

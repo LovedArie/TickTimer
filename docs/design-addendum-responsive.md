@@ -915,6 +915,106 @@ mechanisms, on purpose. That is the rule to apply when the next phone
 affordance lands: **if it changes what fits, ask the container; if it changes
 how you touch it, ask the screen.**
 
+## 3.64 The rule that asks the screen has never had its answer read
+
+Everything above §3.63 is about what the layout *does* with its inputs. This
+entry is about an input, and it is the one thing in this addendum that is not
+yet knowledge.
+
+**The gap.** `isCompactScreen()` compares the short side of
+`QScreen::availableGeometry()` against 600. Every phone affordance in §3.63 —
+touch targets, gesture handling, the dialog fits — hangs off that one
+comparison. On Android it was **wrong**: `availableGeometry()` came back in
+physical pixels on a 1080x2400 device, so the check answered "desktop" on a
+phone, the rail started expanded, and the content pane was clipped off the
+right edge. That was recorded at the time as *suspected, not measured*, because
+nothing had ever printed the value from inside the running app.
+
+It still has not been printed from inside a **browser**, and the WebAssembly
+build is the iPhone path. So the third platform's most load-bearing input is
+unmeasured, with a live precedent for it being wrong.
+
+**Why no existing test closes this.** `TICKTIMER_COMPACT=1` renders the compact
+layout on demand and is genuinely useful — it is how the screenshot tool shows
+"the phone layout" without a phone, and it pins the CONSEQUENCES of the mode in
+`test_ui`. But it *supplies* the answer. It proved `isCompactScreen()`'s
+consequences right while the real device proved its input wrong, and **a test
+that supplies its own input can never validate that input.** No amount of
+offscreen coverage reaches this; the fixture is the thing under suspicion.
+
+*Decision:* make the input readable on the device, rather than inferring it
+again. `ProbeOverlay` (`include/ProbeOverlay.h`) draws the screen readings over
+the app — geometry, available geometry, its short side, device pixel ratio,
+logical DPI, the window size, and the `isCompactScreen()` verdict with the rule
+printed beside it so a reader can check that the answer follows from the
+numbers. One screengrab is the whole measurement, on any of the three
+platforms.
+
+*Why an overlay rather than `qInfo()`, which already existed.* The existing
+`TICKTIMER_PROBE` prints layout minimums to stdout, and stdout is a fine answer
+on a desktop and a workable one on Android over `adb logcat`. It is no answer
+at all on the platform this is for: **Safari on iOS has no developer console**
+without a Mac and a cable. Same switch, second renderer — not a second probe.
+
+*Why it is `TICKTIMER_PROBE` and not a new variable:* a diagnostic family that
+grows a name per platform is a family nobody remembers. `web/index.html` turns
+`?probe` in the URL into that same environment variable, because a browser tab
+has no environment for a person to set one in (`design-addendum-web.md` §E).
+
+*Why the formatting is a pure function.* `probe::lines(...)` takes plain values
+and returns text; only one overload asks `QGuiApplication` for the real screen.
+Same split as `overlapsAnyScreen()`/`availableScreenRects()` in `Widgets.h`, and
+for the same payoff: what the probe *reports* is pinned against screens nobody
+here owns — including the 1080x2400 reading that started this — without needing
+the device to run the test.
+
+*What it deliberately does not do:* re-derive the verdict. The overlay is handed
+`isCompactScreen()`'s answer rather than recomputing the comparison, so there
+stays exactly one implementation of the rule. It does, however, notice when the
+verdict and the geometry disagree — that means `TICKTIMER_COMPACT` forced it —
+and says so, because otherwise a screenshot would look like evidence for a rule
+it is not evidence for.
+
+*Cost to the desktop: none.* With `TICKTIMER_PROBE` unset nothing is
+constructed, and `test_ui::theProbeIsBuiltOnlyWhenItIsAskedFor` pins exactly
+that, because a diagnostic that leaks into the shipped app has stopped being a
+diagnostic.
+
+### The first reading (2026-08-31, desktop browser)
+
+The instrument was pointed at a browser the day it was built, and the answer is
+the good one.
+
+**Measured:** in a desktop browser, `availableGeometry()` **tracks the browser
+window**. Resizing the window and reloading changes the value. It is therefore
+derived from the page's viewport, in CSS pixels — not from the physical
+display, and not in device pixels.
+
+**Why that matters more than it sounds.** It is the exact opposite of
+Android's failure. There, `availableGeometry()` reported *physical* pixels of
+the *whole display*, which is why a 1080x2400 phone scored 1080 on its short
+side, cleared the 600 threshold, and got the desktop layout. On WebAssembly the
+number is the viewport in CSS pixels, so an iPhone-sized viewport (~390 on its
+short side) falls under 600 on its own. **The phone shell should arrive on the
+web with no platform code at all**, which is §3.30's geometry-not-platform rule
+paying out on a third target — this time verifiable rather than assumed.
+
+**What this does NOT establish, and the distinction is the whole point of
+having measured rather than reasoned.** This is desktop Safari's engine's
+cousin, not Safari on iOS. Two things remain genuinely unknown:
+
+- Whether **iOS Safari** reports the visual viewport the same way, and what
+  happens to it when the URL bar hides and reappears, or in the chrome-less
+  Add-to-Home-Screen mode where the available height differs.
+- What a **device pixel ratio of 3** does to it. Nothing here says the mapping
+  is dpr-independent; it says the value is not the display's raw pixels on a
+  dpr-1 machine.
+
+So the prediction is now well-founded instead of hopeful, and it is still a
+prediction. `docs/ROLLOUT.md` Stage 4b step 1 remains the measurement that
+settles it, and it is now a *confirmation* step rather than an open question —
+which is exactly the difference the instrument was built to buy.
+
 ## What changed where
 
 | Layer | File(s) | Change |

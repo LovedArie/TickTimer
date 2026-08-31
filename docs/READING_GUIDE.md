@@ -521,6 +521,43 @@ Deliberate simplifications (candidates for your first solo features):
   (`docs/TROUBLESHOOTING.md`). Check with
   ``LC_ALL=C grep -n $'[\x80-\xff]' tools/*.bat`` before committing.
 
+- **There is no browser console on an iPhone, so a console-only diagnostic is
+  invisible on the device it was written for.** Reaching Safari's Web
+  Inspector on iOS needs a Mac and a cable — the exact dependency the
+  WebAssembly build exists to avoid. `web/index.html` reports its three most
+  important failures (storage not persisting, the IndexedDB mount failing,
+  "could not read stored data") to `console.error` and nowhere else, and
+  `docs/WEB.md` then called the storage check *"the one thing most likely to
+  be wrong"* — so the likeliest failure was also the one an iPhone could not
+  explain. **Anything a phone user has to report must be drawn on the page.**
+  The switches that carry it are URL-borne, because a browser tab has no
+  environment to set `TICKTIMER_PROBE` in: `?nostore` and `?probe`
+  (`design-addendum-web.md` §E).
+
+- **`-sEXPORTED_RUNTIME_METHODS` is a list, so setting it silently throws away
+  what Qt set.** `target_link_options(ticktimer PRIVATE
+  -sEXPORTED_RUNTIME_METHODS=ENV)` builds clean, warns about nothing, and has
+  no effect: the option *replaces* the list, and Qt appends its own
+  (`UTF16ToString, stringToUTF16, JSEvents, specialHTMLTargets, FS, callMain`)
+  after ours, so the last one wins. Matching Qt's list by hand would work until
+  Qt changed it and then break something unrelated. Use the append seam
+  instead — `set_target_properties(ticktimer PROPERTIES
+  QT_WASM_EXTRA_EXPORTED_METHODS "ENV")` — which is the fix `qtloader.js`
+  names in the error it throws. Generally: **a flag whose value is a list is a
+  flag someone else can overwrite**, and a framework that offers a property
+  for a setting is telling you the raw flag composes badly.
+
+- **Two copies of "the current version" with nothing keeping them in step.**
+  `/app/` (the deployed WebAssembly folder) and `server/version.json` are
+  independent, and a release bumps only the second. The web app then asks
+  `/version`, sees a newer number, and shows an update banner **it cannot act
+  on** — the Get-it button opens a Releases page of Windows installers and
+  Android APKs. It was live: `/app/` served v30.4.2 while `version.json` said
+  30.8.1. This is the same family as `Version.h` vs `installer/ticktimer.iss`,
+  which was solved by making the build hard-fail on a mismatch; `/app/` has no
+  such check, so the redeploy belongs in the release routine
+  (`docs/GITHUB.md`) rather than in someone's memory.
+
 ## 5. New since v13 — landmarks worth a visit
 
 - **Event's three identities** — `activityId` / `taskId` / `title`, "at
@@ -614,4 +651,80 @@ landmark per idea, the file that teaches it best.)*
   how a two-slice side feature became twelve versions once real usage
   arrived, what each round taught, and when derailing from the roadmap is
   the right call. The most portfolio-worthy pages in the repo.
+
+## 9. New since v30 — the three-platform arc's landmarks
+
+This is where TickTimer stopped being a Windows program. Three targets now —
+desktop, an Android APK, and a WebAssembly build served in a browser for
+iPhones — and the interesting part is how little of the app knows. **Domain,
+storage and tracking have zero platform code**, which is the layering promise
+paying out twice in a row.
+
+Read them in this order; each one answers a question the previous one raises.
+
+- **`Responsive.h`** — start here. `responsive::modeFor(width)`: a pure
+  function, zero Qt includes, pinned in the Core-only suite. The whole
+  phone-layout story is one number turning into one enum, and everything
+  else is plumbing to feed it the right number.
+- **`ResponsiveWatcher.h/.cpp`** — the plumbing, and its one real insight:
+  it watches the **page stack**, not the window. Toggling the 190px rail
+  changes how much room a page has and produces no window resize at all, so
+  a window-level watcher would miss the case that matters most. The mode
+  travels as a custom `QEvent` because half this codebase's widgets
+  deliberately have no `Q_OBJECT`.
+- **`Widgets.h::isCompactScreen()`** — the *older* question, still asked
+  once per launch and still load-bearing: "is the SCREEN small?", answered
+  by geometry rather than by `#ifdef`. Read its comment for the argument
+  (a 10-inch tablet should get the desktop layout), then read
+  `design-addendum-web.md` §F for the sting: on Android the geometry it
+  reads turned out to be physical pixels, and **in a browser nobody has ever
+  read it at all**.
+- **`Touch.h`** — a standard as a value. 48dp minimum touch target
+  (Material, WCAG 2.5.5), applied three ways: a stylesheet floor,
+  `touch::sizeFor` at fixed-size call sites, and `touch::expand` at the
+  delegates' hit-test — where paint stays small on purpose, because a 48dp
+  checkbox drawn on a task card looks like a bug. The keystone is the
+  **gate**, not the fix: `everyTouchTargetIsBigEnoughForAThumb` builds the
+  real window at 360x800 and names every offender with its size.
+- **`MobileNavBar.h`, `SlidePanel.h`** — the two widgets that exist only on
+  a phone. `SlidePanel` is also the one surface that taught the gesture
+  lesson: it never got `makeTouchScrollable`, and "I can't scroll, it picks
+  the item up" was the report.
+- **`Notifier.h`** → **`DesktopNotifier`** / **`AndroidNotifier`** →
+  **`src/Notifier.cpp`**. The interface, its two implementations, and the
+  **single selection point**. Read the header comment for why an
+  `#ifdef Q_OS_ANDROID` at five call sites was rejected (three targets, and
+  an #ifdef is not a seam — no test reaches a branch it did not compile),
+  and for the explicit, argued **departure** from the geometry-not-platform
+  rule: the variable here is what an OS permits a frozen process, and no
+  width answers that. `Notifier` is not a `QObject`, so it is owned by
+  `std::unique_ptr` in `MainWindow` — the plain C++ tool for exclusive
+  ownership, where Qt's parent-child is the tool for a widget tree.
+- **`Alarms.h`** — the inversion of v19.7's ids-not-text rule, and worth
+  the detour for *why* a rule gets inverted. It derives a forward window of
+  fully rendered alarms and hands them to the OS, because **C++ must not
+  need to run at fire time**. Pre-rendering text is normally a mistake; it
+  is safe here only because every edit goes through `AppData::changed()`
+  and republishes the whole window.
+- **`web/index.html`** — the WebAssembly shell, and the only hand-written
+  JavaScript in the project. It mounts IndexedDB over Emscripten's
+  memory-only default (without it the app looks perfect and forgets
+  everything), syncs on `visibilitychange` because on a phone "switched
+  apps" and "locked the screen" are the same event, and carries the two
+  URL switches — `?nostore` and `?probe`. Those exist because **a browser
+  has no environment**, and because Safari on iOS has no console.
+- **`tools/build-wasm.bat`** — read the comment block, not the commands.
+  It refuses to build against the stock Qt WebAssembly kit rather than
+  producing a binary that aborts at the login window with a bare
+  `Aborted().`; `design-addendum-web.md` §B is the argument.
+- **`CMakeLists.txt`, the `if(ANDROID)` / `if(EMSCRIPTEN)` /
+  `TICKTIMER_DESKTOP` blocks** — where "not Android" stopped meaning
+  "desktop", and the Android build learned to **hard-fail** without OpenSSL
+  rather than ship an APK that can do plain HTTP and no HTTPS at all.
+
+Addenda for this arc: `design-addendum-responsive.md` (the phone layout,
+§3.41–§3.63), `design-addendum-notifications.md` (v30.6),
+`design-addendum-web.md` (the iPhone path), `design-addendum-android.md`
+(§3.30–§3.32, where the geometry rule was first written down). Runbooks:
+`docs/ANDROID.md`, `docs/WEB.md`, `docs/ROLLOUT.md`.
 

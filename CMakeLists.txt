@@ -129,6 +129,8 @@ set(UI_SOURCES
     src/PomodoroMiniWindow.cpp
     include/NotificationToast.h
     src/NotificationToast.cpp
+    include/ProbeOverlay.h
+    src/ProbeOverlay.cpp
     # v30.6 — how the app SPEAKS, as an interface plus one implementation
     # per platform. Notifier.cpp holds the only #ifdef that picks one.
     include/Notifier.h
@@ -379,6 +381,32 @@ if(EMSCRIPTEN)
         target_link_options(ticktimer PRIVATE -sASSERTIONS=1)
         message(STATUS "TickTimer WASM: assertions ON (diagnostic build)")
     endif()
+
+    # Export ENV so the shell page can set an environment variable before
+    # main() runs. Emscripten builds the module as a closure and exports only
+    # what it is asked to; ENV is not exported by default.
+    #
+    # WHY WE NEED ONE. Every diagnostic switch in this project is an
+    # environment variable — TICKTIMER_PROBE, TICKTIMER_COMPACT,
+    # TICKTIMER_AI_DOWN — because on a desktop or over adb you can set one.
+    # A browser tab has no environment and no shell, so `?probe` in the URL
+    # is the only surface a person holding a phone can reach. Exporting ENV
+    # lets that URL set the SAME variable the other two platforms set, which
+    # keeps one mechanism rather than growing a web-only second way to ask.
+    # web/index.html then passes it through qtloader's `qt.environment`.
+    #
+    # THE PROPERTY, NOT -sEXPORTED_RUNTIME_METHODS. The obvious spelling,
+    #     target_link_options(ticktimer PRIVATE -sEXPORTED_RUNTIME_METHODS=ENV)
+    # builds and silently does nothing. That option REPLACES the list rather
+    # than adding to it, and Qt appends its own
+    # (UTF16ToString, stringToUTF16, JSEvents, specialHTMLTargets, FS,
+    # callMain) after ours, so the last one wins and ENV is dropped. Matching
+    # Qt's list by hand would work until the day Qt changes it, and then break
+    # something unrelated. This property is Qt's own append-instead-of-replace
+    # seam — it is the fix qtloader.js names in the error it throws when
+    # `qt.environment` is used without it.
+    set_target_properties(ticktimer PROPERTIES
+                          QT_WASM_EXTRA_EXPORTED_METHODS "ENV")
 endif()
 # ---- Android packaging ---------------------------------------------------------
 # qt_add_executable above is what makes this possible at all: on an Android

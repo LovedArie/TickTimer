@@ -61,6 +61,7 @@
 #include "MainWindow.h"
 #include "PlannerPage.h"
 #include "PomodoroPage.h"
+#include "ProbeOverlay.h" // the layout probe, drawn for platforms with no stdout
 #include "Prefs.h"
 #include "Widgets.h"
 #include "ResponsiveWatcher.h"
@@ -4937,6 +4938,80 @@ private slots:
             QCOMPARE(sw.width(), 52);
             QCOMPARE(sw.height(), touch::kMinTarget); // padded to 48dp
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // The layout probe (ProbeOverlay.h). Two properties, and the first one is
+    // the one that protects the desktop: with TICKTIMER_PROBE unset, NOTHING
+    // is built. A diagnostic that leaks into the shipped app is not a
+    // diagnostic, it is a feature nobody asked for.
+    // -----------------------------------------------------------------------
+    void theProbeIsBuiltOnlyWhenItIsAskedFor()
+    {
+        QVERIFY(!probe::isRequested());
+        QCOMPARE(ProbeOverlay::showIfRequested(), nullptr);
+
+        struct Probing {
+            Probing()  { qputenv("TICKTIMER_PROBE", "1"); }
+            ~Probing() { qunsetenv("TICKTIMER_PROBE"); }
+        } probing;
+
+        QVERIFY(probe::isRequested());
+        ProbeOverlay* overlay = ProbeOverlay::showIfRequested();
+        QVERIFY(overlay != nullptr);
+
+        // It must actually carry the readings, not merely exist. The label is
+        // looked up by name because the probe's whole value is what it SAYS —
+        // an empty overlay would pass a "did it appear" check and be useless
+        // to the person photographing it.
+        auto* text = overlay->findChild<QLabel*>(QStringLiteral("probeOverlayText"));
+        QVERIFY(text != nullptr);
+        QVERIFY(text->text().contains(QStringLiteral("available geometry")));
+        QVERIFY(text->text().contains(QStringLiteral("isCompactScreen()")));
+
+        overlay->close(); // WA_DeleteOnClose owns it from here
+        QVERIFY(QTest::qWaitFor([&] { return overlay == nullptr
+                                             || !overlay->isVisible(); }, 1000));
+    }
+
+    // The pure half, pinned against screens nobody here owns — which is the
+    // entire reason the formatting was split out of the widget. The values
+    // below are a Galaxy S21 Ultra in device-independent pixels: the exact
+    // device whose availableGeometry() came back in PHYSICAL pixels and made
+    // isCompactScreen() answer "desktop" on a phone.
+    void theProbeShowsTheNumberTheLayoutRuleActuallyUses()
+    {
+        const QStringList phone =
+            probe::lines(QRect(0, 0, 360, 800), QRect(0, 0, 360, 800),
+                         3.0, 480.0, /*compactVerdict=*/true, QSize(360, 800));
+        const QString joined = phone.join(QLatin1Char('\n'));
+
+        // The short side is what the rule compares, so it must be readable
+        // without arithmetic — a photograph is not a calculator.
+        QVERIFY(joined.contains(QStringLiteral("short side")));
+        QVERIFY(joined.contains(QStringLiteral("360")));
+        QVERIFY(joined.contains(QStringLiteral("YES - phone layout")));
+        QVERIFY(!joined.contains(QStringLiteral("FORCED")));
+
+        // And the physical-pixel reading that started all of this: the same
+        // device reported as 1080x2400 is NOT compact by the rule, and the
+        // probe has to say so plainly rather than leaving it to be inferred.
+        const QString wrong =
+            probe::lines(QRect(0, 0, 1080, 2400), QRect(0, 0, 1080, 2400),
+                         3.0, 480.0, /*compactVerdict=*/false, QSize(1080, 2400))
+                .join(QLatin1Char('\n'));
+        QVERIFY(wrong.contains(QStringLiteral("no  - desktop layout")));
+        QVERIFY(wrong.contains(QStringLiteral("1080")));
+
+        // TICKTIMER_COMPACT forces the verdict away from the geometry. When
+        // that happens the numbers no longer explain the answer, and a probe
+        // that did not say so would be actively misleading — the screenshot
+        // would look like evidence for a rule it is not evidence for.
+        const QString forced =
+            probe::lines(QRect(0, 0, 1920, 1080), QRect(0, 0, 1920, 1080),
+                         1.0, 96.0, /*compactVerdict=*/true, QSize(1180, 800))
+                .join(QLatin1Char('\n'));
+        QVERIFY(forced.contains(QStringLiteral("FORCED by TICKTIMER_COMPACT")));
     }
 };
 
