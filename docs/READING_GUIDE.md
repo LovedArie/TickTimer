@@ -547,6 +547,26 @@ Deliberate simplifications (candidates for your first solo features):
   flag someone else can overwrite**, and a framework that offers a property
   for a setting is telling you the raw flag composes badly.
 
+- **A Caddyfile is not evidence that anything happened — three serving bugs,
+  all invisible from the config, all live for ten days.** (1) `scp -r`
+  reproduces the *sending* machine's modes, and a directory that lands as 700
+  root-only makes Caddy — which runs as its own user — return **403, not
+  404**; every app icon was unreachable, which on a phone reads as "Add to
+  Home Screen gives a blank icon", an iOS-shaped symptom with no iOS in it.
+  Always `find … -type d -exec chmod 755 {} +` after a copy. (2) `encode zstd
+  gzip` compresses only Caddy's **default content types**, and
+  `application/wasm` is not among them in 2.6.x — so the small text files
+  compressed, the 23 MB file did not, and the response was a perfectly valid
+  200 of three times the promised size. Naming `match` *replaces* the default
+  list, so the defaults worth keeping must be repeated. (3) **In a Caddyfile
+  the written order is not the executed order.** `header` runs *before* `uri`,
+  so `header /ticktimer.wasm` inside a block that does `uri strip_prefix /app`
+  is matched against the un-stripped `/app/ticktimer.wasm` and fires never —
+  emitting no `Cache-Control` at all while ETag quietly kept revalidation
+  working, so nothing looked broken. Verify against the **response**:
+  `curl -sI -H "Accept-Encoding: gzip" .../app/ticktimer.wasm`
+  (`design-addendum-deployment.md` §D).
+
 - **Two copies of "the current version" with nothing keeping them in step.**
   `/app/` (the deployed WebAssembly folder) and `server/version.json` are
   independent, and a release bumps only the second. The web app then asks
@@ -723,8 +743,11 @@ Read them in this order; each one answers a question the previous one raises.
   rather than ship an APK that can do plain HTTP and no HTTPS at all.
 
 Addenda for this arc: `design-addendum-responsive.md` (the phone layout,
-§3.41–§3.63), `design-addendum-notifications.md` (v30.6),
+§3.41–§3.64), `design-addendum-notifications.md` (v30.6),
 `design-addendum-web.md` (the iPhone path), `design-addendum-android.md`
-(§3.30–§3.32, where the geometry rule was first written down). Runbooks:
-`docs/ANDROID.md`, `docs/WEB.md`, `docs/ROLLOUT.md`.
+(§3.30–§3.32, where the geometry rule was first written down), and
+`design-addendum-deployment.md` — the cross-platform one: how three artefacts
+reach three kinds of person, which version seams are checked and which are
+only procedural, and why serving is part of deploying. Runbooks:
+`docs/ANDROID.md`, `docs/WEB.md`, `docs/ROLLOUT.md`, `docs/GITHUB.md`.
 

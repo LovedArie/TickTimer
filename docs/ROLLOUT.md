@@ -459,20 +459,49 @@ measured.
 
 ### 4a. Before the phone exists — do this on your own machine
 
-- [ ] **Rebuild and redeploy `/app/`.** It has been stale before: v30.4.2 sat
-      there for three feature versions while `version.json` advertised 30.8.1,
-      which makes the app show an update banner it cannot act on.
+- [x] **Rebuild and redeploy `/app/`.** *(Done 2026-08-31 at v30.8.1.)* It had
+      been stale: v30.4.2 sat there for three feature versions while
+      `version.json` advertised 30.8.1, which made the app show an update
+      banner it could not act on.
 
       ```
       tools\build-wasm.bat
       ```
       ```sh
       scp -r build-wasm/serve/* root@YOUR.SERVER.IP:/var/www/ticktimer-app/
+      find /var/www/ticktimer-app -type d -exec chmod 755 {} +
+      find /var/www/ticktimer-app -type f -exec chmod 644 {} +
       ```
 
-- [ ] **Verify from the server's side, not the browser's:**
+      **Do not skip the two `chmod` lines.** `scp -r` copies the sending
+      machine's modes, and `icons/` arrived 700 root-only in August — Caddy
+      runs as its own user, so every app icon returned **403 for ten days**.
+      On a phone that reads as "Add to Home Screen gives a blank icon", which
+      is an iOS-shaped symptom with no iOS in it.
+
+- [x] **Verify from the server's side, not the browser's:**
       `ls -l --time-style=long-iso /var/www/ticktimer-app/ticktimer.wasm`
-      — written just now, ~23 MB.
+      — written just now, ~23 MB. Better still, checksum it against your local
+      `build-wasm/serve/ticktimer.wasm`; a size match is weaker evidence than
+      a hash match and costs the same.
+
+- [x] **Then check what the wire actually carries**, which is a different
+      question from what is on disk. *(Done 2026-08-31 — and it found two live
+      defects, both fixed in `deploy/Caddyfile.example`: the `.wasm` was being
+      served **uncompressed at 24.4 MB** because Caddy's `encode` skips
+      `application/wasm` unless told not to, and every `Cache-Control` rule was
+      dead because `header` runs before `uri strip_prefix`.)*
+
+      ```sh
+      curl -sI -H "Accept-Encoding: zstd,gzip" https://your-domain/app/ticktimer.wasm \
+        | grep -i 'content-encoding\|cache-control\|content-length'
+      curl -s -o /dev/null -w '%{http_code}\n' https://your-domain/app/icons/ticktimer-192.png
+      ```
+
+      Expect `Content-Encoding: zstd` (or gzip), `Cache-Control: no-cache`,
+      ~8.1-8.5 MB, and `200` for the icon. **A Caddyfile that says `encode` is
+      not evidence that anything was encoded** —
+      `design-addendum-deployment.md` §D.
 - [ ] Open `https://your-domain/app/` in a **desktop** browser and run the
       whole `docs/WEB.md` first-run checklist there. Every finding here is one
       the borrowed phone does not have to pay for.

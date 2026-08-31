@@ -2538,6 +2538,92 @@ output is one enormous line, so `grep -c` reports 1 for "present at all" and 1
 for "present forty times". Use `grep -o ... | wc -l`; the first pass at
 diagnosing this read `getenv: 1` and drew the wrong conclusion from it.
 
+### The deploy "worked" but the server is serving it wrong
+
+**SYMPTOM**
+Files copied, `/app/` loads, and yet: app icons 404-ish (actually **403**), the
+first load is three times the size the docs promise, and no `Cache-Control`
+appears on anything. The Caddyfile plainly contains `encode zstd gzip` and a
+list of `header … Cache-Control` lines.
+
+```
+$ curl -sI -H "Accept-Encoding: gzip" https://<domain>/app/ticktimer.wasm
+HTTP/1.1 200 OK
+Content-Length: 24422570        <- not compressed
+Content-Type: application/wasm
+                                <- no Content-Encoding, no Cache-Control
+$ curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/app/icons/ticktimer-192.png
+403
+```
+
+**CAUSE**
+Three unrelated causes wearing one costume. All three were live for ten days
+and none is visible from the config file.
+
+1. **403 on the icons — file modes.** `scp -r` reproduces the *sending*
+   machine's permissions. `icons/` arrived as `drwx------ root root`, and Caddy
+   runs as the `caddy` user, which cannot traverse it. The tell is **403 rather
+   than 404**: Caddy cannot even stat the file to decide it is missing.
+2. **No compression — Caddy's default content-type filter.** `encode zstd gzip`
+   with no `match` block compresses only Caddy's default types, and
+   `application/wasm` is not among them in 2.6.x. So `ticktimer.js`
+   (`text/javascript`) and `index.html` were compressed and the 23 MB `.wasm`
+   was not — a valid 200, just enormous. A spot check of the page looks fine.
+3. **No `Cache-Control` — directive order.** Caddy sorts directives into a
+   **fixed order that is not the order they are written in**, and `header` runs
+   *before* `uri`. Inside `handle /app*` with `uri strip_prefix /app`, a
+   matcher written `/ticktimer.wasm` is tested against the still-unstripped
+   `/app/ticktimer.wasm` and never matches. Every rule was dead. ETag and
+   Last-Modified still forced revalidation, so nothing appeared broken — the
+   stated intent simply was not in effect.
+
+**FIX**
+After every copy, fix the modes:
+
+```sh
+find /var/www/ticktimer-app -type d -exec chmod 755 {} +
+find /var/www/ticktimer-app -type f -exec chmod 644 {} +
+```
+
+Give `encode` an explicit match list (naming `match` *replaces* the defaults,
+so repeat the ones worth keeping), and write the header matchers with the
+**pre-strip** path — both as in `deploy/Caddyfile.example`:
+
+```
+encode zstd gzip {
+    match {
+        header Content-Type text/*
+        header Content-Type application/json*
+        header Content-Type application/javascript*
+        header Content-Type application/wasm*
+    }
+}
+header /app/ticktimer.wasm Cache-Control "no-cache"
+```
+
+Then validate before reloading — a bad Caddyfile takes the whole site down:
+
+```sh
+caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+systemctl reload caddy
+```
+
+**PREVENT**
+**Verify against the response, never against the config.** One command settles
+all three at once, and belongs in the release routine:
+
+```sh
+curl -sI -H "Accept-Encoding: gzip" https://<domain>/app/ticktimer.wasm \
+  | grep -i 'content-encoding\|cache-control\|content-length'
+curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/app/icons/ticktimer-192.png
+```
+
+This is the same shape as the worst bugs elsewhere in this project —
+`Version.h` versus `installer/ticktimer.iss`, `-sEXPORTED_RUNTIME_METHODS=ENV`
+building cleanly and exporting nothing. In every case **the written intention
+was correct and unexecuted**, and only the artefact knew.
+`design-addendum-deployment.md` §D.
+
 ### The web app shows an update banner for a version it cannot install
 
 **SYMPTOM**

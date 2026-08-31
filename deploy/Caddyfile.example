@@ -35,14 +35,49 @@ ticktimer.example.com {
 	# sends Content-Type: application/json or an Authorization token.)
 	#
 	# Copy the contents of build-wasm/serve/ into /var/www/ticktimer-app/.
+	#
+	# AND THEN FIX THE MODES. Caddy runs as its own unprivileged user, so a
+	# directory it cannot traverse is a 403 — not a 404, which is the tell.
+	# `scp -r` reproduces the sending machine's modes, and one that arrives
+	# as 700 root-only silently breaks everything under it. That happened to
+	# icons/ and every app icon was unreachable for ten days, which would
+	# have surfaced on someone's phone as "Add to Home Screen gives a blank
+	# icon" — an iOS-shaped symptom with no iOS in it. After every copy:
+	#
+	#   find /var/www/ticktimer-app -type d -exec chmod 755 {} +
+	#   find /var/www/ticktimer-app -type f -exec chmod 644 {} +
 	handle /app* {
 		root * /var/www/ticktimer-app
 		uri strip_prefix /app
 
-		# The .wasm is ~23 MB raw and ~7.6 MB gzipped, so compression is the
+		# The .wasm is ~23 MB raw and ~8.1-8.5 MB compressed, so compression is the
 		# difference between a pleasant first load on a phone and an
 		# abandoned one. Caddy picks zstd or gzip per request.
-		encode zstd gzip
+		#
+		# THE MATCH BLOCK IS NOT DECORATION, and leaving it out cost ten days
+		# of serving 24 MB to phones. `encode zstd gzip` on its own compresses
+		# only Caddy's DEFAULT content types, and `application/wasm` is not
+		# among them in 2.6.x — so the two small text files were compressed
+		# and the one enormous file that dominates the download was not.
+		# Nothing warns: the response is a perfectly valid 200, just three
+		# times the size the docs promise. Measured, 2026-08-31.
+		#
+		# Naming `match` REPLACES the default list rather than adding to it,
+		# so the defaults worth keeping are repeated here. Check a deploy with
+		#   curl -sI -H "Accept-Encoding: gzip" .../app/ticktimer.wasm
+		# and look for Content-Encoding. A config that says `encode` is not
+		# evidence that anything was encoded.
+		encode zstd gzip {
+			match {
+				header Content-Type text/*
+				header Content-Type application/json*
+				header Content-Type application/javascript*
+				header Content-Type application/xhtml+xml*
+				header Content-Type image/svg+xml*
+				header Content-Type application/wasm*
+				header Content-Type application/manifest+json*
+			}
+		}
 
 		# CACHED BUT REVALIDATED, deliberately not "immutable".
 		#
@@ -51,19 +86,35 @@ ticktimer.example.com {
 		# amount of reloading fixes it — the phone would keep running last
 		# month's app while its owner insisted they had updated. "no-cache"
 		# is a misleading name: it does not mean don't store, it means ask
-		# first. The browser keeps the 7.6 MB and gets a 304 when nothing
+		# first. The browser keeps the ~8 MB and gets a 304 when nothing
 		# changed, which costs one small round trip and is always correct.
 		#
 		# Content-addressed filenames would let us use immutable properly.
 		# That is a build-pipeline change, and not one to make before anyone
 		# has felt the round trip.
-		header /ticktimer.wasm       Cache-Control "no-cache"
-		header /ticktimer.js         Cache-Control "no-cache"
-		header /index.html           Cache-Control "no-cache"
-		header /manifest.webmanifest Cache-Control "no-cache"
+		#
+		# THE PATHS BELOW INCLUDE /app ON PURPOSE, and this is the subtle one.
+		# Caddy sorts directives into a fixed order that is NOT the order they
+		# are written in, and `header` runs BEFORE `uri`. So when these
+		# matchers are tested the path has not been stripped yet: it is still
+		# /app/ticktimer.wasm. Written as /ticktimer.wasm they match nothing,
+		# fire never, and emit no Cache-Control at all — which is exactly what
+		# they did from August until 2026-08-31, silently. ETag still forced
+		# revalidation, so nothing looked broken; the stated intent simply was
+		# not in effect.
+		#
+		# The general lesson, worth more than the fix: in a Caddyfile the
+		# written order is not the executed order, so any matcher that depends
+		# on a rewrite has to know whether it runs before or after it. VERIFY
+		# HEADERS AGAINST THE LIVE RESPONSE, never against the config.
+		header /app/ticktimer.wasm       Cache-Control "no-cache"
+		header /app/ticktimer.js         Cache-Control "no-cache"
+		header /app/index.html           Cache-Control "no-cache"
+		header /app/                     Cache-Control "no-cache"
+		header /app/manifest.webmanifest Cache-Control "no-cache"
 		# Icons genuinely do not change, and are small enough that being
 		# wrong about one for a month costs nothing.
-		header /icons/*              Cache-Control "public, max-age=2592000"
+		header /app/icons/*              Cache-Control "public, max-age=2592000"
 
 		file_server
 	}

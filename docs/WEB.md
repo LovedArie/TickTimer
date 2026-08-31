@@ -36,10 +36,18 @@ Add-to-Home-Screen. Both need an iPhone and a real HTTPS origin, i.e. the VPS.
 See "What an iPhone still has to tell us" below for the specific questions,
 and `docs/ROLLOUT.md` Stage 4 for the one ordered pass that answers them.
 
-`ticktimer.wasm` is 23.3 MB raw and **7.6 MB gzipped**, which is what a phone
-actually downloads once (Caddy compresses on the fly). That is up from 5.8 MB
-before asyncify; see below for what bought the extra 1.8 MB. Three versions of
-phone work added ~160 KB raw and did not move the gzipped figure.
+`ticktimer.wasm` is 23.3 MB raw. What a phone **actually downloads** is
+**8.1 MB (zstd) or 8.5 MB (gzip)** — measured against the live server on
+2026-08-31, not computed here. That is up from 5.8 MB before asyncify; see
+below for what bought the extra 1.8 MB.
+
+*This document said 7.6 MB for months and that number was never wrong so much
+as never true of the server.* 7.6 MB is what `gzip -9` produces on a desktop;
+Caddy compresses at its default level, which is faster and slightly looser. The
+figure that matters is the one the wire carries, so it is the one quoted here.
+Worse, for ten days the server was sending the file **uncompressed at 24.4 MB**
+because `encode` skips `application/wasm` unless told not to — see
+`deploy/Caddyfile.example`.
 
 **None of the six test suites run here.** `CMakeLists.txt` fences them off for
 Emscripten as it does for Android — every executable is its own web page, and
@@ -285,7 +293,7 @@ roughest edge and the one most likely to decide whether the app is pleasant.
       phone.
 
 - [ ] **1. It loads.** A TickTimer boot screen, then the login window. First
-      load fetches ~7.6 MB; after that the browser caches it.
+      load fetches ~8.1-8.5 MB compressed; after that the browser caches it.
       - ❌ A stuck progress bar or a blank page **on a desktop browser**: open
         the console, `web/index.html` reports failures there deliberately.
       - ❌ On an iPhone there is no console — the boot screen itself shows a
@@ -356,7 +364,8 @@ roughest edge and the one most likely to decide whether the app is pleasant.
   authoritative copy.
 - **No sound.** Qt Multimedia is not in the WASM kit; the build says so at
   configure time and falls back to silence.
-- **First load is ~7.6 MB.** Cached afterwards, and re-fetched only when you
+- **First load is ~8.1-8.5 MB** (23.3 MB on the wire if compression is
+  misconfigured — check `Content-Encoding`). Cached afterwards, and re-fetched only when you
   deploy a new build.
 
 ## Why not a normal web app

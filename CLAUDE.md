@@ -209,4 +209,7 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
 what leaves the machine) · `docs/SERVER.md` · `docs/SETUP.md` ·
 `docs/ANDROID.md` and `docs/WEB.md` (the two phone builds — sideloaded APK,
 and the WebAssembly app for iPhones) · `docs/ROLLOUT.md` (the ordered path
-from a clean checkout to two phones and a friend).
+from a clean checkout to two phones and a friend) ·
+`docs/design-addendum-deployment.md` (three artefacts, one origin: which
+version seams are checked and which are only procedural, and why a config is
+not evidence that anything was served).

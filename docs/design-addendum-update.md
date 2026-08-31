@@ -114,3 +114,25 @@ and everything else functions.
 - **The server can't lie usefully about *per-platform* builds.** One
   `latest` for everyone; the day an Android build ships on a different
   cadence, `version.json` grows a per-platform shape.
+
+> **AMENDED at v30.8.1 — that day arrived, and the schema still has not
+> grown.** There are three artefacts now (desktop zip/installer, signed APK,
+> WebAssembly folder) and they do not ship together. The concrete failure this
+> bullet predicted turned out to be worse than "the server can't lie usefully":
+> the WebAssembly app finds itself behind and offers a **Get it** button
+> pointing at `url` — a GitHub Releases page holding a Windows installer and an
+> APK, neither of which a browser can do anything with. *The one platform that
+> could update itself silently is the one being sent files it cannot run.*
+>
+> The decision was to **fix the cadence, not the schema**: keeping the three
+> artefacts in step (release step 7 in `docs/GITHUB.md`) removes the symptom at
+> its source, and the right per-platform shape depends on a fact not yet in
+> hand — whether the web app has an update problem *at all*, given it re-fetches
+> from the origin on every launch and therefore arguably has a **cache**
+> problem instead. Full reasoning: `design-addendum-deployment.md` §C.
+
+> **AMENDED — "no authenticity check … over plain HTTP" has partly aged out.**
+> That was written when the server was a laptop on a LAN. Everything now goes
+> through Caddy over Let's Encrypt TLS, so the transport half of the concern is
+> closed. What remains true is that there is no signature on the artefact
+> itself: the trust is in the origin, not in the file.

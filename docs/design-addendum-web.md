@@ -37,7 +37,7 @@ story — all real advantages, and all bought by duplicating the domain. The
 duplicate would then drift, and the drift would be silent, because nothing
 compiles both.
 
-*The cost, named:* ~7.6 MB gzipped on first load, and a UI drawn into a canvas
+*The cost, named:* ~8.1-8.5 MB compressed on first load, and a UI drawn into a canvas
 rather than made of DOM elements. Both are consequences of this choice and
 neither is a defect to be fixed later.
 
