@@ -578,6 +578,26 @@ Deliberate simplifications (candidates for your first solo features):
   such check, so the redeploy belongs in the release routine
   (`docs/GITHUB.md`) rather than in someone's memory.
 
+- **A remembered window position outlives the monitor it was remembered on,
+  and nothing in Qt notices.** `restoreGeometry()` validates the saved blob's
+  *format*, never your display layout, and a plain `move()` validates nothing
+  at all — so a window parked on a second screen and restored after that
+  screen is unplugged is shown faithfully at coordinates that no longer exist.
+  `MainWindow` has checked for this since v23 (`overlapsAnyScreen()` /
+  `availableScreenRects()` in `Widgets.h`, pinned in `test_ui` against
+  invented monitor layouts). The trap is that it was written for *one* window
+  and the app has *two*: `PomodoroMiniWindow` remembered `pomodoro/miniPos`
+  and restored it blind, so "Mini timer" became a button that did nothing —
+  a frameless `Qt::Tool` window with no title bar and no taskbar entry cannot
+  be dragged back from off-screen, and the position is only re-saved on a
+  drag, so the bad value fed itself. `ensureOnScreen()` now runs the check
+  from the constructor **and from `showEvent`**, because the card is built
+  once and re-shown for the life of the app: a display can disappear between
+  two shows, and a check that runs only at construction misses that. The rule
+  to carry: every restore path that positions a window asks
+  `overlapsAnyScreen()` first, and a long-lived window asks it every time it
+  appears. (`PomodoroMiniWindow.cpp`; symptom entry in `TROUBLESHOOTING.md`.)
+
 ## 5. New since v13 — landmarks worth a visit
 
 - **Event's three identities** — `activityId` / `taskId` / `title`, "at

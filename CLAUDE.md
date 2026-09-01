@@ -168,6 +168,15 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
 - `QScrollArea::sizeHint` is a cached guess — neutralise it on both axes.
 - Offscreen platform: `setFocus()` no-ops until `activateWindow()` +
   `qWaitForWindowActive`.
+- **A remembered window position must be checked against today's monitors.**
+  `restoreGeometry()` validates the blob's format, never your display layout,
+  and `move()` validates nothing — a window restored onto an unplugged screen
+  is shown at coordinates that no longer exist, which looks exactly like a
+  button that does nothing. Run every restore through `overlapsAnyScreen()` /
+  `availableScreenRects()` (`Widgets.h`), and for a long-lived window run it
+  on **every** `showEvent`, not once in the constructor: `MainWindow` did this
+  from v23 and `PomodoroMiniWindow` did not, which is how "Mini timer" came to
+  open a card 60px past the right edge of the world.
 - **A `QScrollArea` voids its page's width budget.** Its minimum ignores its
   content on purpose, so the page passes any minimum-width assertion while
   the content pans sideways. Ask `horizontalScrollBar()->maximum() > 0`, not

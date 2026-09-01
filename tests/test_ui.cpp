@@ -641,6 +641,53 @@ private slots:
         QVERIFY(mini.windowFlags() & Qt::FramelessWindowHint);
     }
 
+    void miniTimerIgnoresAPositionOnAMonitorThatIsGone()
+    {
+        // The field bug: pomodoro/miniPos held (1980, 35) — saved on a
+        // display that had since been unplugged — against a 1920-wide
+        // primary and a second monitor at NEGATIVE x. The card was shown
+        // faithfully at those coordinates, which is to say nowhere, and
+        // "Mini timer" looked like a dead button. MainWindow has run every
+        // restored rectangle past overlapsAnyScreen() since v23; this card
+        // remembered a position too and was never wired to it.
+        //
+        // Deliberately written against the REAL screens rather than a
+        // synthetic list (the policy itself is already pinned on invented
+        // monitor layouts further down): the claim under test is the
+        // WIRING — that the card asks the question at all — so the number
+        // that must be off-screen is derived from whatever displays this
+        // machine actually has.
+        QCoreApplication::setApplicationName(QStringLiteral("TickTimerTest"));
+
+        QRect world;
+        for (const QRect& r : availableScreenRects())
+            world = world.united(r);
+        QVERIFY2(!world.isNull(), "no screens at all — nothing to test");
+
+        // Far enough past the right edge of every display that no part of
+        // the card can overlap one.
+        const QPoint nowhere(world.right() + 5000, world.top());
+        prefs::setPomodoroMiniPos(nowhere);
+
+        PomodoroEngine engine;
+        PomodoroMiniWindow mini(&engine);
+        QVERIFY2(mini.pos() != nowhere,
+                 "the card restored onto a monitor that does not exist");
+        QVERIFY(overlapsAnyScreen(mini.frameGeometry(), availableScreenRects()));
+
+        // And again on show(), because the card is constructed once and
+        // re-shown forever — a display can vanish between two of those.
+        mini.move(nowhere);
+        mini.show();
+        QVERIFY(overlapsAnyScreen(mini.frameGeometry(), availableScreenRects()));
+        mini.hide();
+
+        // The stale preference is left alone ON PURPOSE: it becomes the
+        // right answer again the moment the monitor comes back.
+        QCOMPARE(prefs::pomodoroMiniPos(), nowhere);
+        QSettings().remove(QStringLiteral("pomodoro/miniPos"));
+    }
+
     void pomodoroPageTellsTheEngineItsDurations()
     {
         QCoreApplication::setApplicationName(QStringLiteral("TickTimerTest"));

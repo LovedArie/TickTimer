@@ -3,12 +3,16 @@
 #include "PomodoroEngine.h"
 #include "Prefs.h"
 #include "Theme.h"
+#include "Widgets.h" // overlapsAnyScreen / availableScreenRects (v23)
 
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QScreen>
+#include <QShowEvent>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -99,12 +103,57 @@ PomodoroMiniWindow::PomodoroMiniWindow(PomodoroEngine* engine)
             this, &PomodoroMiniWindow::refresh);
 
     // Reopen where it was last left (invalid point on first ever run —
-    // then Qt's default placement is fine).
+    // then Qt's default placement is fine). ensureOnScreen() below is what
+    // makes trusting that stored point safe.
     const QPoint saved = prefs::pomodoroMiniPos();
     if (!saved.isNull())
         move(saved);
+    ensureOnScreen();
 
     refresh();
+}
+
+// ---------------------------------------------------------------------------
+// ensureOnScreen — the v23 monitor check, finally applied to the OTHER
+// remembered position.
+//
+// MainWindow has run every restored rectangle through overlapsAnyScreen()
+// since v23, because a saved position outlives the monitor it was saved on:
+// park the card on a second display, unplug it, and the coordinates restore
+// faithfully to a place that no longer exists. This card remembered a
+// position too and nobody wired it to that check — found in the field as a
+// miniPos of (1980, 35) against a 1920-wide primary and a second monitor at
+// negative x. Pressing "Mini timer" then did nothing observable: the window
+// really was shown, 60px past the right edge of the world.
+//
+// It runs on every show(), not just in the constructor, because the card is
+// created once and re-shown forever (PomodoroPage keeps it). A display can
+// disappear between two shows, so the question has to be re-asked each time
+// rather than answered once at birth.
+//
+// The stale preference is deliberately NOT overwritten. It stops being a
+// wrong answer the moment the monitor comes back, and this rescue is about
+// the window you can see now, not about forgetting where you like the card.
+// ---------------------------------------------------------------------------
+void PomodoroMiniWindow::ensureOnScreen()
+{
+    if (overlapsAnyScreen(frameGeometry(), availableScreenRects()))
+        return;
+
+    // Top-right of the primary screen's available area. A corner rather than
+    // the centre because this window's whole job is to sit over other apps
+    // without covering what you are doing in them.
+    if (const QScreen* primary = QGuiApplication::primaryScreen()) {
+        const QRect area = primary->availableGeometry();
+        constexpr int kMargin = 24;
+        move(area.right() - width() - kMargin, area.top() + kMargin);
+    }
+}
+
+void PomodoroMiniWindow::showEvent(QShowEvent* event)
+{
+    ensureOnScreen();
+    QWidget::showEvent(event);
 }
 
 void PomodoroMiniWindow::refresh()

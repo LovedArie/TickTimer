@@ -1013,6 +1013,65 @@ And if geometry is skipped but the header's tagline is *also* missing, the
 screen is being detected as compact (`isCompactScreen()`, min dimension < 600
 logical px — display scaling counts) and the skip is by design.
 
+### "Mini timer" does nothing — the button responds, no card appears
+
+**SYMPTOM**
+Pressing **Mini timer** on the Pomodoro page produces no visible window. No
+error, no log line, nothing on any monitor. The button is not disabled and not
+hidden. Restarting the app does not help; neither does re-pressing it. It
+"used to work".
+
+**CAUSE**
+The card *was* shown — at coordinates that are no longer on any display.
+`PomodoroMiniWindow` remembers where you last dragged it (`pomodoro/miniPos`)
+and restored it blind. Found in the field as `@Point(1980 35)` on a machine
+whose primary screen ends at x=1919 and whose second monitor sits at
+*negative* x: the card was 60px past the right edge of the world. A frameless
+`Qt::Tool` window has no title bar to grab and no taskbar entry, so there is
+no way to drag it back into view — and since the position is only re-saved on
+a drag, the bad value is self-perpetuating.
+
+This is the v23 unplugged-monitor bug (see "Sidebar state persists…" above),
+in the one window nobody had wired to the check. `MainWindow` has validated
+every restored rectangle with `overlapsAnyScreen()` since v23; the mini card
+remembered a position too and was missed.
+
+**FIX**
+`PomodoroMiniWindow::ensureOnScreen()` now runs the same check, and re-parks
+the card at the top-right of the primary screen's available area when it
+fails. It is called from the constructor **and from `showEvent`**, because the
+card is constructed once and re-shown forever — a display can vanish between
+two shows, and a check that only runs at birth would miss that. The stale
+preference is deliberately left in `QSettings`: it becomes the right answer
+again the moment the monitor comes back.
+
+To confirm the diagnosis on a machine showing the symptom before the fix, read
+the store rather than the code:
+
+```powershell
+Get-ItemProperty 'HKCU:\Software\TickTimer\TickTimer\pomodoro' | Select miniPos
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.Screen]::AllScreens | ForEach-Object { $_.Bounds }
+```
+
+If the point lies outside every rectangle, that is the whole bug.
+
+**PREVENT**
+**Every remembered position must go through `overlapsAnyScreen()` before it is
+used — not just the main window's.** A stored coordinate outlives the display
+it was stored on, and no Qt call validates that for you: `restoreGeometry()`
+checks the blob's format, never your monitor layout, and a plain `move()`
+checks nothing at all. When adding any window that remembers where it was, the
+restore path is where the check belongs, and it belongs on *every* show if the
+window is long-lived. `overlapsAnyScreen()` / `availableScreenRects()` in
+`Widgets.h` are already written and already tested against invented monitor
+layouts; use them rather than reasoning about screen rectangles again.
+
+Corollary for debugging: an invisible window is not the same as an unshown
+one. Before hunting for a missing `show()` call, ask where the window actually
+is — `pos()` and `frameGeometry()` answer instantly, and a `QWidget` can be
+`isVisible() == true` and still be nowhere you can see.
+
 ### A QSettings write under `a/b/c` reads back empty — when `a/b` already exists as a value
 
 **SYMPTOM**

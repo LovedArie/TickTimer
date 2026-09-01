@@ -16,7 +16,10 @@
 //   WA_TranslucentBackground — lets the rounded corners actually be round
 // Frameless costs the OS-provided drag, so mousePress/Move reimplement it
 // (the standard press-anchor + delta dance). Position persists in QSettings
-// (window state = machine taste, the same shelf as every other preference).
+// (window state = machine taste, the same shelf as every other preference)
+// — and is validated against today's monitors on every show
+// (`ensureOnScreen`), because a remembered position outlives the display it
+// was remembered on.
 //
 // PARENTLESS, deliberately (v19.5.1 fix — owner report: the card vanished
 // whenever the main window was minimized). The first version passed the
@@ -38,6 +41,7 @@
 class PomodoroEngine;
 class QLabel;
 class QPushButton;
+class QShowEvent;
 class QToolButton;
 
 class PomodoroMiniWindow : public QWidget
@@ -55,9 +59,15 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void showEvent(QShowEvent* event) override; // re-asks ensureOnScreen()
 
 private:
     void refresh();
+
+    // The remembered position outlives the monitor it was saved on, so it is
+    // checked against today's screens every time the card appears — not once
+    // at construction. See the long note on the definition.
+    void ensureOnScreen();
 
     PomodoroEngine* m_engine = nullptr; // not owned; owned by MainWindow
 
