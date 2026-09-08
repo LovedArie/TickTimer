@@ -123,13 +123,18 @@ write when you pick it up — never here.*
   (`confirmAdHoc`/`enteredTitle` creates; the list browses); this joins them so
   one box does both. Pairs naturally with F9, which is what makes a single flat
   result list possible.
-- **F11** Edit an activity's colour icon. **Collides with a documented
-  decision**: `Activity.h` states plainly that an Activity holds no colour, and
-  why — it comes from its Category so that recolouring "Health" once changes
-  every gym session ever planned, design-doc §3.4's "reference, don't copy". A
-  per-activity colour is a real want and a real override of that, so the
-  addendum has to answer what happens when the category is then recoloured:
-  does the override win forever, or is it a tint the category still drives?
+- **F11** **Tell two activities in the same life area apart on the agenda.**
+  Restated from the owner after the first filing got the problem wrong: this
+  is not "override the life area's colour", it is that "LOG635 - COURS" and
+  "LOG635 - TP" are drawn identically, because `AgendaWidget` takes a block's
+  colour from `categoryById(eventCategoryId(e))` — the life area — and nothing
+  below that level has a colour at all. The lead worth trying first: a block
+  already paints TWO colour surfaces, a pastel fill and a 5px raw-hue
+  "identity stripe". Fill stays the life area (so a day still reads by area at
+  a glance, which is what design-doc §3.4 actually protects), stripe carries
+  the activity. An unset activity colour follows its area, which keeps
+  §3.4's promise — recolour "Health" and everything that never overrode it
+  moves with it — and keeps the JSON additive.
 - **F5** A door from "these 13 blocks look weekly" to a Schedule that **adopts**
   them instead of duplicating them — the thing B5 makes impossible today, and
   the only way an activity planned before v31 can ever get a rule.
@@ -162,6 +167,16 @@ write when you pick it up — never here.*
 
 *Documentation and process debt. Small, but it is what rots first.*
 
+- **H6** **The "Activities" tab is the reason "activity" seems to mean two
+  things.** The domain and nearly every UI string are already clean — the
+  glossary defines Category with "life-area" as its synonym, and the screens
+  say "Life areas", "Life area colour", "Switch life area", "New life area…".
+  The exception is the nav tab, which is named **Activities** and contains
+  both the life-area rail and the activities inside it, plus the string "No
+  activities yet — add some in the Activities tab first." One page name
+  teaching the ambiguity that the other forty strings avoid. Rename the tab,
+  and add the distinction explicitly to `04_Glossary.md` §3 (UI component
+  names) so it stays decided.
 - **H5** **The phones are still on pre-v31 binaries.** Windows is done — 31.1.0
   is installed, running, and its registry entry agrees with its exes. The
   sideloaded APK and the WebAssembly app at `/app/` were never updated past
