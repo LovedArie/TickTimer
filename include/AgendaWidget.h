@@ -22,6 +22,7 @@
 #include <QPoint>
 #include <QWidget>
 
+#include "DayLayout.h" // daylay::Slotting - which column a block draws in
 #include "Widgets.h" // isCompactScreen
 
 class AppData;
@@ -197,8 +198,18 @@ private:
     // Which horizontal edge of an event the mouse is near (the grab handles).
     enum class Edge { None, Top, Bottom };
 
-    QRect spanRect(int startMin, int endMin) const; // minutes -> pixel rect
-    QRect eventRect(const Event& e) const;          // = spanRect of its span
+    // Minutes -> pixel rect. `column` / `columnCount` split the width when
+    // blocks stack (v31.3); the defaults give the full width, which is what
+    // the free-slot highlight wants and what every block got before.
+    QRect spanRect(int startMin, int endMin,
+                   int column = 0, int columnCount = 1) const;
+    QRect eventRect(const Event& e) const;   // spanRect of its span AND column
+
+    // Which column this block draws in today. Derived on every call, never
+    // cached - the same choice PlannerPage::freeRunsFor makes, and for the
+    // same reason: a handful of events per day makes it free, and stale
+    // geometry is exactly what caching would invite.
+    daylay::Slotting slottingFor(const Event& e) const;
     int   slotAt(const QPoint& pos) const;          // paint AND hit-testing
     int   minutesAtY(int y) const;                  // snap a y to a slot time
 

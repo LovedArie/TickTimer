@@ -176,10 +176,27 @@ MainWindow::MainWindow(const QString& username)
         JsonStore::adoptGlobalDataForUser(m_username);
 
     QString recoveryMessage;
-    if (m_store.load(m_data))
+    // FOUR outcomes, not two (design-addendum-format-floor.md §F.2). The old
+    // `if (load) ... else seedDefaults()` answered "no file yet" and "could
+    // not read it" with the same starter categories — which the next
+    // autosave would have written over a planner this binary merely failed to
+    // understand. Each case now says what it means.
+    switch (m_store.load(m_data)) {
+    case JsonStore::LoadResult::Loaded:
         recoveryMessage = m_data.recoverInterruptedTracking();
-    else
-        m_data.seedDefaults();
+        break;
+    case JsonStore::LoadResult::Empty:
+        m_data.seedDefaults(); // genuinely a first run: seeding is correct
+        break;
+    case JsonStore::LoadResult::TooNew:
+    case JsonStore::LoadResult::Unreadable:
+        // Seed NOTHING. An empty planner here is indistinguishable, to the
+        // autosave, from a planner the user just emptied. The store has
+        // latched read-only, so this window cannot write; main() refuses to
+        // show it at all.
+        m_plannerRefused = true;
+        break;
+    }
 
     // ---- chrome: header, left nav, page stack ------------------------------
     auto* central = new QWidget(this);
@@ -468,11 +485,14 @@ MainWindow::MainWindow(const QString& username)
 
     setupNotifications();
 
-    // Recurring blocks roll forward HERE (v19.10) — at startup, and again
-    // at each midnight for sessions that outlive the day. The roll is a
-    // domain door (AppData::rollRepeats); MainWindow only owns the
-    // CALENDAR of when to knock, the same division as the alarm service.
-    m_data.rollRepeats(QDate::currentDate());
+    // Schedules materialise HERE (v31; was rollRepeats, v19.10) — at
+    // startup, and again at each midnight for sessions that outlive the
+    // day. The work is a domain door (AppData::syncSchedules); MainWindow
+    // only owns the CALENDAR of when to knock, the same division as the
+    // alarm service. What changed underneath is the reach: the old call
+    // advanced ONE occurrence per repeating block, this one fills the next
+    // 120 days, so a term's timetable is visible end to end.
+    m_data.syncSchedules(QDate::currentDate());
     // Lapsed dismissals get tidied on the same knocks (needs-a-block §C).
     // Housekeeping, not correctness: the flag rule compares dismissedUntil
     // against `now` itself, so nothing depends on this having run — it
@@ -488,7 +508,7 @@ MainWindow::MainWindow(const QString& username)
         QTimer::singleShot(
             QDateTime::currentDateTime().msecsTo(nextMidnight), this,
             [this, self]() {
-                m_data.rollRepeats(QDate::currentDate());
+                m_data.syncSchedules(QDate::currentDate());
                 m_data.expireDismissals(QDateTime::currentDateTime());
     m_data.trimMoods(QDate::currentDate(),
                      checkin::Rule().retentionDays); // §G.2: forgetting is
@@ -1668,6 +1688,11 @@ void MainWindow::beginOffline(const QString& serverUrl)
         m_reconnectClient->resumeSession(session::deviceToken(m_username));
     });
     m_reconnect->start();
+}
+
+QString MainWindow::plannerError() const
+{
+    return m_store.errorMessage();
 }
 
 void MainWindow::enableSync(const QString& serverUrl, const QString& token)

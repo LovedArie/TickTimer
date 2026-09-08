@@ -113,6 +113,44 @@ TaskDetailForm::TaskDetailForm(const QString& title,
     m_repeat->setCurrentIndex(static_cast<int>(repeat));
     layout->addWidget(m_repeat);
 
+    // ---- when the repeat stops (v31) ---------------------------------------
+    // Reported as "the repeat does not work", and the missing half was
+    // partly this: a rule with no end is a rule you cannot use for a term.
+    // "Repeat this from August 1st to January 1st" needs both dates, and
+    // the first one is already the due date, so only the second was absent.
+    //
+    // Both controls hide when the repeat is None. A disabled control says
+    // "not now"; an absent one says "this question does not apply", and for
+    // a task that does not repeat the question genuinely does not.
+    auto* untilRow = new QHBoxLayout;
+    untilRow->setSpacing(8);
+    m_repeatForever = new QCheckBox(tr("Forever"), this);
+    m_repeatForever->setObjectName(QStringLiteral("repeatForeverCheck"));
+    m_repeatForever->setChecked(true);
+    m_repeatUntil = new QDateEdit(this);
+    m_repeatUntil->setObjectName(QStringLiteral("repeatUntilDate"));
+    m_repeatUntil->setCalendarPopup(true);
+    m_repeatUntil->setDisplayFormat(QStringLiteral("MMM d, yyyy"));
+    m_repeatUntil->setDate(QDate::currentDate().addMonths(4));
+    m_repeatUntil->setEnabled(false);
+    untilRow->addWidget(new QLabel(tr("until"), this));
+    untilRow->addWidget(m_repeatUntil);
+    untilRow->addWidget(m_repeatForever);
+    untilRow->addStretch(1);
+    layout->addLayout(untilRow);
+
+    const auto syncRepeatUntil = [this, untilRow]() {
+        const bool repeats = m_repeat->currentIndex()
+                             != static_cast<int>(Task::Repeat::None);
+        for (int i = 0; i < untilRow->count(); ++i)
+            if (QWidget* w = untilRow->itemAt(i)->widget())
+                w->setVisible(repeats);
+        m_repeatUntil->setEnabled(repeats && !m_repeatForever->isChecked());
+    };
+    connect(m_repeat, &QComboBox::currentIndexChanged, this, syncRepeatUntil);
+    connect(m_repeatForever, &QCheckBox::toggled, this, syncRepeatUntil);
+    syncRepeatUntil();
+
     // ---- priority (v7) ------------------------------------------------------
     // Same combo-index-equals-enum-value trick as repeat.
     layout->addSpacing(4);
@@ -366,6 +404,27 @@ void TaskDetailForm::commitNewPiece()
 }
 
 // ---- answers ---------------------------------------------------------------
+
+void TaskDetailForm::seedRepeatUntil(QDate until)
+{
+    m_repeatForever->setChecked(!until.isValid());
+    if (until.isValid())
+        m_repeatUntil->setDate(until);
+    m_repeatUntil->setEnabled(
+        until.isValid()
+        && m_repeat->currentIndex() != static_cast<int>(Task::Repeat::None));
+}
+
+QDate TaskDetailForm::chosenRepeatUntil() const
+{
+    // Two ways of saying "forever", collapsed into the one the domain
+    // understands: an invalid QDate. A non-repeating task reports forever
+    // too, so the pairing rule (no rule, no end) cannot be broken from here
+    // even before AppData enforces it.
+    if (m_repeat->currentIndex() == static_cast<int>(Task::Repeat::None))
+        return {};
+    return m_repeatForever->isChecked() ? QDate() : m_repeatUntil->date();
+}
 
 QString TaskDetailForm::chosenTitle() const { return m_title->text(); }
 

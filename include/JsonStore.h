@@ -39,6 +39,12 @@ public:
     // global path when username is empty (e.g. tests, or a build with login
     // disabled), so nothing that constructs a store without a user breaks.
     static QString filePathForUser(const QString& username);
+    // v31.2 — where the SYNC BASE lives: the document as both sides last
+    // agreed it was. A sibling of the data file rather than a QSettings
+    // value, because it is a whole planner (219 KB for the owner) and the
+    // registry is no place for that. Its absence is safe by construction —
+    // merge::plan with no base keeps everything (see Merge.h).
+    static QString basePathForUser(const QString& username);
 
     // One-time bridge for the TimeFocusTracker -> TickTimer rename.
     // applicationName decides the data folder, so the rename alone would
@@ -62,12 +68,51 @@ public:
 
     const QString& filePath() const { return m_filePath; }
 
-    // true  = data was loaded from an existing file
-    // false = no file yet (first run — caller should seed defaults) or the
-    //         file was unreadable (errorMessage() says which).
-    bool load(AppData& data);
+    // THE FORMAT FLOOR (v31, design-addendum-format-floor.md).
+    //
+    // The version this binary WRITES, and — the point of naming it — the
+    // highest it is willing to READ. One constant for both, so the two can
+    // never drift apart the way a literal in the writer and a literal in a
+    // guard eventually would.
+    //
+    // "Additive growth" (CLAUDE.md) means a NEW binary reads an OLD file
+    // safely: an unknown key reads as a default. Run that tolerance the other
+    // way and it turns lethal — an OLD binary reads a NEW file just as
+    // quietly, drops every key it has never heard of, and writes the wreckage
+    // back. That is not hypothetical: v30.8.1 did exactly this to a format-16
+    // planner and destroyed 5 schedules and 73 Event.scheduleId links without
+    // one error message. A tolerant reader must not also be a confident
+    // writer.
+    static constexpr int kFormatVersion = 16;
 
+    // What a load actually found. This was a bool, and the bool was a trap:
+    // `false` meant BOTH "no file yet" and "could not read it", and the one
+    // caller answered both with seedDefaults() — so any new failure reported
+    // through it would seed starter categories and let the next autosave
+    // write them over a planner it merely failed to understand. A total loss
+    // where the bug being fixed managed only a partial one. Four states, so
+    // the compiler makes every call site say which one it means.
+    enum class LoadResult {
+        Loaded,     // a file existed and its contents are now in `data`
+        Empty,      // no file yet — first run; the caller should seed
+        Unreadable, // a file exists but would not parse; see errorMessage()
+        TooNew,     // written by a NEWER TickTimer. Nothing was applied, and
+                    // this store is now isReadOnly() — see save().
+    };
+
+    LoadResult load(AppData& data);
+
+    // True once a TooNew load has latched. Belt and braces: the refusal in
+    // load() is the guard, and this is what holds if a caller ignores it.
+    bool isReadOnly() const { return m_readOnly; }
+
+    // Refuses (returning false, errorMessage() set) while isReadOnly(). The
+    // file a binary could not understand is the one file it must not replace.
     bool save(const AppData& data);
+
+    // The `version` a document declares, or 0 when it declares none (which
+    // every pre-v2 file does, and which is not an error).
+    static int formatVersionOf(const QJsonObject& root);
 
     // ---- sync hooks (design-addendum-sync) --------------------------------
     // The SAME conversion that feeds the disk feeds the wire. load/save are
@@ -77,12 +122,23 @@ public:
     static QJsonObject toJsonObject(const AppData& data);
     // announceChange: false at startup (no listeners yet — resetFrom),
     // true when applying a sync pull (replaceAll: every screen rebuilds).
-    static bool applyJsonObject(AppData& data, const QJsonObject& root,
-                                bool announceChange);
+    //
+    // Returns FALSE and touches nothing when the document declares a format
+    // above kFormatVersion. The check lives here rather than in load()
+    // because this function is the single conversion feeding both the disk
+    // and the wire (see above), so one guard closes all three doors: the
+    // file, a pulled sync document, and a peer's planner in Compare. A
+    // too-new document arriving down the wire is the same hazard with better
+    // aim. Every caller must check.
+    [[nodiscard]] static bool applyJsonObject(AppData& data,
+                                              const QJsonObject& root,
+                                              bool announceChange);
 
     QString errorMessage() const { return m_error; }
 
 private:
     QString m_filePath;
     QString m_error;
+    bool    m_readOnly = false; // latched by a TooNew load; never cleared,
+                                // because the file does not get younger
 };

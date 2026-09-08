@@ -84,7 +84,7 @@ TaskRow::TaskRow(AppData* data, const Task& task, bool showCategoryDot,
     QLabel* repeatChip = nullptr;
     if (task.repeat != Task::Repeat::None) {
         repeatChip = new QLabel(
-            QStringLiteral("\u27F3 %1").arg(repeatLabel(task.repeat)), this);
+            repeatChip(task.repeat), this);
         repeatChip->setStyleSheet(
             "background:#EEF0ED; border-radius:8px; padding:3px 8px; "
             "color:#616974; font-size:11px;");

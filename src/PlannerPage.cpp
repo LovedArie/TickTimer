@@ -842,7 +842,7 @@ void PlannerPage::rebuildDueStrip()
         }
         if (task->repeat != Task::Repeat::None) {
             auto* chip = new QLabel(
-                QStringLiteral("\u27F3 %1").arg(repeatLabel(task->repeat)), rowW);
+                repeatChip(task->repeat), rowW);
             chip->setStyleSheet(
                 "background:#FFFFFF; border-radius:8px; padding:2px 7px; "
                 "color:#616974; font-size:11px;");

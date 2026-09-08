@@ -35,6 +35,7 @@
 // ---------------------------------------------------------------------------
 
 #include "AppData.h"
+#include "DayLayout.h" // daylay::busyMinutes - blocks may overlap (v31.3)
 #include "Event.h"
 #include "Task.h"
 
@@ -278,9 +279,18 @@ inline Report affordability(const AppData& data, const Task& task,
     r.distinctDaysWorked = workedDays.size();
 
     // ---- free daytime between now and the deadline ------------------------
-    // Busy minutes are a plain sum because AppData's isFree gate guarantees
-    // blocks never overlap — the domain invariant is what makes this loop
-    // exact rather than an estimate.
+    // Busy minutes are the UNION of the day's blocks, not their sum.
+    //
+    // This was a plain sum until v31.3, and the comment here said why: "the
+    // isFree gate guarantees blocks never overlap — the domain invariant is
+    // what makes this loop exact rather than an estimate." That was true, and
+    // it stopped being true the moment up to three blocks could cover one
+    // instant. A sum then counts a stacked hour twice and reports LESS free
+    // time than exists — with no error, on a number people plan against,
+    // which is the worst shape a wrong answer can take.
+    //
+    // The union is daylay::busyMinutes, shared with Reschedule's gap walk so
+    // there is one answer to "how much of this window is spoken for".
     if (r.daysLeft >= 0) {
         for (QDate d = today; d <= task.dueDate; d = d.addDays(1)) {
             int winStart = rule.dayStartMin;
@@ -292,13 +302,16 @@ inline Report affordability(const AppData& data, const Task& task,
                                           + task.dueTime.minute());
             if (winEnd <= winStart)
                 continue;
-            int busy = 0;
+            QVector<QPair<int, int>> spans;
             for (const Event& e : data.events()) {
                 if (e.date != d)
                     continue;
-                busy += qMax(0, qMin(winEnd, e.plannedEndMinutes)
-                                    - qMax(winStart, e.plannedStartMinutes));
+                const int s = qMax(winStart, e.plannedStartMinutes);
+                const int t = qMin(winEnd, e.plannedEndMinutes);
+                if (s < t)
+                    spans.append({s, t});
             }
+            const int busy = daylay::busyMinutes(spans);
             r.minutesFreeAhead += qMax(0, (winEnd - winStart) - busy);
         }
     }

@@ -1,9 +1,13 @@
 #include "AppData.h"
 
+#include "Recurrence.h" // recur::occurrences -- the pure brain this drives
+#include "DayLayout.h" // daylay:: -- concurrency, and the refusal sentence
+
 #include "Ids.h"
 
 #include <algorithm> // std::sort, std::remove_if — the STL, not hand-rolled loops
 #include <QHash>     // the bounded-scan bucket in tasksNeedingBlock
+#include <QSet>      // syncSchedules's "what already exists" index
 
 AppData::AppData(QObject* parent)
     : QObject(parent)
@@ -122,10 +126,26 @@ QVector<const Task*> AppData::tasksIn(const QString& categoryId) const
         if (task.categoryId == categoryId && !task.isPiece()) // parents only
             result.append(&task);
 
+    const Category* category = categoryById(categoryId);
+    const bool manual =
+        category && category->sortMode == Category::SortMode::Manual;
+
     std::sort(result.begin(), result.end(),
-              [](const Task* a, const Task* b) {
+              [manual](const Task* a, const Task* b) {
+                  // DONE SINKS IN BOTH MODES, and this is the one place the
+                  // manual order is overruled. "Manual" is a claim about the
+                  // order of the work you still have to do; a finished task
+                  // holding third place is not an arrangement anyone chose,
+                  // it is where the task happened to be when it was ticked.
                   if (a->done != b->done)
                       return !a->done;              // open before finished
+                  if (manual) {
+                      if (a->sortKey != b->sortKey)
+                          return a->sortKey < b->sortKey;
+                      // Ties can only happen before the first renumber (every
+                      // key is 0). Fall through to the smart sort so a list
+                      // that has never been dragged still reads sensibly.
+                  }
                   const bool aDated = a->dueDate.isValid();
                   const bool bDated = b->dueDate.isValid();
                   if (aDated != bDated)
@@ -134,6 +154,32 @@ QVector<const Task*> AppData::tasksIn(const QString& categoryId) const
                       return a->dueDate < b->dueDate; // most urgent first
                   return a->title.localeAwareCompare(b->title) < 0;
               });
+    return result;
+}
+
+QVector<const Activity*> AppData::activitiesIn(const QString& categoryId) const
+{
+    QVector<const Activity*> result;
+    for (const Activity& a : m_activities)
+        if (a.categoryId == categoryId && !a.archived)
+            result.append(&a);
+
+    // No mode question here: activities have no deadline, no done-state and
+    // no priority, so there was never a "smart" order to choose between —
+    // only the accident of insertion order, which this replaces with an
+    // order the user can actually set.
+    //
+    // STABLE_SORT, and the stability is the whole point rather than a
+    // detail. Every activity written before v31 loads with sortKey 0, so on
+    // the first launch after upgrade the comparator finds every pair equal —
+    // and a stable sort leaves equal elements in their original order, which
+    // here is m_activities order, which is exactly the list the user saw
+    // yesterday. A plain sort is free to permute them, and the user would
+    // meet a silently reshuffled list they never asked to reshuffle.
+    std::stable_sort(result.begin(), result.end(),
+                     [](const Activity* a, const Activity* b) {
+                         return a->sortKey < b->sortKey;
+                     });
     return result;
 }
 
@@ -222,9 +268,28 @@ int AppData::eventCountUsing(const QString& activityId) const
     return n;
 }
 
+QString AppData::whyNoRoomFor(QDate date, int startMin, int endMin,
+                              const QString& ignoreEventId) const
+{
+    // The whole judgement is daylay::problemWith. This method exists to
+    // gather the day and hand it over — the aggregate root owns the data,
+    // the pure function owns the rule, and the screens quote the same
+    // sentence the domain refused with.
+    return daylay::problemWith(eventsOn(date), startMin, endMin,
+                               ignoreEventId);
+}
+
+bool AppData::hasRoomFor(QDate date, int startMin, int endMin,
+                         const QString& ignoreEventId) const
+{
+    return whyNoRoomFor(date, startMin, endMin, ignoreEventId).isEmpty();
+}
+
 bool AppData::isFree(QDate date, int startMin, int endMin,
                      const QString& ignoreEventId) const
 {
+    // Unchanged since v1, and deliberately so - see the header for why this
+    // survived the v31.3 capacity change rather than being folded into it.
     if (startMin < plan::kDayStartMinutes || endMin > plan::kDayEndMinutes
         || startMin >= endMin)
         return false;
@@ -308,6 +373,11 @@ QString AppData::addActivity(const QString& name, const QString& categoryId)
     a.id         = ids::newId();
     a.name       = name.trimmed();
     a.categoryId = categoryId;
+    // Born at the END of its area's list. Without this every new activity
+    // would share key 0 with the row the user dragged to the top and land
+    // second — a new thing jumping into the middle of an order somebody
+    // arranged on purpose.
+    a.sortKey    = nextActivitySortKey(categoryId);
     m_activities.append(a);
 
     notifyChanged();
@@ -332,6 +402,163 @@ bool AppData::removeActivity(const QString& id)
     return true;
 }
 
+bool AppData::renameActivity(const QString& id, const QString& name)
+{
+    Activity* a = findById(m_activities, id);
+    // Same guard addActivity applies at birth: a blank name is not a name.
+    // Refusing is kinder than storing "" — an unnamed row in every picker
+    // would be a bug the user could not undo without deleting the activity,
+    // which is exactly the trap this method exists to open.
+    if (!a || name.trimmed().isEmpty())
+        return false;
+    if (a->name == name.trimmed())
+        return true; // idempotent — no changed() storm
+    a->name = name.trimmed();
+    notifyChanged();
+    return true;
+}
+
+// ---- hand ordering (v31) ---------------------------------------------------
+//
+// The two move doors below are the same six steps twice, and the steps are
+// worth naming because the ORDER of them is the design:
+//
+//   1. take the list the user is currently looking at, in that order;
+//   2. lift the moved item out of it;
+//   3. drop it back in front of its new neighbour (or at the end);
+//   4. renumber every key densely, 0..n-1;
+//   5. (tasks only) flip the area to Manual;
+//   6. one changed().
+//
+// Step 1 is what makes the FIRST drag behave. Seeding from the current
+// display means the smart order becomes the manual order, so exactly one row
+// moves and the rest stay put. Seeding from the stored keys instead — all of
+// them 0 before the first drag — would renumber an arbitrary order and
+// scatter the list the moment you touched it.
+//
+// Dense renumbering (rather than the "insert at the midpoint of two floats"
+// trick real editors use) is the right call at this size: a life area holds
+// tens of rows, one pass costs nothing, and integers that are always
+// 0..n-1 cannot drift into the pathological state where every gap is used up
+// and a reorder silently does nothing.
+
+int AppData::nextTaskSortKey(const QString& categoryId) const
+{
+    int next = 0;
+    for (const Task& t : m_tasks)
+        if (t.categoryId == categoryId && !t.isPiece())
+            next = qMax(next, t.sortKey + 1);
+    return next;
+}
+
+int AppData::nextActivitySortKey(const QString& categoryId) const
+{
+    int next = 0;
+    for (const Activity& a : m_activities)
+        if (a.categoryId == categoryId)
+            next = qMax(next, a.sortKey + 1);
+    return next;
+}
+
+bool AppData::setCategorySortMode(const QString& id, Category::SortMode mode)
+{
+    Category* c = findById(m_categories, id);
+    if (!c)
+        return false;
+    if (c->sortMode == mode)
+        return true;
+    c->sortMode = mode;
+    // Switching back to Smart deliberately LEAVES the keys alone. They cost
+    // nothing unread, and keeping them means a user who flips to Smart to
+    // check a deadline and flips back finds their arrangement intact rather
+    // than erased by a glance.
+    notifyChanged();
+    return true;
+}
+
+bool AppData::moveTaskBefore(const QString& taskId, const QString& beforeId)
+{
+    const Task* moved = taskById(taskId);
+    // Pieces are excluded because they are not in this list at all: tasksIn
+    // is parents-only, so a piece has no position here to move. Their order
+    // is subtasksOf's insertion order, a separate list with its own rules.
+    if (!moved || moved->isPiece() || taskId == beforeId)
+        return false;
+
+    const QString categoryId = moved->categoryId;
+    QStringList order;
+    for (const Task* t : tasksIn(categoryId)) // step 1: as displayed
+        order << t->id;
+    if (!order.contains(taskId))
+        return false;
+    // A neighbour from another life area is not a position in this one.
+    if (!beforeId.isEmpty() && !order.contains(beforeId))
+        return false;
+
+    order.removeAll(taskId);                                   // step 2
+    const int at = beforeId.isEmpty() ? order.size()           // step 3
+                                      : order.indexOf(beforeId);
+    order.insert(at, taskId);
+
+    for (int i = 0; i < order.size(); ++i)                     // step 4
+        if (Task* t = findById(m_tasks, order[i]))
+            t->sortKey = i;
+
+    if (Category* c = findById(m_categories, categoryId))      // step 5
+        c->sortMode = Category::SortMode::Manual;
+
+    notifyChanged();                                           // step 6
+    return true;
+}
+
+bool AppData::moveActivityBefore(const QString& activityId,
+                                 const QString& beforeId)
+{
+    const Activity* moved = activityById(activityId);
+    if (!moved || activityId == beforeId)
+        return false;
+
+    const QString categoryId = moved->categoryId;
+    QStringList order;
+    for (const Activity* a : activitiesIn(categoryId))
+        order << a->id;
+    if (!order.contains(activityId))
+        return false; // archived: not in the list, so not movable within it
+    if (!beforeId.isEmpty() && !order.contains(beforeId))
+        return false;
+
+    order.removeAll(activityId);
+    const int at = beforeId.isEmpty() ? order.size()
+                                      : order.indexOf(beforeId);
+    order.insert(at, activityId);
+
+    for (int i = 0; i < order.size(); ++i)
+        if (Activity* a = findById(m_activities, order[i]))
+            a->sortKey = i;
+
+    // NO step 5: activities are always in manual order (see activitiesIn),
+    // so there is no mode to flip. The asymmetry with tasks is real and it
+    // is the reason SortMode lives on Category rather than being a global
+    // "ordering" setting that would have to pretend to govern both.
+    notifyChanged();
+    return true;
+}
+
+bool AppData::setActivityDescription(const QString& id, const QString& text)
+{
+    Activity* a = findById(m_activities, id);
+    if (!a)
+        return false;
+    // NO trim-to-refuse here, and the asymmetry with renameActivity above is
+    // deliberate: empty IS a legal description (it is the default), while
+    // empty is never a legal name.
+    if (a->description == text)
+        return true;
+    a->description = text;
+    notifyChanged();
+    return true;
+}
+
 // The shared tail of all three creation doors: the time-range rules live
 // HERE, once. The doors above it differ only in which identity they verify —
 // so a fourth identity kind someday is one new door, zero touched rules.
@@ -343,7 +570,7 @@ QString AppData::appendGuardedEvent(QDate date, int startMin, int endMin,
 {
     // UC1 extension 3a: "the chosen time is already occupied → System
     // declines and indicates the conflict." The decline happens here.
-    if (!date.isValid() || !isFree(date, startMin, endMin))
+    if (!date.isValid() || !hasRoomFor(date, startMin, endMin))
         return {};
 
     Event e;
@@ -457,12 +684,13 @@ QString AppData::rescheduleBlockSplit(const QString& id,
 
     // ---- validate EVERYTHING before touching anything ----------------------
     // Two checks per span: free against the calendar, and free against its
-    // SIBLINGS. isFree can't see the siblings (they don't exist yet), so the
+    // SIBLINGS. hasRoomFor cannot see the siblings (they do not exist yet),
+    // so the
     // pairwise check is done here — miss it and two proposed pieces on the
     // same afternoon would pass isFree individually and collide on append.
     for (int i = 0; i < spans.size(); ++i) {
         const BlockSpan& a = spans.at(i);
-        if (!a.date.isValid() || !isFree(a.date, a.startMin, a.endMin))
+        if (!a.date.isValid() || !hasRoomFor(a.date, a.startMin, a.endMin))
             return {};
         for (int j = i + 1; j < spans.size(); ++j) {
             const BlockSpan& b = spans.at(j);
@@ -599,7 +827,8 @@ bool AppData::moveEvent(const QString& id, int newStartMin)
         return false;
 
     const int duration = e->plannedEndMinutes - e->plannedStartMinutes;
-    if (!isFree(e->date, newStartMin, newStartMin + duration, /*ignore=*/id))
+    if (!hasRoomFor(e->date, newStartMin, newStartMin + duration,
+                    /*ignore=*/id))
         return false;
 
     // UC1 extension *a: moving reschedules the PLAN only — the tracked
@@ -619,7 +848,7 @@ bool AppData::resizeEvent(const QString& id, int newStartMin, int newEndMin)
         return false;
 
     // A block must stay at least one slot tall — you can't shrink an event
-    // into nothing. (isFree already rejects start >= end, but this is the
+    // into nothing. (hasRoomFor already rejects start >= end, but this is the
     // stricter, meaningful floor for a resize.)
     if (newEndMin - newStartMin < plan::kSlotMinutes)
         return false;
@@ -627,7 +856,7 @@ bool AppData::resizeEvent(const QString& id, int newStartMin, int newEndMin)
     // The SAME guard creation and moving use: in-bounds, ordered, and not
     // overlapping any OTHER event (this one excluded by id). One rule, one
     // door — the resize can't invent a way around it.
-    if (!isFree(e->date, newStartMin, newEndMin, /*ignore=*/id))
+    if (!hasRoomFor(e->date, newStartMin, newEndMin, /*ignore=*/id))
         return false;
 
     // The plan changes; the tracked Segments stay put — what happened is a
@@ -728,6 +957,18 @@ QString AppData::eventCategoryId(const Event& e) const
 
 bool AppData::removeEvent(const QString& id)
 {
+    // v31 -- deleting a scheduled occurrence means "not this week", not
+    // "delete the rule". Read the link BEFORE the erase below, because the
+    // Event is about to stop existing. Recording it here, at the one door
+    // every deletion goes through, is what lets the agenda delete a lecture
+    // without knowing that schedules exist at all.
+    QString scheduleId;
+    QDate   occurrenceDate;
+    if (const Event* doomed = eventById(id)) {
+        scheduleId     = doomed->scheduleId;
+        occurrenceDate = doomed->date;
+    }
+
     // Composition pays off: erasing the Event destroys its QVector<Segment>
     // with it. No manual cleanup, no leak possible. That's RAII.
     const int before = m_events.size();
@@ -743,6 +984,11 @@ bool AppData::removeEvent(const QString& id)
     // block would point at a ghost — clear it.
     if (m_running && m_running->eventId == id)
         m_running.reset();
+
+    if (!scheduleId.isEmpty()) {
+        Batch batch(*this); // the skip and the removal are one user action
+        skipOccurrence(scheduleId, occurrenceDate);
+    }
 
     notifyChanged();
     return true;
@@ -788,6 +1034,10 @@ QString AppData::addTask(const QString& title, const QString& categoryId,
     // cannot exist. (Make illegal states unrepresentable; when the type
     // system can't, the door does it.)
     task.dueTime    = dueDate.isValid() ? dueTime : QTime();
+    // Born last in its area, for the same reason a new activity is (v31):
+    // an area someone has hand-ordered should not have new arrivals landing
+    // in the middle of it. Costs nothing while the area is still Smart.
+    task.sortKey    = nextTaskSortKey(categoryId);
     m_tasks.append(task);
 
     notifyChanged();
@@ -815,12 +1065,33 @@ QVector<const Category*> AppData::archivedCategories() const
     return result;
 }
 
+QVector<const Folder*> AppData::archivedFolders() const
+{
+    QVector<const Folder*> result;
+    for (const Folder& f : m_folders)
+        if (f.archived)
+            result.append(&f);
+    return result;
+}
+
+bool AppData::categoryHidden(const Category& c) const
+{
+    if (c.archived)
+        return true;
+    const Folder* f = folderById(c.folderId); // "" -> nullptr, top level
+    return f && f->archived;
+}
+
 bool AppData::taskHidden(const Task& t) const
 {
     if (t.archived)
         return true;
     const Category* c = categoryById(t.categoryId);
-    return c && c->archived; // an archived life area hides its whole world
+    // An archived life area hides its whole world — and since v31 an
+    // archived FOLDER archives the areas inside it for viewing purposes,
+    // so this one call now carries two levels of cascade instead of one.
+    // Note what did NOT change: still one place that answers the question.
+    return c && categoryHidden(*c);
 }
 
 bool AppData::setActivityArchived(const QString& id, bool archived)
@@ -999,21 +1270,31 @@ bool AppData::setTaskDone(const QString& id, bool done)
     // never double-spawn (the second completion finds no rule), and the
     // Archive doesn't fill with chips claiming finished tasks still
     // repeat.
+    // v31: ...and the chain now has an end. The comparison is against the
+    // NEXT date, not today, so when you tick the box cannot change whether
+    // the rule is over — see Task::repeatUntil.
+    const QDate nextDue = task->dueDate.isValid()
+                              ? nextOccurrence(task->dueDate, task->repeat)
+                              : QDate();
+    const bool pastTheEnd = task->repeatUntil.isValid()
+                            && nextDue.isValid()
+                            && nextDue > task->repeatUntil;
     if (done && task->repeat != Task::Repeat::None
-        && task->dueDate.isValid()) {
+        && task->dueDate.isValid() && !pastTheEnd) {
         Task next;
         next.id          = ids::newId();
         next.title       = task->title;
         next.categoryId  = task->categoryId;
         next.description = task->description;
         next.priority    = task->priority;
-        next.dueDate     = nextOccurrence(task->dueDate, task->repeat);
+        next.dueDate     = nextDue;
         // The clock rides along with the calendar: a bill due "the 1st at
         // 09:00" repeats at 09:00, not "sometime that day". The time is part
         // of the habit, so the chain carries it forward like every other
         // field above.
         next.dueTime     = task->dueTime;
         next.repeat      = task->repeat;
+        next.repeatUntil = task->repeatUntil; // the end rides with the rule
         // v28.3: the chain carries the NEW facts too. A repeating piece
         // stays a piece (its next occurrence is still "get Marc's section",
         // still under the same parent — spawning it to the top level would
@@ -1023,6 +1304,11 @@ bool AppData::setTaskDone(const QString& id, bool done)
         next.parentId        = task->parentId;
         next.estimateMinutes = task->estimateMinutes;
         next.chunkable       = task->chunkable;
+        // v31: and its PLACE rides along too. A weekly routine that has been
+        // hand-ordered ("stretch, then run, then shower") would otherwise
+        // rebuild itself at key 0 every cycle and collapse to the top of the
+        // list in whatever order the ticks happened.
+        next.sortKey         = task->sortKey;
         task->repeat     = Task::Repeat::None;
         m_tasks.append(next); // task* may dangle past this line — done above
     }
@@ -1194,74 +1480,239 @@ coverage::Reason AppData::taskUncoveredReason(const QString& id,
     return coverage::uncoveredReason(*task, dates, today);
 }
 
-bool AppData::setEventRepeat(const QString& id, Task::Repeat repeat)
+// ---- schedules (v31) -------------------------------------------------------
+//
+// What replaced rollRepeats. The old function WAS the rule and the
+// occurrence at once: it walked events, found the one carrying a repeat,
+// spawned its successor and moved the rule onto it. Everything below is the
+// same job with the rule pulled out into a thing of its own -- which is what
+// makes "show me every Tuesday until December" expressible at all.
+
+const Schedule* AppData::scheduleById(const QString& id) const
 {
-    Event* e = mutableEventById(id);
-    if (!e)
+    return findById(m_schedules, id);
+}
+
+QVector<const Schedule*> AppData::schedulesFor(const QString& activityId) const
+{
+    QVector<const Schedule*> out;
+    if (activityId.isEmpty())
+        return out; // "" means ad-hoc, which is not an activity to group by
+    for (const Schedule& s : m_schedules)
+        if (s.activityId == activityId)
+            out.append(&s);
+    std::sort(out.begin(), out.end(), [](const Schedule* a, const Schedule* b) {
+        if (a->startDate != b->startDate)
+            return a->startDate < b->startDate;
+        return a->startMinutes < b->startMinutes;
+    });
+    return out;
+}
+
+// The birth rules, in one place, so add and update cannot disagree about
+// what a legal rule is. Every one of them is the kind of thing a struct
+// cannot defend on its own, which is exactly why they live in the root.
+bool AppData::scheduleIsWellFormed(const Schedule& s) const
+{
+    // The rule-shaped half of the question lives in Recurrence.h, PURE and
+    // shared, so the editor can refuse with the same definition and quote
+    // the reason. Before v31.1 this method was the only judge and it spoke
+    // only in bool — the dialog validated nothing, so an illegal rule closed
+    // the dialog and vanished without a word.
+    if (!recur::problemWith(s).isEmpty())
         return false;
-    if (e->repeat == repeat)
-        return true;
-    e->repeat = repeat;
+    // The half that needs the whole data set: a reference must not be born
+    // broken. Identity SHAPE (has an activity or a title) is checked above;
+    // whether the activity still exists can only be answered here.
+    return s.activityId.isEmpty() || activityById(s.activityId) != nullptr;
+}
+
+QString AppData::addSchedule(const Schedule& in)
+{
+    if (!scheduleIsWellFormed(in))
+        return {};
+    Schedule s = in;
+    s.id    = ids::newId(); // assigned here; any incoming id is ignored
+    s.title = s.title.trimmed();
+    m_schedules.append(s);
+    notifyChanged();
+    return s.id;
+}
+
+bool AppData::updateSchedule(const Schedule& in, QDate today)
+{
+    Schedule* existing = findById(m_schedules, in.id);
+    if (!existing || !scheduleIsWellFormed(in))
+        return false;
+
+    // Editing the rule must not rewrite history. Only FUTURE occurrences
+    // that nobody has touched are withdrawn and remade; anything with real
+    // time in it, or a decision already recorded against it, stays exactly
+    // as it is. "The time you already spent belongs to the day you spent
+    // it" -- the same sentence rescheduleBlock lives by.
+    Batch batch(*this); // withdraw + regenerate must look like one change
+    const QString id = existing->id;
+    const QStringList keptSkips = existing->skipDates;
+    *existing = in;
+    existing->id        = id;
+    existing->title     = existing->title.trimmed();
+    existing->skipDates = keptSkips; // a time change is not an un-delete
+
+    dropUntouchedFutureOccurrences(id, today);
+    syncSchedules(today);
+    return true;
+}
+
+bool AppData::removeSchedule(const QString& id, QDate today)
+{
+    if (!scheduleById(id))
+        return false;
+
+    Batch batch(*this);
+    dropUntouchedFutureOccurrences(id, today);
+    // The survivors are DOWNGRADED, not deleted: a past lecture you actually
+    // sat through is history, and history does not evaporate because you
+    // removed the rule that predicted it. Third time this codebase reaches
+    // for downgrade instead of refuse-or-cascade (removeTask was the first).
+    for (Event& e : m_events)
+        if (e.scheduleId == id)
+            e.scheduleId.clear();
+
+    m_schedules.erase(
+        std::remove_if(m_schedules.begin(), m_schedules.end(),
+                       [&](const Schedule& s) { return s.id == id; }),
+        m_schedules.end());
     notifyChanged();
     return true;
 }
 
-int AppData::rollRepeats(QDate today)
+bool AppData::skipOccurrence(const QString& scheduleId, QDate date)
 {
-    // Collect first, mutate after: appendGuardedEvent grows m_events, and
-    // growing a vector mid-iteration is the classic invalidated-iterator
-    // trap. Ids are stable; pointers are not.
-    QVector<QString> dueIds;
-    for (const Event& e : m_events)
-        if (e.repeat != Task::Repeat::None && e.date < today)
-            dueIds.append(e.id);
+    Schedule* s = findById(m_schedules, scheduleId);
+    if (!s || !date.isValid())
+        return false;
+    const QString iso = date.toString(Qt::ISODate);
+    if (s->skipDates.contains(iso))
+        return true;
+    s->skipDates.append(iso);
+    notifyChanged();
+    return true;
+}
 
-    int spawned = 0;
-    for (const QString& id : dueIds) {
-        Event* old = mutableEventById(id);
-        if (!old)
-            continue;
+bool AppData::adoptEventIntoSchedule(const QString& eventId,
+                                     const QString& scheduleId)
+{
+    Event* e = mutableEventById(eventId);
+    const Schedule* s = scheduleById(scheduleId);
+    if (!e || !s)
+        return false;
+    if (!e->scheduleId.isEmpty() && e->scheduleId != scheduleId)
+        return false; // already owned; one occurrence, one owner
+    if (e->scheduleId == scheduleId)
+        return true;
+    e->scheduleId = scheduleId;
+    notifyChanged();
+    return true;
+}
 
-        // March the rule forward to the first candidate >= today, then
-        // keep marching past occupied dates (up to a year — beyond that,
-        // leave the rule on the old block and let tomorrow retry rather
-        // than silently killing the chain).
-        QDate target = nextOccurrence(old->date, old->repeat);
-        while (target.isValid() && target < today)
-            target = nextOccurrence(target, old->repeat);
-        int guard = 366;
-        while (target.isValid() && guard-- > 0
-               && !isFree(target, old->plannedStartMinutes,
-                          old->plannedEndMinutes))
-            target = nextOccurrence(target, old->repeat);
-        if (!target.isValid() || guard <= 0)
-            continue;
+// "Untouched" is the whole safety property of a schedule edit, so it is one
+// named predicate rather than a condition spelled out at three call sites.
+// A block is untouched when nothing has happened TO it: no tracked time, no
+// catch-up verdict, and it is not the block currently being timed.
+bool AppData::occurrenceIsUntouched(const Event& e) const
+{
+    if (!e.segments.isEmpty())
+        return false;
+    if (e.outcome != BlockOutcome::Unset)
+        return false;
+    return !(m_running && m_running->eventId == e.id);
+}
 
-        // The spawn copies IDENTITY, not history: fresh id, no segments.
-        // A linked TASK is demoted to text (the removeTask downgrade
-        // pattern): next week's block should say what this one was about,
-        // not claim a deliverable that may be done by then — and if that
-        // task itself repeats, ITS next occurrence is a different id
-        // anyway.
-        Event next;
-        next.id                  = ids::newId();
-        next.date                = target;
-        next.plannedStartMinutes = old->plannedStartMinutes;
-        next.plannedEndMinutes   = old->plannedEndMinutes;
-        next.activityId          = old->activityId;
-        next.title               = old->title;
-        if (next.activityId.isEmpty() && next.title.isEmpty())
-            if (const Task* t = taskById(old->taskId))
-                next.title = t->title;
-        next.repeat = old->repeat;
-        old->repeat = Task::Repeat::None; // the chain invariant, again
-        m_events.append(next);            // `old` may dangle past this line
-        ++spawned;
-    }
-
-    if (spawned > 0)
+int AppData::dropUntouchedFutureOccurrences(const QString& scheduleId,
+                                            QDate from)
+{
+    const int before = m_events.size();
+    m_events.erase(
+        std::remove_if(m_events.begin(), m_events.end(),
+                       [&](const Event& e) {
+                           return e.scheduleId == scheduleId && e.date >= from
+                                  && occurrenceIsUntouched(e);
+                       }),
+        m_events.end());
+    const int removed = before - m_events.size();
+    if (removed > 0)
         notifyChanged();
-    return spawned;
+    return removed;
+}
+
+int AppData::syncSchedules(QDate today, int horizonDays)
+{
+    if (!today.isValid() || m_schedules.isEmpty())
+        return 0;
+    const QDate until = today.addDays(qMax(0, horizonDays));
+
+    // What already exists, so the pass is idempotent: running it twice in a
+    // row must create nothing the second time. Keyed by rule + date, which
+    // is exactly the identity of an occurrence.
+    QSet<QString> present;
+    for (const Event& e : m_events)
+        if (!e.scheduleId.isEmpty())
+            present.insert(e.scheduleId + QLatin1Char('@')
+                           + e.date.toString(Qt::ISODate));
+
+    // Collect first, mutate after -- appendGuardedEvent grows m_events, and
+    // growing a vector mid-iteration is the invalidated-iterator trap
+    // rollRepeats warned about in this same spot. Ids are stable; pointers
+    // are not.
+    struct Pending {
+        QString scheduleId;
+        QDate   date;
+    };
+    QVector<Pending> pending;
+    for (const Schedule& s : m_schedules)
+        for (QDate d : recur::occurrences(s, today, until))
+            if (!present.contains(s.id + QLatin1Char('@')
+                                  + d.toString(Qt::ISODate)))
+                pending.append({s.id, d});
+
+    int created = 0;
+    Batch batch(*this); // a whole term's worth of blocks is ONE change
+    for (const Pending& p : pending) {
+        const Schedule* s = scheduleById(p.scheduleId);
+        if (!s)
+            continue;
+        // The slot must be FREE. Same guard rollRepeats applied, and the
+        // same policy: a collision is skipped in silence, not fought. The
+        // block you put there by hand outranks the one a rule predicted,
+        // and next term's identical rule should not be able to bulldoze
+        // this term's actual plan.
+        // v31.3: "an occupied slot is skipped, not fought" (S.4) becomes
+        // "a FULL slot is skipped". A rule may now stack onto a date that
+        // already has one or two blocks, which is the case that started
+        // this: two rules naming the same day and time used to be accepted
+        // and then produce nothing at all.
+        if (!hasRoomFor(p.date, s->startMinutes, s->endMinutes))
+            continue;
+
+        const QString id =
+            s->activityId.isEmpty()
+                ? addAdHocEvent(p.date, s->startMinutes, s->endMinutes, s->title)
+                : addEvent(p.date, s->startMinutes, s->endMinutes,
+                           s->activityId);
+        if (id.isEmpty())
+            continue;
+        if (Event* e = mutableEventById(id))
+            e->scheduleId = p.scheduleId;
+        ++created;
+    }
+    return created;
+}
+
+void AppData::setSchedulesFromLoad(QVector<Schedule> schedules)
+{
+    m_schedules = std::move(schedules);
+    // Deliberately no emit -- the caller's resetFrom/replaceAll owns that,
+    // exactly like setMoodsFromLoad.
 }
 
 bool AppData::removeTask(const QString& id)
@@ -1320,6 +1771,23 @@ bool AppData::removeTask(const QString& id)
     return true;
 }
 
+bool AppData::setTaskRepeatUntil(const QString& id, QDate until)
+{
+    Task* task = findById(m_tasks, id);
+    if (!task)
+        return false;
+    // An end with no rule to end is meaningless, so it is refused into
+    // absence rather than stored: the same orphan-clock rule addTask applies
+    // to a time with no date.
+    const QDate value =
+        task->repeat == Task::Repeat::None ? QDate() : until;
+    if (task->repeatUntil == value)
+        return true;
+    task->repeatUntil = value;
+    notifyChanged();
+    return true;
+}
+
 bool AppData::updateTask(const QString& id, const QString& title,
                          const QString& description, QDate dueDate,
                          QTime dueTime, Task::Repeat repeat,
@@ -1342,6 +1810,12 @@ bool AppData::updateTask(const QString& id, const QString& title,
                                      // setter — one invariant, three
                                      // enforcers, no way in around it
     task->repeat      = repeat;
+    // v31: clearing the rule clears its end with it — the same pairing rule
+    // the date and its time keep two lines above. A repeatUntil left behind
+    // by a repeat that no longer exists is a stranded fact waiting to be
+    // believed the next time somebody sets a repeat.
+    if (repeat == Task::Repeat::None)
+        task->repeatUntil = QDate();
     task->priority    = priority;    // v7: the urgency rank rides the same edit
     notifyChanged();  // ONE mutation, ONE repaint — see the header's rationale
     return true;
@@ -1368,6 +1842,21 @@ bool AppData::renameFolder(const QString& id, const QString& name)
     if (!folder || name.trimmed().isEmpty())
         return false;
     folder->name = name.trimmed();
+    notifyChanged();
+    return true;
+}
+
+bool AppData::setFolderArchived(const QString& id, bool archived)
+{
+    Folder* folder = findById(m_folders, id);
+    if (!folder)
+        return false;
+    if (folder->archived == archived)
+        return true; // idempotent, like every other archive door
+    folder->archived = archived;
+    // NO loop over m_categories on purpose. See Folder.h: the cascade is a
+    // QUERY (categoryHidden), never a stamp, so restoring the folder cannot
+    // resurrect an area the user had archived on its own beforehand.
     notifyChanged();
     return true;
 }

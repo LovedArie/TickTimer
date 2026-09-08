@@ -64,6 +64,10 @@ public:
 
     // Builds and seeds the PIECES checklist section (optional — a form
     // that never gets pieces shows no checklist; a piece's own form).
+    // v31 -- see m_repeatUntil. Safe to call with an invalid date, which is
+    // what "forever" is.
+    void seedRepeatUntil(QDate until);
+
     void seedPieces(const QVector<Piece>& pieces);
 
     // Shown only when this form is displaying a PIECE: "‹ parent title"
@@ -80,6 +84,10 @@ public:
     QDate          chosenDueDate() const;   // invalid == "no due date"
     QTime          chosenDueTime() const;   // invalid == "all day"
     Task::Repeat   chosenRepeat() const;
+    // v31: when the repeat stops. Invalid = forever, and invalid is also
+    // what a non-repeating task reports, so a caller cannot accidentally
+    // save an end date for a rule that is not there.
+    QDate          chosenRepeatUntil() const;
     Task::Priority chosenPriority() const;
     int            chosenEstimateMinutes() const; // 0 == "no estimate"
     bool           chosenChunkable() const;
@@ -122,6 +130,13 @@ private:
     QCheckBox*      m_allDay   = nullptr;
     QComboBox*      m_priority = nullptr;
     QComboBox*      m_repeat   = nullptr;
+    // The end of the chain. Seeded separately (seedRepeatUntil) rather than
+    // through the constructor, for the same reason pieces are: the form's
+    // simplest use should not have to know this field exists. Both are
+    // hidden whenever the repeat is None -- an end date for a rule that does
+    // not repeat is a control that cannot mean anything.
+    class QCheckBox* m_repeatForever = nullptr;
+    class QDateEdit* m_repeatUntil   = nullptr;
     QComboBox*      m_estimate  = nullptr; // v28.8 — dropdown, not spinbox
     QCheckBox*      m_chunkable = nullptr;
 

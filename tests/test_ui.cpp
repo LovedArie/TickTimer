@@ -28,7 +28,12 @@
 // ---------------------------------------------------------------------------
 
 #include "ActivitiesPage.h"
+#include "ActivityDetailDialog.h" // v31 — the editor an Activity never had
+#include "CategoryTaskModel.h"
+#include "ActivityListModel.h"     // v31 — the activities became model/view
+#include "ReorderListView.h"      // v31 — the reorder-mode rows
 #include "AgendaWidget.h"
+#include "DayLayout.h" // v31.3 -- the column packing the agenda honours
 #include "TaskDetailDialog.h" // v28.5 — the piece-panel navigation tests
 #include "TaskDetailPanel.h"  // v28.6 — the docked panel tests
 #include "TaskDetailForm.h"   // v28.6.2 — the background-fill pin
@@ -37,6 +42,8 @@
 #include "ChatPage.h"
 #include "ChatClient.h"
 #include "AppData.h"
+#include "Schedule.h" // v31 -- the recurring plan behind the combo
+#include "Recurrence.h" // recur::problemWith -- the one definition of legal
 #include "CompareDialog.h"
 #include "EventDialog.h"
 #include "GlancePanel.h"
@@ -82,6 +89,7 @@
 #include "WeekAgendaView.h"
 
 #include <QPointer>
+#include <QSignalSpy>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QTemporaryDir>
@@ -187,6 +195,532 @@ private slots:
         // And the feature still works: the task exists, exactly one of it.
         QCOMPARE(data.tasks().size(), 1);
         QCOMPARE(data.tasks()[0].title, QString("Lab 4"));
+    }
+
+    // ---- v31.3: stacked blocks get their own columns -----------------------
+    //
+    // The pure packing is pinned in test_domain (daylay::columns). What can
+    // only be checked HERE is that the widget honours it in both directions:
+    // the rect you SEE and the rect that RESPONDS to a click have to be the
+    // same rect. spanRect is the single conversion both go through, so the
+    // way this breaks is silently - blocks drawn in columns, every click
+    // still landing on whichever one the loop reached first.
+    void clickingAStackedBlockPicksTheOneUnderTheCursor()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Lecture", cat);
+        const QDate day(2026, 3, 10);
+
+        const QString left   = data.addEvent(day, 9 * 60, 10 * 60, act);
+        const QString middle = data.addEvent(day, 9 * 60, 10 * 60, act);
+        const QString right  = data.addEvent(day, 9 * 60, 10 * 60, act);
+        QVERIFY(!left.isEmpty() && !middle.isEmpty() && !right.isEmpty());
+        QCOMPARE(data.eventsOn(day).size(), 3);
+
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setGutter(60);
+        agenda.resize(600, agenda.minimumHeight());
+
+        // The three ids in the order daylay::columns puts them left to right,
+        // asked of the same function the widget uses - the test must not
+        // re-derive the packing or it would only be testing itself.
+        const auto packed = daylay::columns(data.eventsOn(day));
+        QMap<int, QString> byColumn;
+        for (const Event* e : data.eventsOn(day))
+            byColumn.insert(packed.value(e->id).column, e->id);
+        QCOMPARE(byColumn.size(), 3);
+
+        // A y inside the 9-10 band, and an x in the middle of each column.
+        const int band  = agenda.width() - 60 - 4;
+        const int y     = AgendaWidget::kTopPad
+                          + 6 * AgendaWidget::slotHeight()
+                          + AgendaWidget::slotHeight() / 2; // 09:00 + half slot
+
+        QSignalSpy spy(&agenda, &AgendaWidget::eventClicked);
+        for (int col = 0; col < 3; ++col) {
+            const int x = 60 + (band * col) / 3 + band / 6; // centre of column
+            QTest::mouseClick(&agenda, Qt::LeftButton, Qt::NoModifier,
+                              QPoint(x, y));
+            QCOMPARE(spy.size(), col + 1);
+            QCOMPARE(spy.last().first().toString(), byColumn.value(col));
+        }
+
+        // And the invitation to plan something new is NOT offered on a row
+        // the three blocks completely cover - isFree, not hasRoomFor, is what
+        // that question asks, and this is the difference between them.
+        QSignalSpy empties(&agenda, &AgendaWidget::emptySlotClicked);
+        QTest::mouseClick(&agenda, Qt::LeftButton, Qt::NoModifier,
+                          QPoint(60 + band / 2, y));
+        QCOMPARE(empties.size(), 0);
+    }
+
+    // ---- v31: the activity editor -------------------------------------------
+    //
+    // The dialog is tested WITHOUT exec(). exec() runs its own event loop and
+    // would hang a headless suite forever, so the test drives the two halves
+    // the design deliberately separated: the dialog GATHERS (a pure question,
+    // no AppData in sight) and the free helper WRITES. That split is what
+    // makes the feature checkable at all — the same reason TaskDetailDialog
+    // splits seed/apply/run.
+    void activityDetailGathersAnswersAndAppliesThemThroughTheDomain()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Health", QColor("#4CA96A"));
+        const QString act = data.addActivity("Gymm", cat);
+        // The premise, again: this activity can no longer be deleted, so the
+        // editor is the only route to a corrected name.
+        QVERIFY(!data.addEvent(QDate(2026, 7, 1), 540, 600, act).isEmpty());
+
+        ActivityDetailDialog dialog(act, data.activityById(act)->name,
+                                    data.activityById(act)->description);
+        auto* name = dialog.findChild<QLineEdit*>(
+            QStringLiteral("activityNameEdit"));
+        auto* notes = dialog.findChild<QPlainTextEdit*>(
+            QStringLiteral("activityNotesEdit"));
+        QVERIFY(name && notes);
+        QCOMPARE(name->text(), QStringLiteral("Gymm")); // seeded from the domain
+
+        name->setText(QStringLiteral("Gym"));
+        notes->setPlainText(QStringLiteral("Upper body, 45 min"));
+
+        // Gathering changed NOTHING — the dialog holds answers, not authority.
+        QCOMPARE(data.activityById(act)->name, QStringLiteral("Gymm"));
+
+        applyActivityDetailAnswers(data, act, dialog, QDate::currentDate());
+        QCOMPARE(data.activityById(act)->name, QStringLiteral("Gym"));
+        QCOMPARE(data.activityById(act)->description,
+                 QStringLiteral("Upper body, 45 min"));
+
+        // An emptied name field is a no-op, not a wipe: renameActivity
+        // refuses it and the description still lands. The dialog does no
+        // validation of its own precisely so the domain's answer is the only
+        // answer.
+        name->setText(QString());
+        notes->setPlainText(QStringLiteral("Legs"));
+        applyActivityDetailAnswers(data, act, dialog, QDate::currentDate());
+        QCOMPARE(data.activityById(act)->name, QStringLiteral("Gym"));
+        QCOMPARE(data.activityById(act)->description, QStringLiteral("Legs"));
+    }
+
+    // ---- v31.0.6: the drop DECISION, driven end to end ----------------------
+    //
+    // The desktop's grip drag goes through QDrag::exec(), which runs a
+    // nested event loop and so cannot be driven from a headless test — the
+    // same wall QMenu::exec puts up. What CAN be driven is the hold path,
+    // because it is plain mouse events all the way through, and it shares
+    // the part that actually decides anything: dropTargetAt(). So this test
+    // exercises press -> hold -> move -> release and asserts the INTENT the
+    // view emits, which is the same intent the desktop drop emits.
+    //
+    // What remains uncovered, and is said out loud rather than implied: the
+    // QDrag plumbing itself on a desktop. That is Qt's code, not ours, and
+    // the decision it carries is pinned here.
+    void aHeldDragEmitsTheRightNeighbourAtEveryDropPoint()
+    {
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+        } compactMode;
+
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString a = data.addTask("A", cat, QDate(2026, 7, 1));
+        const QString b = data.addTask("B", cat, QDate(2026, 7, 2));
+        const QString c = data.addTask("C", cat, QDate(2026, 7, 3));
+
+        CategoryTaskModel model(&data);
+        model.setCategoryId(cat);
+
+        ReorderListView view(cattask::IdRole);
+        view.setModel(&model);
+        view.resize(480, 400);
+        view.show();
+        QTest::qWaitForWindowExposed(&view);
+
+        QSignalSpy held(&view, &ReorderListView::gripHeld);
+        QSignalSpy moved(&view, &ReorderListView::reordered);
+
+        const auto rowRect = [&](int r) {
+            return view.visualRect(model.index(r, 0));
+        };
+        // Inside the handle band: gripWidth() is 32 on compact.
+        const auto gripOf = [&](int r) {
+            const QRect g = rowRect(r);
+            return QPoint(g.left() + 8, g.center().y());
+        };
+
+        // Hold row 0's handle, then carry it below row 1's midpoint.
+        QTest::mousePress(view.viewport(), Qt::LeftButton, {}, gripOf(0));
+        QTest::qWait(700);                       // past the 500ms hold
+        QCOMPARE(held.count(), 1);               // the list is now reordering
+        QCOMPARE(held.first().first().toString(), a);
+
+        const QPoint belowRow1(60, rowRect(1).center().y() + 6);
+        QTest::mouseMove(view.viewport(), belowRow1);
+        QTest::mouseRelease(view.viewport(), Qt::LeftButton, {}, belowRow1);
+
+        QCOMPARE(moved.count(), 1);
+        QCOMPARE(moved.first().at(0).toString(), a); // moved A
+        QCOMPARE(moved.first().at(1).toString(), c); // to sit before C
+
+        // And dropping past the LAST row means the end, which the view says
+        // with an empty neighbour rather than by naming a row that is not
+        // there.
+        moved.clear();
+        QTest::mousePress(view.viewport(), Qt::LeftButton, {}, gripOf(0));
+        QTest::qWait(700);
+        const QPoint pastTheEnd(60, rowRect(2).bottom() + 40);
+        QTest::mouseMove(view.viewport(), pastTheEnd);
+        QTest::mouseRelease(view.viewport(), Qt::LeftButton, {}, pastTheEnd);
+        QCOMPARE(moved.count(), 1);
+        QVERIFY(moved.first().at(1).toString().isEmpty());
+        Q_UNUSED(b);
+    }
+
+    // ---- v31.0.6: the hold is a TOUCHSCREEN door, and only that -------------
+    //
+    // The long-press was added for the phone, which has no right-click. On a
+    // desktop the same code would give the left button two meanings and take
+    // the worse one: a button held past half a second — which people do
+    // without meaning anything by it — would pop the row menu AND have its
+    // release swallowed, so the row would refuse to open its editor.
+    //
+    // Caught by reading the code back rather than by running it, which is
+    // why it gets a test: the desktop path here has no other guard, and the
+    // rest of this suite runs desktop-by-default and would never have
+    // noticed the menu appearing.
+    void theHoldIsATouchscreenDoorAndDoesNothingOnADesktop()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        data.addTask("A", cat, QDate(2026, 7, 1));
+        data.addTask("B", cat, QDate(2026, 7, 2));
+
+        CategoryTaskModel model(&data);
+        model.setCategoryId(cat);
+
+        const auto pressAndHold = [&](ReorderListView& view, QPoint at) -> int {
+            view.setModel(&model);
+            view.resize(480, 200);
+            view.show();
+            // Not QVERIFY here: it expands to a return, which a lambda that
+            // owes an int cannot do. The caller asserts on the count.
+            QTest::qWaitForWindowExposed(&view);
+            QSignalSpy spy(&view, &ReorderListView::rowLongPressed);
+            QTest::mousePress(view.viewport(), Qt::LeftButton, {}, at);
+            QTest::qWait(800); // well past the 500ms threshold
+            QTest::mouseRelease(view.viewport(), Qt::LeftButton, {}, at);
+            return spy.count();
+        };
+
+        // The point is mid-row, deliberately clear of the handle band: this
+        // is the "menu" hold, not the "move this one" hold.
+        const QPoint midRow(300, 20);
+
+        {   // DESKTOP — the suite's default. Nothing should happen.
+            ReorderListView view(cattask::IdRole);
+            QCOMPARE(pressAndHold(view, midRow), 0);
+        }
+
+        {   // PHONE — the same gesture is the only way to the menu.
+            struct CompactMode {
+                CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+                ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+            } compactMode;
+
+            ReorderListView view(cattask::IdRole);
+            QCOMPARE(pressAndHold(view, midRow), 1);
+        }
+    }
+
+    // ---- v31.0.3: reorder MODE, the door built on taps -----------------------
+    //
+    // Three gesture designs lost to QScroller on a real phone (the delegates'
+    // headers carry the account). Taps never failed, so the reorder is built
+    // on taps — and a tap on a painted arrow is only reachable through the
+    // MODE that paints it, which is why the mode setters are public.
+    //
+    // The arrows are painted, not widgets, so this drives the delegate's
+    // editorEvent the way a tap does: synthesise the release at the arrow's
+    // centre and assert what the domain did. That is the same technique the
+    // suite uses for every other delegate affordance.
+    void reorderModeMovesRowsByTapAndLeavesTheEndsAlone()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        data.addTask("A", cat, QDate(2026, 7, 1));
+        data.addTask("B", cat, QDate(2026, 7, 2));
+        data.addTask("C", cat, QDate(2026, 7, 3));
+
+        ActivitiesPage page(&data);
+        page.resize(900, 600);
+        page.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&page));
+        auto* rail = page.findChild<QTreeWidget*>();
+        QVERIFY(rail && rail->topLevelItemCount() > 0);
+        rail->setCurrentItem(rail->topLevelItem(0));
+
+        const auto titles = [&] {
+            QStringList out;
+            for (const Task* t : data.tasksIn(cat))
+                out << t->title;
+            return out;
+        };
+        QCOMPARE(titles(), QStringList({"A", "B", "C"}));
+
+        // The toggle exists and is off, so the arrows are not painted yet.
+        const auto toggles =
+            page.findChildren<QPushButton*>(QStringLiteral("reorderToggle"));
+        QCOMPARE(toggles.size(), 2); // one per list
+        for (QPushButton* b : toggles)
+            QVERIFY(!b->isChecked());
+
+        page.setTaskReorderMode(true);
+        for (QPushButton* b : toggles)
+            if (b->text() == QStringLiteral("Done"))
+                QVERIFY(b->isChecked());
+
+        auto* view = page.findChild<ReorderListView*>();
+        QVERIFY(view);
+        auto* model = view->model();
+        QVERIFY(model && model->rowCount() == 3);
+
+        // Tap ▼ on row 0. The arrows sit at the row's right edge; the exact
+        // rect is the delegate's, so aim at the far right of the row and let
+        // the two 32dp squares divide it — down is the outermost.
+        const auto tapAt = [&](int row, bool down) {
+            const QRect r = view->visualRect(model->index(row, 0));
+            const int side = 32;
+            const int x = down ? r.right() - 4 - side / 2
+                               : r.right() - 4 - side - 4 - side / 2;
+            const QPoint p(x, r.center().y());
+            QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, p);
+        };
+
+        tapAt(0, /*down=*/true);
+        QCOMPARE(titles(), QStringList({"B", "A", "C"}));
+        QCOMPARE(data.categoryById(cat)->sortMode, Category::SortMode::Manual);
+
+        tapAt(1, /*down=*/false); // ▲ on the row A now occupies
+        QCOMPARE(titles(), QStringList({"A", "B", "C"}));
+
+        // The ends are walls: ▲ on the first row and ▼ on the last do
+        // nothing, which is what the greyed arrows promise.
+        tapAt(0, /*down=*/false);
+        QCOMPARE(titles(), QStringList({"A", "B", "C"}));
+        tapAt(2, /*down=*/true);
+        QCOMPARE(titles(), QStringList({"A", "B", "C"}));
+
+        // And a tap on the ROW does not open the editor while rearranging —
+        // the mode owns the whole row, or a mis-aimed thumb would open a
+        // modal instead of moving a line.
+        const QRect r0 = view->visualRect(model->index(0, 0));
+        QTest::mouseClick(view->viewport(), Qt::LeftButton, {},
+                          QPoint(r0.center().x(), r0.center().y()));
+        QVERIFY(!QApplication::activeModalWidget());
+
+        // Switching life area drops the mode rather than carrying it into a
+        // list the user has not looked at yet.
+        //
+        // A real CLICK, not setCurrentItem: the page follows itemClicked,
+        // and setCurrentItem does not emit it — so a test that used it would
+        // never switch area and would pass this assertion by never asking
+        // the question. (It failed honestly first, which is how this was
+        // noticed.)
+        data.addCategory("Health", QColor("#4CA96A"));
+        page.rebuild();
+        QTreeWidgetItem* second = rail->topLevelItem(1);
+        QVERIFY(second);
+        QTest::mouseClick(rail->viewport(), Qt::LeftButton, {},
+                          rail->visualItemRect(second).center());
+        for (QPushButton* b : page.findChildren<QPushButton*>(
+                 QStringLiteral("reorderToggle")))
+            QVERIFY(!b->isChecked());
+    }
+
+    // ---- v31.0.1: reordering's OTHER door ------------------------------------
+    //
+    // The grip drag is a mouse gesture and a phone has none — QScroller owns
+    // press-and-move there, and two attempts to take it back both lost
+    // (ReorderListView.h records why, and the device is what proved it). So
+    // the same capability is offered through each row's long-press menu, and
+    // THAT is the path a phone actually takes.
+    //
+    // The menu itself cannot be driven here: QMenu::exec runs a nested event
+    // loop and would hang a headless suite, the same reason the rail's
+    // context menu has never been tested through its QMenu either. So the
+    // test drives what the menu merely triggers — moveRowBy, made
+    // reachable for exactly this reason — which is the same doctrine
+    // startPieceUnder follows ("PUBLIC because it is the behavior the
+    // right-click menu merely triggers").
+    void theLongPressDoorReordersBothListsLikeTheDragWould()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString a = data.addTask("A", cat, QDate(2026, 7, 1));
+        const QString b = data.addTask("B", cat, QDate(2026, 7, 2));
+        const QString c = data.addTask("C", cat, QDate(2026, 7, 3));
+        const QString gym  = data.addActivity("Gym", cat);
+        const QString walk = data.addActivity("Walk", cat);
+
+        ActivitiesPage page(&data);
+        page.resize(900, 600);
+        page.show();
+        auto* rail = page.findChild<QTreeWidget*>();
+        QVERIFY(rail && rail->topLevelItemCount() > 0);
+        rail->setCurrentItem(rail->topLevelItem(0));
+
+        const auto titles = [&] {
+            QStringList out;
+            for (const Task* t : data.tasksIn(cat))
+                out << t->title;
+            return out;
+        };
+        const auto names = [&] {
+            QStringList out;
+            for (const Activity* act : data.activitiesIn(cat))
+                out << act->name;
+            return out;
+        };
+        QCOMPARE(titles(), QStringList({"A", "B", "C"}));
+
+        // "Move down" on the first row is the drag one row lower, and it
+        // flips the area to Manual exactly as the drag does — the door is
+        // different, the domain call behind it is the same.
+        page.moveRowBy(page.displayedTaskIds(), a, +1);
+        QCOMPARE(titles(), QStringList({"B", "A", "C"}));
+        QCOMPARE(data.categoryById(cat)->sortMode, Category::SortMode::Manual);
+
+        page.moveRowBy(page.displayedTaskIds(), a, -1);
+        QCOMPARE(titles(), QStringList({"A", "B", "C"}));
+
+        // The ends are walls, not wraps: a row at the top cannot move up.
+        // The menu greys these out; the function refuses them anyway, so a
+        // caller that forgets cannot teleport a row to the far end.
+        page.moveRowBy(page.displayedTaskIds(), a, -1);
+        QCOMPARE(titles(), QStringList({"A", "B", "C"}));
+        page.moveRowBy(page.displayedTaskIds(), c, +1);
+        QCOMPARE(titles(), QStringList({"A", "B", "C"}));
+
+        // The same door, the other list.
+        QCOMPARE(names(), QStringList({"Gym", "Walk"}));
+        page.moveRowBy(page.displayedActivityIds(), walk, -1);
+        QCOMPARE(names(), QStringList({"Walk", "Gym"}));
+        Q_UNUSED(b);
+    }
+
+    // The whole point of the WHEN section: a rule entered here has to reach
+    // the calendar, on every date it names, immediately -- not "next time a
+    // date passes", which is the behaviour that produced the complaint.
+    void theActivityEditorPutsARuleOnTheCalendarAhead()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("GTI350 Laboratoire", cat);
+
+        ActivityDetailDialog dialog(act, QStringLiteral("GTI350 Laboratoire"),
+                                    QString());
+        dialog.seedSchedules({}); // nothing on the calendar yet
+
+        // v31.2: a rule the user has just ADDED must be savable. It was not
+        // -- the seed left activityId empty, so the dialog's own Save asked
+        // for a name the activity editor never offers a field for. The seed
+        // is now the whole answer to "is a fresh rule well formed?", which
+        // is why it is a function a test can call.
+        const Schedule fresh = newScheduleSeed(act, QDate(2026, 8, 1));
+        QCOMPARE(fresh.activityId, act);
+        QVERIFY2(recur::problemWith(fresh).isEmpty(),
+                 qPrintable(recur::problemWith(fresh)));
+        // And it survives the round trip the Save button actually makes:
+        // seed in, chosen() out, still legal without a single edit.
+        QVERIFY(recur::problemWith(ScheduleEditDialog(fresh).chosen())
+                    .isEmpty());
+
+        Schedule wanted;                      // what the sub-dialog would hand back
+        wanted.startDate       = QDate(2026, 8, 25); // a Tuesday
+        wanted.endDate         = QDate(2026, 9, 15);
+        wanted.startMinutes    = 13 * 60 + 30;
+        wanted.endMinutes      = 17 * 60;
+        wanted.repeat          = Task::Repeat::Weekly;
+        wanted.reminderMinutes = 15;
+
+        // ScheduleEditDialog is exercised through its own seed/chosen pair
+        // rather than by exec()ing it -- exec() runs an event loop and would
+        // hang a headless suite. Same reason the parent dialog is driven
+        // this way.
+        ScheduleEditDialog editor(wanted);
+        const Schedule out = editor.chosen();
+        QCOMPARE(out.repeat, Task::Repeat::Weekly);
+        QCOMPARE(out.startDate, QDate(2026, 8, 25));
+        QCOMPARE(out.startMinutes, 13 * 60 + 30);
+        QCOMPARE(out.endDate, QDate(2026, 9, 15));
+        QCOMPARE(out.reminderMinutes, 15);
+
+        dialog.seedSchedules({out});
+        applyActivityDetailAnswers(data, act, dialog, QDate(2026, 8, 1));
+
+        QCOMPARE(data.schedules().size(), 1);
+        QCOMPARE(data.schedulesFor(act).size(), 1);
+        // Four Tuesdays exist RIGHT NOW, before any day has passed.
+        QVector<QDate> dates;
+        for (const Event& e : data.events())
+            dates.append(e.date);
+        std::sort(dates.begin(), dates.end());
+        QCOMPARE(dates, QVector<QDate>({QDate(2026, 8, 25), QDate(2026, 9, 1),
+                                        QDate(2026, 9, 8), QDate(2026, 9, 15)}));
+
+        // Removing the rule from the dialog stops it, and takes the untouched
+        // future blocks with it.
+        dialog.seedSchedules({});
+        applyActivityDetailAnswers(data, act, dialog, QDate(2026, 8, 1));
+        QVERIFY(data.schedules().isEmpty());
+        QVERIFY(data.events().isEmpty());
+    }
+
+    // The page has to SHOW the activities, in the domain's order, with the
+    // facts the delegate paints — otherwise the editor door above, and the
+    // reorder door beside it, are both unreachable.
+    void theActivityListMirrorsTheDomainOrderAndItsRowFacts()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Health", QColor("#4CA96A"));
+        data.addActivity("Walk", cat);
+        const QString noted = data.addActivity("Gym", cat);
+        data.setActivityDescription(noted, QStringLiteral("Upper body"));
+        // In use, so its row must offer Archive rather than × — the one-exit
+        // rule, decided from the same count removeActivity consults.
+        QVERIFY(!data.addEvent(QDate(2026, 7, 1), 540, 600, noted).isEmpty());
+
+        ActivitiesPage page(&data);
+        page.resize(900, 600);
+        page.show();
+        auto* rail = page.findChild<QTreeWidget*>();
+        QVERIFY(rail && rail->topLevelItemCount() > 0);
+        rail->setCurrentItem(rail->topLevelItem(0));
+
+        auto* model = page.findChild<ActivityListModel*>();
+        QVERIFY(model);
+        QCOMPARE(model->rowCount(), 2);
+        QCOMPARE(model->index(0, 0).data(actrow::NameRole).toString(),
+                 QStringLiteral("Walk"));
+        QCOMPARE(model->index(1, 0).data(actrow::NameRole).toString(),
+                 QStringLiteral("Gym"));
+        QVERIFY(!model->index(0, 0).data(actrow::HasNotesRole).toBool());
+        QVERIFY(model->index(1, 0).data(actrow::HasNotesRole).toBool());
+        QCOMPARE(model->index(0, 0).data(actrow::UseCountRole).toInt(), 0);
+        QCOMPARE(model->index(1, 0).data(actrow::UseCountRole).toInt(), 1);
+
+        // And the list follows a reorder performed in the domain, which is
+        // the whole contract between the drag and the screen: the view never
+        // moves a row itself, it re-reads one that has already moved.
+        QVERIFY(data.moveActivityBefore(noted, model->index(0, 0)
+                                                   .data(actrow::IdRole)
+                                                   .toString()));
+        QCOMPARE(model->index(0, 0).data(actrow::NameRole).toString(),
+                 QStringLiteral("Gym"));
     }
 
     // v21: one natural-language line through the REAL input becomes a fully
@@ -591,6 +1125,47 @@ private slots:
         QCOMPARE(columns.last()->date(), QDate(2026, 7, 11)); // Sat closes it
     }
 
+    // v31.3.1 - the mini card remembered WHERE it was and never asked
+    // whether that place still exists.
+    //
+    // MainWindow has checked this since the window-memory work; the card was
+    // given the same memory and not the same check, so it was the one window
+    // in the app that could still restore onto an unplugged monitor. It was
+    // reported as "the mini timer doesn't work any more", which is precisely
+    // how it presents: the button responds, the window is created and shown,
+    // and it is sitting at x=1937 on a desktop that ends at 1919.
+    //
+    // The pure policy (overlapsAnyScreen) already had tests. What had none
+    // was that this window ASKS it - which is the half that was missing.
+    void miniTimerIgnoresARememberedPositionOnAVanishedMonitor()
+    {
+        const QPoint saved = prefs::pomodoroMiniPos(); // restore after
+
+        PomodoroEngine engine;
+        {
+            // Somewhere no attached screen can possibly reach.
+            prefs::setPomodoroMiniPos(QPoint(100000, 100000));
+            PomodoroMiniWindow mini(&engine);
+            QVERIFY(mini.pos() != QPoint(100000, 100000));
+            QVERIFY(overlapsAnyScreen(QRect(mini.pos(), mini.sizeHint()),
+                                      availableScreenRects()));
+        }
+        {
+            // ...and a position that IS on a real screen is still honoured,
+            // or the guard would have cured the bug by throwing the feature
+            // away. Derived from a screen that actually exists rather than
+            // hardcoded, so this passes on any machine and on offscreen.
+            const QList<QRect> screens = availableScreenRects();
+            QVERIFY(!screens.isEmpty());
+            const QPoint onScreen = screens.first().topLeft() + QPoint(40, 40);
+            prefs::setPomodoroMiniPos(onScreen);
+            PomodoroMiniWindow mini(&engine);
+            QCOMPARE(mini.pos(), onScreen);
+        }
+
+        prefs::setPomodoroMiniPos(saved);
+    }
+
     void miniTimerIsASecondFaceOfTheSameEngine()
     {
         // The claim under test is SHARED STATE: a gesture on the mini card
@@ -806,8 +1381,43 @@ private slots:
 
         // This dialog is a control panel, not a form: the change applies
         // NOW, no OK anywhere in the transaction.
+        //
+        // v31: what it applies changed. Choosing a repeat used to set a flag
+        // on this block that rolled it forward once its day had passed; it
+        // now creates a SCHEDULE seeded from the block, and the horizon
+        // fills at once. The assertion below is the difference between the
+        // old feature and the complaint that produced this one — "weekly"
+        // must mean there is a block NEXT week, today, before anything has
+        // been ticked or any day has passed.
         repeat->setCurrentIndex(int(Task::Repeat::Weekly));
-        QCOMPARE(data.eventById(ev)->repeat, Task::Repeat::Weekly);
+        QCOMPARE(data.schedules().size(), 1);
+        const Schedule& made = data.schedules().first();
+        QCOMPARE(made.repeat, Task::Repeat::Weekly);
+        QCOMPARE(made.activityId, act);
+        QCOMPARE(made.startDate, QDate(2026, 7, 13));
+        // The block you were looking at BELONGS to the rule now — it was
+        // adopted as the first occurrence rather than left beside a rule
+        // that would strand it when stopped.
+        QCOMPARE(data.eventById(ev)->scheduleId, made.id);
+
+        // Materialising from the block's own week fills forward. The dialog
+        // has already run one pass against the REAL today, so this asserts
+        // the dates that must exist rather than a total -- a count would be
+        // a fact about whatever day the suite happens to run on.
+        data.syncSchedules(QDate(2026, 7, 13), 21);
+        QSet<QDate> dates;
+        for (const Event& e : data.events())
+            if (e.scheduleId == made.id)
+                dates.insert(e.date);
+        QVERIFY(dates.contains(QDate(2026, 7, 13)));
+        QVERIFY(dates.contains(QDate(2026, 7, 20))); // next week, TODAY
+        QVERIFY(dates.contains(QDate(2026, 7, 27)));
+        QVERIFY(dates.contains(QDate(2026, 8, 3)));
+
+        // And back to "does not repeat" stops the rule, leaving the blocks
+        // that have nothing on them withdrawn with it.
+        repeat->setCurrentIndex(int(Task::Repeat::None));
+        QVERIFY(data.schedules().isEmpty());
     }
 
     void settingsDialogWritesPrefsOnlyOnOk()
@@ -2605,6 +3215,34 @@ private slots:
         // through. The shown-and-scrolled check below is the one that sees it.
         SettingsDialog settingsDlg;
 
+        // v31 — the two new dialogs join the list IN THE SAME DROP that adds
+        // them, which is the whole point of the comment above: four dialogs
+        // were once missing from here and all four were over budget. A gate
+        // that has to be remembered later is a gate that catches the next
+        // one late.
+        //
+        // ActivityDetailDialog is seeded WITH a schedule, deliberately. An
+        // empty one draws "Not on the calendar yet." and measures nothing —
+        // the same trap ArchivePage fell through for three versions, where
+        // an empty fixture certified a page that clipped the moment it held
+        // real content. The seeded row draws the widest thing this dialog
+        // can contain: a full recur::summary line.
+        ActivityDetailDialog activityDlg(QStringLiteral("act-1"),
+                                         QStringLiteral("GTI350 Laboratoire"),
+                                         QStringLiteral("Room A-1234"));
+        Schedule widthSched;
+        widthSched.startDate       = QDate(2026, 8, 25);
+        widthSched.endDate         = QDate(2026, 12, 15);
+        widthSched.startMinutes    = 13 * 60 + 30;
+        widthSched.endMinutes      = 17 * 60;
+        widthSched.repeat          = Task::Repeat::Weekly;
+        widthSched.reminderMinutes = 15;
+        activityDlg.seedSchedules({widthSched});
+
+        // Seeded with the SAME rule, so the reminder combo carries its
+        // longest item and both date fields their longest rendering.
+        ScheduleEditDialog scheduleDlg(widthSched);
+
         const QVector<QPair<QString, QWidget*>> surfaces = {
             {QStringLiteral("LoginDialog"), &login},
             {QStringLiteral("QuickCaptureOverlay"), &capture},
@@ -2612,6 +3250,8 @@ private slots:
             {QStringLiteral("EventDialog"), &eventDlg},
             {QStringLiteral("TaskDetailDialog"), &taskDlg},
             {QStringLiteral("SettingsDialog"), &settingsDlg},
+            {QStringLiteral("ActivityDetailDialog"), &activityDlg},
+            {QStringLiteral("ScheduleEditDialog"), &scheduleDlg},
         };
 
         // WHEN THIS FAILS IT NAMES THE CULPRIT (v30.7). "EventDialog is

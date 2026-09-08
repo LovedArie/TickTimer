@@ -86,6 +86,15 @@ set(DOMAIN_SOURCES
     include/Folder.h
     include/Ids.h
     include/JsonStore.h
+    # v31 — the recurring plan, and the pure function that walks it.
+    # Header-only, domain-only: they must never include a widget header or
+    # test_domain stops linking, which is the architecture test.
+    include/Schedule.h
+    include/Recurrence.h
+    # v31.2 - the three-way merge, pure and domain-only
+    include/Merge.h
+    # v31.3 - concurrency and column packing, pure and domain-only
+    include/DayLayout.h
     include/Segment.h
     include/SpecialDay.h
     include/Task.h
@@ -117,7 +126,20 @@ set(DOMAIN_SOURCES
 
 set(UI_SOURCES
     include/ActivitiesPage.h
+    # v31 — the editor an Activity never had. Header listed beside the .cpp
+    # because AUTOMOC only mocs what the target lists (CLAUDE.md).
+    include/ActivityDetailDialog.h
+    src/ActivityDetailDialog.cpp
+    # v31 — the third model/view list, so activities can be dragged
+    include/ActivityListModel.h
+    src/ActivityListModel.cpp
+    include/ActivityRowDelegate.h
+    src/ActivityRowDelegate.cpp
     include/AgendaWidget.h
+    # v31 — CategoryTree's twin for flat lists: a drag becomes a domain
+    # intent, and the domain does the moving.
+    include/ReorderListView.h
+    src/ReorderListView.cpp
     include/DueDateDialog.h
     include/EventDialog.h
     include/GlancePanel.h

@@ -56,8 +56,9 @@ QWidget* ArchivePage::buildContent()
     auto* title = new QLabel(tr("Archive"), panel);
     title->setObjectName("h2");
     auto* sub = new QLabel(
-        tr("Finished tasks and retired activities rest here — out of every "
-           "list, still part of your history. Restore anything, any time."),
+        tr("Retired folders, life areas, tasks and activities rest here — out "
+           "of every list, still part of your history. Restore anything, any "
+           "time."),
         panel);
     sub->setObjectName("sub");
     sub->setWordWrap(true);
@@ -88,6 +89,42 @@ QWidget* ArchivePage::buildContent()
         row->addWidget(meta);
         return row;
     };
+
+    // ---- archived folders (v31) --------------------------------------------
+    // FIRST, above life areas, because a folder is the biggest thing that can
+    // be retired and restoring one brings back several areas at once. Reading
+    // the page top-down should go widest-first, or a user hunting for a
+    // missing course finds four "no archived life areas" before the folder
+    // that is actually hiding them.
+    caption(tr("FOLDERS"));
+    const auto folders = m_data->archivedFolders();
+    if (folders.isEmpty()) {
+        auto* none = new QLabel(tr("No archived folders."), panel);
+        none->setObjectName("sub");
+        layout->addWidget(none);
+    }
+    for (const Folder* f : folders) {
+        auto* row = quietRow(
+            f->name,
+            tr("%n life area(s)", nullptr,
+               m_data->categoryCountInFolder(f->id)));
+        const QString folderId = f->id;
+        auto* restore = new QPushButton(tr("Restore"), panel);
+        restore->setCursor(Qt::PointingHandCursor);
+        connect(restore, &QPushButton::clicked, this, [this, folderId]() {
+            // The same one-flag restore the life areas below get, and for
+            // the same reason: archiving stamped nothing on the children,
+            // so an area that was individually archived before the folder
+            // was stays archived after this — which is what "exact restore"
+            // has to mean.
+            m_data->setFolderArchived(folderId, false);
+        });
+        row->addWidget(restore);
+        layout->addLayout(row);
+        // No delete here, matching the activities section: removeFolder
+        // refuses while the folder holds areas, and this page does not
+        // advertise dead ends. Empty it in the rail, then delete it there.
+    }
 
     // ---- archived life areas (categories) -----------------------------------
     caption(tr("LIFE AREAS"));

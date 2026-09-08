@@ -28,6 +28,20 @@ struct Activity
     QString name;        // e.g. "Study Math"
     QString categoryId;  // exactly ONE category (design-doc §3.7 — v1 rule)
 
+    // v31: free-text notes, the same field Task has carried since v7 and for
+    // the same reason — "Gym" is a name, not an instruction, and the detail
+    // ("upper body Mon/Thu, 45 min warm-up") has to live somewhere that is
+    // not the name. Empty is the normal state; nothing reads it as absent.
+    QString description;
+
+    // v31: where this activity sits in its life area's list, as a plain
+    // integer renumbered densely (0,1,2,…) on every reorder. Activities have
+    // no "smart" order to fall back on — they have always been shown in the
+    // accident of insertion order — so unlike tasks they are ALWAYS sorted by
+    // this, and Category::SortMode does not apply to them. See Category.h for
+    // why the ordering is stored data rather than a preference.
+    int sortKey = 0;
+
     // v7: retirement without amnesia. An activity that appears in past
     // events can NEVER be deleted (removeActivity refuses — history would
     // dangle), but life moves on and "Study CS101" shouldn't clutter every

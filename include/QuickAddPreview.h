@@ -51,7 +51,7 @@ inline QString quickAddPreviewHtml(const nlp::ParsedTask& p,
                                                               : "#8A93A0",
                          priorityLabel(p.priority).toUpper());
     if (p.repeat != Task::Repeat::None)
-        bits << QStringLiteral("<span style='color:#616974;'>\u27F3 %1</span>")
+        bits << QStringLiteral("<span style='color:#616974;'>%1</span>")
                     .arg(repeatLabel(p.repeat));
     if (!chipText.isEmpty())
         bits << QStringLiteral("<span style='color:%1;'>#%2%3</span>")

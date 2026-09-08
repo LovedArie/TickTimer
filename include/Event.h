@@ -46,6 +46,26 @@ inline constexpr int kDayEndMinutes    = 24 * 60;            // midnight
 inline constexpr int kSlotsPerDay      = (kDayEndMinutes - kDayStartMinutes)
                                          / kSlotMinutes;     // 36
 inline constexpr int kMaxSlotsPerEvent = 4;                  // up to 2 h
+
+// HOW MANY BLOCKS MAY COVER ONE INSTANT (v31.3). Three.
+//
+// This is a domain rule for the same reason the grid above is: "you can be
+// booked for at most three things at once" is a statement about planning, not
+// about pixels, and it would still be true of a command-line version.
+//
+// It was ONE until v31.3, expressed as the flat invariant "two Events on the
+// same day cannot overlap" (AppData.h). That was not wrong so much as too
+// strong: a lab that runs inside a lecture block, or a second thing you have
+// genuinely committed to, is a real situation the planner simply could not
+// describe. The old rule turned it into silence — a repeating rule whose slot
+// was taken produced nothing at all.
+//
+// Three rather than "unlimited" because a slot is a FIXED WIDTH on screen: at
+// four columns a block is too narrow to read its own title, so the number is
+// the point where the feature would start lying about being usable. It is a
+// constant and not a preference for that reason — the honest ceiling is a
+// property of the display, not a taste.
+inline constexpr int kMaxConcurrentBlocks = 3;
 } // namespace plan
 
 // v26.2 — the verdict on a block whose planned window has passed.
@@ -133,12 +153,28 @@ struct Event
     // `new`/`delete`. This is RAII doing the memory management for us.
     QVector<Segment> segments;
 
-    // v9: recurrence for planned blocks. The rule always lives on the
-    // NEWEST link of a chain — when an occurrence rolls forward, the old
-    // block's repeat is cleared and the new block carries it. That single
-    // invariant is also the duplicate-spawn guard: a link can only ever
-    // spawn once, because spawning strips it of the rule.
-    Task::Repeat repeat = Task::Repeat::None;
+    // v31: which Schedule produced this block, or empty for one placed by
+    // hand. This REPLACED the v9 `repeat` field, and the replacement is the
+    // whole point rather than a rename.
+    //
+    // v9 put the recurrence RULE on the newest link of a chain of blocks:
+    // when an occurrence rolled forward, the old block's repeat was cleared
+    // and the new one carried it. That made duplicate spawns impossible —
+    // and made looking ahead impossible too, because next week's block did
+    // not exist until this week's had passed. "I want to see it each week"
+    // is not a bug in that design, it is the shape of it.
+    //
+    // So the rule moved OUT of the events and into a thing of its own
+    // (Schedule.h), and what remains here is a back-reference: this block
+    // came from that rule. It is read for two jobs and no others — a
+    // reminder's lead time (alarms::upcoming), and knowing that deleting
+    // this block means "skip this date", not "delete the rule".
+    //
+    // A block whose schedule is later deleted keeps its history and simply
+    // loses this link (AppData::removeSchedule clears it) — the same
+    // DOWNGRADE that removeTask performs on a task's blocks, rather than a
+    // refusal or a cascade.
+    QString scheduleId;
 
     // v26.2 — the catch-up verdict. See BlockOutcome above for why the
     // judgement is derived and the decision is stored.

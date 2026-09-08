@@ -23,12 +23,22 @@
 // GROWN (task-details addendum): a Task now also carries free-text
 // `description` (the detail panel's notes field) and a `repeat` hint.
 // Both are ADDITIVE and optional — an old task with neither reads as an
-// empty description and Repeat::None, so nothing breaks. Note what repeat
-// does and does NOT do yet: it is STORED and DISPLAYED, but the app does
-// not yet regenerate a task when you finish it. Capturing the fact now,
-// acting on it later, is a deliberate scoping line drawn in the addendum —
-// recurrence behaviour was a stated non-goal, and honest data is cheaper
-// to ship than half-built behaviour.
+// empty description and Repeat::None, so nothing breaks.
+//
+// WHAT `repeat` DOES, corrected. This paragraph used to say the field was
+// "stored and displayed, acted on never", which was true at v7 and stopped
+// being true at v19.10: completing a repeating, dated task spawns its next
+// occurrence (AppData::setTaskDone), and the rule moves to the new task so
+// a done/undone/done cycle cannot double-spawn. The comment outlived the
+// scoping line it described by eleven versions, which is its own lesson —
+// a stale comment is a confident lie, and this one was found by someone
+// reading the file to find out why "repeat does not work".
+//
+// v31 gives the chain an END (`repeatUntil` below). What it deliberately
+// still does NOT do is show you future occurrences: a weekly chore that
+// listed sixteen copies of itself would bury the list it lives in. Looking
+// FORWARD is what schedules are for (Schedule.h), and they act on the
+// calendar, where sixteen entries are the point rather than the problem.
 // ---------------------------------------------------------------------------
 
 #include <QDate>
@@ -82,7 +92,25 @@ struct Task
     Priority priority = Priority::Medium;
 
     QString description;              // free-text notes; empty is normal
-    Repeat  repeat = Repeat::None;    // recurrence hint (stored + shown)
+    Repeat  repeat = Repeat::None;    // recurrence hint (stored + acted on)
+
+    // v31: when the chain stops. Invalid = "forever", the same absence
+    // idiom dueDate uses for TBD — one way of being absent per struct.
+    //
+    // It is checked against the NEXT occurrence's date, not today's: a
+    // weekly task due Dec 29 with repeatUntil Dec 31 completes normally and
+    // simply spawns nothing, because Jan 5 is past the end. The alternative
+    // (refuse to spawn once TODAY is past the end) would depend on when you
+    // happened to tick the box, which is not a property of the rule.
+    QDate   repeatUntil;
+
+    // v31: the hand-dragged position within its life area, renumbered
+    // densely (0,1,2,…) on every reorder. Read ONLY when the owning
+    // Category is in SortMode::Manual — see Category.h, which owns the
+    // argument for why the mode is a stored fact and why it hangs off the
+    // area rather than the app. Until the first drag every task's key is 0
+    // and the smart sort is what you see, so nothing moves on upgrade.
+    int     sortKey = 0;
 
     // v10 additions (needs-a-block addendum §C). Both are FACTS about the
     // task, so they live here and in data.json — and therefore sync:
@@ -207,6 +235,24 @@ inline QString dueTimeLabel(QTime t)
 // separate .cpp — the ODR is satisfied because `inline` permits the
 // definition in every file that includes it.
 
+// The repeat CHIP's text, in one place (v31.0.5).
+//
+// It deliberately carries no glyph. From v19.10 until now every chip was
+// drawn as "\u27F3 Weekly" — and Android's default font has no glyph for
+// U+27F3, so on a phone it rendered as a tofu box followed by the word.
+// Six surfaces drew it (both task delegates, TaskRow, PlannerPage's due
+// strip, the quick-add preview and, from v31, every scheduled block on the
+// agenda), and none of them had ever been read on a device.
+//
+// This is exactly the rule READING_GUIDE §4 already states: Android's glyph
+// set is narrower than a desktop's, so reuse a codepoint the app ALREADY
+// draws rather than pick the nicest-looking one. No cycle symbol is proven
+// here, and the word says it on its own — the pill's background, or the
+// "\u00B7" separator in the agenda, is what marks it as a chip.
+//
+// One function so the next surface cannot reintroduce the box.
+inline QString repeatChip(Task::Repeat r);
+
 inline QString repeatToString(Task::Repeat r)
 {
     switch (r) {
@@ -289,6 +335,8 @@ inline QString repeatLabel(Task::Repeat r)
     }
     return QString();
 }
+
+inline QString repeatChip(Task::Repeat r) { return repeatLabel(r); }
 
 // ---------------------------------------------------------------------------
 // The pieces vocabulary (v28.3).

@@ -64,13 +64,24 @@ void TrackerService::enforceWindow()
     emit trackedBlockEnded(ended);
 }
 
-QString TrackerService::liveEventNow() const
+QStringList TrackerService::liveEventsNow() const
 {
     const QDateTime now = nowProvider();
+    QStringList out;
     for (const Event* e : m_data->eventsOn(now.date()))
         if (e->isLiveAt(now))
-            return e->id; // at most one — the no-overlap rule at work
-    return {};
+            out << e->id;
+    return out;
+}
+
+QString TrackerService::liveEventNow() const
+{
+    // EXACTLY ONE, or nothing. See the header: with blocks allowed to stack
+    // (v31.3) any tie-break here would be a guess that starts a timer on the
+    // wrong block, and a silent wrong attribution is worse than no
+    // attribution.
+    const QStringList live = liveEventsNow();
+    return live.size() == 1 ? live.first() : QString();
 }
 
 bool TrackerService::canTrackNow(const QString& eventId) const

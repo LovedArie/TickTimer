@@ -205,7 +205,7 @@ void TaskCardDelegate::paint(QPainter* painter,
     QString sub = index.data(CategoryNameRole).toString();
     const int repeat = index.data(RepeatRole).toInt();
     if (repeat != int(Task::Repeat::None))
-        sub += QStringLiteral("   \u27F3 %1")
+        sub += QStringLiteral("   %1")
                    .arg(repeatLabel(Task::Repeat(repeat)));
 
     QFont tf = option.font;

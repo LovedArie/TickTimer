@@ -299,20 +299,45 @@ QSize AgendaWidget::sizeHint() const
     return {width, kTopPad + shownSlotCount() * slotHeight() + 12};
 }
 
-QRect AgendaWidget::spanRect(int startMin, int endMin) const
+QRect AgendaWidget::spanRect(int startMin, int endMin,
+                             int column, int columnCount) const
 {
     // Minutes -> pixels: the single place this conversion exists, so painting,
     // hit-testing, AND the live resize preview all agree on where things are.
+    // v31.3 added the horizontal half of that same promise: when blocks stack,
+    // the column arithmetic has to live here too, or the rect you click is not
+    // the rect you saw.
     const int startSlot =
         (startMin - plan::kDayStartMinutes) / plan::kSlotMinutes;
     const int slotCount = (endMin - startMin) / plan::kSlotMinutes;
-    return QRect(m_gutter, slotTop(startSlot) + 2,
-                 width() - m_gutter - 4, slotCount * slotHeight() - 4);
+
+    const int band = width() - m_gutter - 4;
+    const int cols = qMax(1, columnCount);
+    const int col  = qBound(0, column, cols - 1);
+    // Each edge is computed from its own exact fraction of the band rather
+    // than from a rounded column width. Three columns of an odd number of
+    // pixels would otherwise leave a ragged strip on the right, and the
+    // rounding error would grow with the column index.
+    const int left  = m_gutter + (band * col) / cols;
+    const int right = m_gutter + (band * (col + 1)) / cols;
+    // A hairline between neighbours, so two stacked blocks read as two
+    // objects and not as one wide one with a line drawn on it.
+    const int gap = (cols > 1) ? 2 : 0;
+
+    return QRect(left, slotTop(startSlot) + 2,
+                 right - left - gap, slotCount * slotHeight() - 4);
+}
+
+daylay::Slotting AgendaWidget::slottingFor(const Event& e) const
+{
+    return daylay::columns(m_data->eventsOn(m_date)).value(e.id);
 }
 
 QRect AgendaWidget::eventRect(const Event& e) const
 {
-    return spanRect(e.plannedStartMinutes, e.plannedEndMinutes);
+    const daylay::Slotting s = slottingFor(e);
+    return spanRect(e.plannedStartMinutes, e.plannedEndMinutes,
+                    s.column, s.columnCount);
 }
 
 int AgendaWidget::minutesAtY(int y) const
@@ -450,8 +475,14 @@ void AgendaWidget::paintEvent(QPaintEvent*)
         // (the fixed edge stays, the grabbed edge follows the mouse) so resize
         // feedback is immediate — paint still only READS state, never writes.
         const bool isResizing = (m_resizing && e->id == m_resizeEventId);
-        const QRect  rect  = isResizing ? spanRect(m_previewStart, m_previewEnd)
-                                        : eventRect(*e);
+        // The preview keeps the block's COLUMN: a resize changes when it
+        // happens, never who it sits beside, and a preview that jumped to
+        // full width would promise a move it is not making.
+        const daylay::Slotting slot = slottingFor(*e);
+        const QRect  rect  = isResizing
+                                 ? spanRect(m_previewStart, m_previewEnd,
+                                            slot.column, slot.columnCount)
+                                 : eventRect(*e);
 
         // SOFT BLOCKS (v3): the category colour is the block's identity,
         // not its literal paint. Pastel tint for the large fill, the deep
@@ -579,9 +610,15 @@ void AgendaWidget::paintEvent(QPaintEvent*)
         // Recurrence rides the anatomy line (v19.10): the ⟳ chip is the
         // same vocabulary the task rows already speak, so a glance reads
         // both kinds of repetition identically.
-        if (e->repeat != Task::Repeat::None)
-            timeLine += QStringLiteral(" · \u27F3 %1")
-                            .arg(repeatLabel(e->repeat));
+        // v31 reads it from the RULE that made this block rather than
+        // from the block itself. The chip means what it always meant --
+        // "this one repeats" -- and is now true of EVERY occurrence
+        // rather than only of the newest link in a chain, which is what
+        // it quietly meant before.
+        if (const Schedule* sched = m_data->scheduleById(e->scheduleId))
+            if (sched->repeat != Task::Repeat::None)
+                timeLine += QStringLiteral(" · %1")
+                                .arg(repeatLabel(sched->repeat));
         p.setFont(small);
         p.setPen(theme::inkSoft());
         const QFontMetrics smallFm(small);

@@ -39,6 +39,7 @@ class QListView;
 class QLabel;
 class CategoryTaskModel;
 class CategoryTaskDelegate;
+class ReorderListView;
 
 // Item-data role keys, shared between CategoryTree (drops) and ActivitiesPage
 // (building the tree): read the role to learn what an item IS. Declared in the
@@ -106,6 +107,7 @@ private slots:
     void editTask(const QString& taskId);      // opens TaskDetailDialog
     void chooseDueDate(const QString& taskId); // opens DueDateDialog
     void updateTaskViewHeight();               // fit the list to its rows
+    void updateActivityViewHeight();           // the same, for activities
     void updateQuickAddPreview();              // live parse of the task input
 
 signals:
@@ -130,6 +132,36 @@ private:
     // '#school' -> the matching category id (exact name, case-insensitive),
     // or the currently selected life area when there is no/unknown hint.
     QString resolveCategoryHint(const QString& hint) const;
+
+public:
+    // PUBLIC for the same reason startPieceUnder is: this is the behaviour
+    // the long-press menu merely TRIGGERS, and a QMenu cannot be driven from
+    // a headless suite (exec() runs a nested loop and would hang). Exposing
+    // what the menu calls is what makes the touchscreen's only reorder path
+    // testable at all.
+    void moveRowBy(const QStringList& order, const QString& id, int delta);
+    QStringList displayedTaskIds() const;
+    QStringList displayedActivityIds() const;
+    // One builder per list, two doors each: right-click, and a held finger
+    // (ReorderListView::rowLongPressed). PUBLIC for the same reason as the
+    // above — a QMenu::exec cannot be driven from a headless suite, so what
+    // the menu OFFERS is checked by calling what it calls.
+    void showTaskRowMenu(const QString& id, const QPoint& globalPos);
+    void showActivityRowMenu(const QString& id, const QPoint& globalPos);
+    // Reorder mode, per list. PUBLIC so a test can enter the mode the way
+    // the button does — the delegates' arrows are painted, and a painted
+    // affordance is only checkable through the state that produces it.
+    void setTaskReorderMode(bool on);
+    void setActivityReorderMode(bool on);
+
+private:
+    // See the .cpp: a grip drag is a mouse gesture, so the same capability is
+    // offered through the row's long-press menu, and both lists share one
+    // implementation of "up"/"down" because both reorder through the same
+    // pair of domain doors.
+    void addMoveActions(class QMenu& menu, const QStringList& order,
+                        const QString& id);
+    class QPushButton* makeReorderToggle(QWidget* parent);
 
     AppData*     m_data;
     CategoryTree* m_rail  = nullptr;
@@ -170,9 +202,25 @@ private:
     QWidget*              m_headerHost   = nullptr;  // dot/name/button, refilled
     QLineEdit*            m_taskInput    = nullptr;
     QLabel*               m_quickAddPreview = nullptr; // live parse readout
+    // Visible only while this area is SortMode::Manual — see buildDetailPane.
+    class QPushButton*    m_sortResetBtn   = nullptr;
+    class QPushButton*    m_taskReorderBtn = nullptr;
+    class QPushButton*    m_actReorderBtn  = nullptr;
+    // Which area the mode was entered for. Switching areas drops it; a mere
+    // data change must not (see refreshDetail).
+    QString               m_reorderAreaId;
     CategoryTaskModel*    m_taskModel    = nullptr;
     CategoryTaskDelegate* m_taskDelegate = nullptr;
-    QListView*            m_taskView     = nullptr;
+    // v31: a ReorderListView, not a plain QListView — the grip drag lives in
+    // the view, not here (see ReorderListView.h for why the whole gesture is
+    // hand-rolled rather than Qt's InternalMove).
+    class ReorderListView* m_taskView    = nullptr;
     QLineEdit*            m_actInput     = nullptr;
-    QWidget*              m_actHost      = nullptr;  // activity rows, refilled
+    // v31: the activities became a model/view list too, so both lists in the
+    // pane reorder through the same view class and paint through the same
+    // delegate technique. m_actHost (a QWidget refilled with hand-built rows)
+    // is gone with them.
+    class ActivityListModel*   m_actModel    = nullptr;
+    class ActivityRowDelegate* m_actDelegate = nullptr;
+    ReorderListView*           m_actView     = nullptr;
 };

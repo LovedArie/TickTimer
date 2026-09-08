@@ -8,7 +8,8 @@
 //   - an Activity used by any Event cannot be deleted,
 //   - a Category can only be deleted once it holds no Activities
 //     and no Tasks (extended by the Tasks addendum),
-//   - two Events on the same day cannot overlap —
+//   - at most plan::kMaxConcurrentBlocks Events may cover one instant
+//     (v31.3; it was "cannot overlap at all" until then) —
 // are enforced HERE, in the mutation methods, not in the UI. If the rules
 // lived in the UI, every new screen (and the future Android UI!) would have
 // to re-implement them, and one day one screen would forget. Put the law
@@ -29,6 +30,7 @@
 #include "Category.h"
 #include "Event.h"
 #include "Folder.h"
+#include "Schedule.h"
 #include "SpecialDay.h"
 #include "Mood.h"
 #include "Task.h"
@@ -168,6 +170,13 @@ public:
     // their parent. Note the deliberate asymmetry with taskCountIn above:
     // the LIST hides pieces, the GUARD counts them. Different questions.
     QVector<const Task*> tasksIn(const QString& categoryId) const;
+    // v31: the same question for the OTHER list in a life area. It existed
+    // only as a raw loop over activities() in ActivitiesPage until ordering
+    // made it a real question with a real answer — "which activities, in
+    // which order?" is domain knowledge, and a page re-deriving it is how
+    // two surfaces end up disagreeing. Archived activities are excluded,
+    // matching what every list already did by hand.
+    QVector<const Activity*> activitiesIn(const QString& categoryId) const;
     int  categoryCountInFolder(const QString& folderId) const;
 
     // The Upcoming page's entire data supply: every undone, DATED task,
@@ -186,9 +195,16 @@ public:
     QVector<const Task*>     archivedTasks() const;
     QVector<const Activity*> archivedActivities() const;
     QVector<const Category*> archivedCategories() const;
+    QVector<const Folder*>   archivedFolders() const;
     // The one cascade rule, named once and reused by every filter:
     // hidden = own flag OR the owning category's flag.
     bool taskHidden(const Task& t) const;
+    // The SAME cascade one level up (v31): a life area is hidden when its
+    // own flag is set OR when the folder it lives in is archived. Every
+    // list that used to test `c.archived` directly must ask this instead,
+    // or archiving a semester would hide the folder and leave its four
+    // courses floating at the top level.
+    bool categoryHidden(const Category& c) const;
     // Every undone task whose due date IS this exact day — what the Calendar
     // shows as "due today". A query, same discipline as upcomingTasks():
     // derived on demand, never stored.
@@ -219,6 +235,37 @@ public:
     // Special days sorted by their next occurrence as seen from `today`.
     QVector<const SpecialDay*> specialDaysSorted(QDate today) const;
     int  eventCountUsing(const QString& activityId) const;
+    // "Is there room for a block here?" — v31.3, and RENAMED from isFree
+    // rather than quietly re-pointed. isFree meant "nothing is there"; this
+    // means "fewer than three things are there", and leaving the old name
+    // over the new behaviour is exactly the trap this repo has logged three
+    // times (TROUBLESHOOTING.md: state gains a new consumer, write sites go
+    // un-audited). The rename made the compiler walk every call site.
+    //
+    // The judgement itself is daylay::problemWith — pure, and shared with the
+    // screens, so no dialog can be kinder than the aggregate root.
+    bool hasRoomFor(QDate date, int startMin, int endMin,
+                    const QString& ignoreEventId = QString()) const;
+
+    // The same question, answered with a sentence instead of a bool, for the
+    // screen that has to explain a refusal. Empty means there is room.
+    QString whyNoRoomFor(QDate date, int startMin, int endMin,
+                         const QString& ignoreEventId = QString()) const;
+
+    // "Is there NOTHING here?" - which is a different question from
+    // hasRoomFor above, and keeping both is the point.
+    //
+    // This is what isFree always meant, and it still means it. The agenda
+    // asks it to decide whether to offer the "+ plan" invitation on a slot:
+    // a slot holding one block has ROOM, but it has no empty pixels, so
+    // inviting a click there would promise a gesture that lands on the
+    // existing block instead. Creation-by-clicking-space stays about space;
+    // stacking is done by dragging a block onto another, or by a schedule.
+    //
+    // The v31.3 rename of the capacity gate is what surfaced this: four call
+    // sites in AgendaWidget turned out to be asking the emptiness question,
+    // not the capacity one, and would have silently changed behaviour had the
+    // old name simply been re-pointed at the new rule.
     bool isFree(QDate date, int startMin, int endMin,
                 const QString& ignoreEventId = QString()) const;
 
@@ -263,6 +310,12 @@ public:
     bool    renameCategory(const QString& id, const QString& name);
     bool    recolorCategory(const QString& id, const QColor& color);
     bool    removeCategory(const QString& id);          // fails if it has activities
+    // v31: which ordering this area's TASK list gives. Manual is reached by
+    // dragging (moveTaskBefore flips it); this door exists so the user can
+    // hand the list back to the deadline sort without dragging every row
+    // into place again — a one-way switch would make the first drag a
+    // decision you cannot revisit.
+    bool    setCategorySortMode(const QString& id, Category::SortMode mode);
 
     QString addActivity(const QString& name, const QString& categoryId);
     bool    removeActivity(const QString& id);          // fails if any Event uses it
@@ -270,13 +323,40 @@ public:
     // refusal: an in-use activity CAN'T be deleted, so this is its only
     // retirement path — out of the pickers, still owning its history.
     bool    setActivityArchived(const QString& id, bool archived);
+    // v31: an activity is EDITABLE. Until now a typo could only be fixed by
+    // deleting and recreating — which the domain refuses the moment the
+    // activity appears in one past event, so the typo was permanent.
+    //
+    // Renaming is safe precisely BECAUSE of the reference-don't-copy rule
+    // (Activity.h): every event holds the id, never the name, so the fix
+    // reaches all of history at once and nothing can disagree afterwards.
+    bool    renameActivity(const QString& id, const QString& name);
+    bool    setActivityDescription(const QString& id, const QString& text);
+
+    // ---- hand ordering (v31) ----------------------------------------------
+    // "Put this one before that one." `beforeId` empty means "to the end".
+    // Both take the moved item's id and a NEIGHBOUR's id rather than a target
+    // index, and the choice matters: an index is a fact about a list that was
+    // computed somewhere else, and the two can disagree the moment anything
+    // changes between the drop and the call. A neighbour id cannot go stale
+    // into a wrong answer — at worst it is not found, which is refusable.
+    //
+    // Each renumbers the whole category's keys densely from the order the
+    // user is CURRENTLY LOOKING AT. That is what makes the first drag on a
+    // Smart list not scramble it: the smart order becomes the seed, the one
+    // dragged row moves, and everything else stays where it was on screen.
+    // moveTaskBefore then flips the area to Manual, because a list that
+    // ignored the drag it just accepted would be lying.
+    bool    moveTaskBefore(const QString& taskId, const QString& beforeId);
+    bool    moveActivityBefore(const QString& activityId,
+                               const QString& beforeId);
 
     // Three creation doors, one per block identity (block-labels addendum).
     // Three NAMED functions instead of one addEvent(activityId, taskId,
     // title): a caller physically cannot pass a nonsense combination
     // ("both a task and an activity"), because no signature accepts one —
     // illegal calls are unrepresentable at the call site, not caught later.
-    // All three run through the same isFree gate; all fail -> "".
+    // All three run through the same hasRoomFor gate; all fail -> "".
     QString addEvent(QDate date, int startMin, int endMin,
                      const QString& activityId,          // fails on overlap -> ""
                      const QString& title = QString());  // optional block label
@@ -286,7 +366,8 @@ public:
                           const QString& title);         // spontaneous; title required
     bool    moveEvent(const QString& id, int newStartMin); // keeps duration
     // Change an event's planned SPAN (start and/or end). Routes through the
-    // same isFree guard as creation — in-bounds, and non-overlapping with
+    // same hasRoomFor guard as creation — in-bounds, and within the
+    // concurrency cap against
     // OTHER events (this one excluded by id) — plus a one-slot minimum. It
     // REFUSES an illegal span (returns false) rather than clamping: the
     // widget clamps for a friendly live preview, the domain is the single
@@ -303,7 +384,6 @@ public:
     // you're doing inside it. Same guards as everywhere: a link must point
     // at a real Task, and an unlink may not strip the last identity.
     bool    setEventTask(const QString& id, const QString& taskId);
-    bool    setEventRepeat(const QString& id, Task::Repeat repeat);
 
     // ---- catch-up: what happened to a block that didn't (v26.2) -----------
     // The DECISION half of the missed-block feature. Whether a block was
@@ -396,14 +476,66 @@ public:
     // the verb is a separate act with its own review.
     bool undoReschedule(const QString& id);
 
-    // v19.10: advance every repeating block whose date has passed — the
-    // rule re-arms at the first rule-date >= today whose slots are FREE
-    // (occupied dates are skipped, not fought; a year of collisions and
-    // the rule stays on the old block to retry tomorrow). No retroactive
-    // occurrences for days you weren't there: an empty plan for last
-    // Tuesday is noise, not history. Returns how many blocks were
-    // spawned; called at startup and at each midnight by MainWindow.
-    int rollRepeats(QDate today);
+    // ---- schedules: recurrence with a future you can see (v31) -----------
+    //
+    // This REPLACES rollRepeats (v19.10–v30.8), which advanced a repeating
+    // block by one occurrence once its date had passed. See Schedule.h for
+    // why "one at a time, after the fact" could never answer "show me every
+    // week"; the short version is that the rule lived on a block, so the
+    // rule and its only occurrence were the same object.
+    const QVector<Schedule>& schedules() const { return m_schedules; }
+    const Schedule* scheduleById(const QString& id) const;
+    // Every rule attached to one activity — the activity editor's list. An
+    // activity may hold several: a course that meets Tuesday AND Thursday
+    // is two rules, not one rule with a list of weekdays, because two rules
+    // can differ in time, in end date, and in whether you skipped one.
+    QVector<const Schedule*> schedulesFor(const QString& activityId) const;
+
+    // Create / edit / delete. `s.id` is assigned by addSchedule and ignored
+    // on input, the same contract every other add door here keeps.
+    QString addSchedule(const Schedule& s);
+    // Both take `today` EXPLICITLY rather than reading the clock, because
+    // both decide what counts as the future: they withdraw this rule's
+    // future, untouched occurrences so the new rule can remake them. A
+    // hidden QDate::currentDate() inside would make that judgement
+    // unobservable, which is the same argument TrackerService::nowProvider
+    // and the old rollRepeats(today) already make. The caller owns the
+    // clock; the domain owns the rule.
+    bool    updateSchedule(const Schedule& s, QDate today); // matched by s.id
+    bool    removeSchedule(const QString& id, QDate today);
+
+    // "Not this week." Records the date on the rule so materialisation will
+    // not make it again, and deletes the occurrence if it is still there.
+    // Called by removeEvent for any block carrying a scheduleId, so deleting
+    // a lecture from the agenda does the obvious thing without the agenda
+    // knowing schedules exist.
+    bool skipOccurrence(const QString& scheduleId, QDate date);
+
+    // "This block IS the rule's first occurrence." Used when a rule is born
+    // FROM an existing block (EventDialog's Repeats combo): without it the
+    // block you were looking at would sit beside the rule rather than
+    // belong to it, and stopping the rule later would strand it. Refuses a
+    // block that already belongs to a different rule — one occurrence, one
+    // owner.
+    bool adoptEventIntoSchedule(const QString& eventId,
+                                const QString& scheduleId);
+
+    // Materialise every occurrence due in [today, today + horizonDays] that
+    // does not exist yet, as a real Event. Returns how many were created.
+    // Called at startup and at each midnight by MainWindow, where
+    // rollRepeats used to be, and again after any schedule edit.
+    //
+    // THE PAST IS NEVER BACKFILLED. A rule that starts in August, entered in
+    // September, does not conjure August's blocks: you cannot plan a day
+    // that has happened, and inventing thirty un-tracked blocks would hand
+    // the catch-up card thirty accidents that never occurred. rollRepeats
+    // made the same call ("no retroactive occurrences for days you weren't
+    // there") and it was right.
+    int syncSchedules(QDate today, int horizonDays = kScheduleHorizonDays);
+    // 120 days: a university term, so a semester's timetable is visible end
+    // to end the day it is entered. Large enough to be useful, small enough
+    // that a daily rule adds ~120 rows rather than thousands.
+    static constexpr int kScheduleHorizonDays = 120;
     bool    removeEvent(const QString& id);
     bool    appendSegment(const QString& eventId, const Segment& segment);
     // Honest tracking works both ways: appendSegment adds a fact the timer
@@ -449,6 +581,19 @@ public:
                        const QString& description, QDate dueDate,
                        QTime dueTime, Task::Repeat repeat,
                        Task::Priority priority = Task::Priority::Medium);
+    // v31: when a repeating task stops repeating. A door of its own rather
+    // than an eighth parameter on updateTask, because updateTask's whole
+    // argument is that a forgotten seed should be a COMPILE error — and a
+    // defaulted eighth parameter is precisely a seed that can be forgotten
+    // silently. The detail form already batches its several mutations into
+    // one changed(), which is what made the coarse door worth having in the
+    // first place; one more call inside that batch costs nothing.
+    //
+    // Clearing the repeat clears this with it (updateTask enforces that),
+    // for the same reason clearing a due date clears its time: an end date
+    // for a rule that no longer exists is a stranded fact waiting to be
+    // believed.
+    bool    setTaskRepeatUntil(const QString& id, QDate until);
     // v28.3: archiving a PARENT cascades to its pieces, in BOTH directions
     // of the toggle — archive takes the checklist with it, restore brings
     // it back. An archived parent whose pieces stayed visible would leave
@@ -517,6 +662,12 @@ public:
     // cover moods too. Not a general setter — the app mutates through
     // recordMood.
     void setMoodsFromLoad(QVector<Mood> moods);
+    // v31: schedules land the same way, and for the same reason — one more
+    // container would have meant an eighth parameter on resetFrom and
+    // replaceAll, and on every call site of both, to say nothing that the
+    // silent door does not already say. Not a general setter; the app
+    // mutates through addSchedule / updateSchedule / removeSchedule.
+    void setSchedulesFromLoad(QVector<Schedule> schedules);
 
     // THE derived list every surface renders (glance panel now, week view
     // in part 3) — one query so no two screens can disagree about what
@@ -537,6 +688,10 @@ public:
 
     QString addFolder(const QString& name);
     bool    renameFolder(const QString& id, const QString& name);
+    // Retire a whole semester (v31). Third instance of the v8 rule, one
+    // level up: hides the folder AND every life area in it, sets no child
+    // flags, so restore is exact. See Folder.h for why no cascade.
+    bool    setFolderArchived(const QString& id, bool archived);
     bool    removeFolder(const QString& id);       // fails while it holds categories
     bool    setCategoryFolder(const QString& categoryId,
                               const QString& folderId); // "" = move to top level
@@ -613,6 +768,30 @@ private:
     // above enforceable — a direct `emit changed()` anywhere in the .cpp
     // would be a hole in the fence, so there are none.
     void notifyChanged();
+
+    // "What key does a NEW row in this area get?" — one past the largest in
+    // use, so births land at the end. Private because the answer is only
+    // ever meaningful at a creation door; exposing it would invite a caller
+    // to set a key by hand and skip the dense renumbering the move doors
+    // depend on.
+    int nextTaskSortKey(const QString& categoryId) const;
+    int nextActivitySortKey(const QString& categoryId) const;
+
+    // ---- schedule internals (v31) ----------------------------------------
+    // The legality rule, named once so addSchedule and updateSchedule cannot
+    // drift into two different ideas of a valid rule.
+    bool scheduleIsWellFormed(const Schedule& s) const;
+    // "Nothing has happened to this block yet": no tracked segments, no
+    // catch-up verdict, not the one being timed. The safety property every
+    // schedule edit rests on, so it is a predicate rather than a condition
+    // retyped at each call site.
+    bool occurrenceIsUntouched(const Event& e) const;
+    // Withdraw this rule's future, untouched occurrences so they can be
+    // regenerated. Private because it leaves the plan momentarily short of
+    // blocks the rule still implies; only a caller that immediately re-syncs
+    // (or is deleting the rule) may see that state.
+    int  dropUntouchedFutureOccurrences(const QString& scheduleId, QDate from);
+
     int  m_batchDepth = 0; // nested Batches are counted, not forbidden
     bool m_batchDirty = false; // did anything happen while batched?
 
@@ -621,6 +800,7 @@ private:
     QVector<Event>    m_events;
     QVector<Task>       m_tasks;
     QVector<Folder>     m_folders;
+    QVector<Schedule>   m_schedules;
     QVector<SpecialDay> m_specialDays;
     QVector<Mood>       m_moods; // one per date, kept sorted by recordMood
 

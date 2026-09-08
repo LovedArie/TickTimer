@@ -232,7 +232,8 @@ private slots:
         // First user logs in → adopts the global file, data intact.
         QVERIFY(JsonStore::adoptGlobalDataForUser(userA));
         AppData adopted;
-        QVERIFY(JsonStore(JsonStore::filePathForUser(userA)).load(adopted));
+        QCOMPARE(JsonStore(JsonStore::filePathForUser(userA)).load(adopted),
+                 JsonStore::LoadResult::Loaded);
         QCOMPARE(adopted.categories().size(), 1);
         QCOMPARE(adopted.categories().first().name, QString("Old Work"));
 

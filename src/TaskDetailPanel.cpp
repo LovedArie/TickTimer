@@ -231,6 +231,8 @@ void TaskDetailPanel::buildFor(const QString& taskId)
                                 snapshot.repeat, snapshot.priority,
                                 snapshot.estimateMinutes, snapshot.chunkable);
 
+    m_form->seedRepeatUntil(snapshot.repeatUntil); // v31 — see the header
+
     if (snapshot.isPiece())
         if (const Task* parent = m_data->taskById(snapshot.parentId))
             m_form->setBreadcrumb(parent->id, parent->title);

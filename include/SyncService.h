@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SyncClient.h"
+#include "Merge.h" // merge::Clash - a conflict is handed on WHOLE, not flattened
 
 #include <QDateTime>
 #include <QJsonObject>
@@ -66,7 +67,20 @@ public:
     bool hasPendingConflict() const { return m_heldServerRevision != 0; }
 
     // The two conflict resolutions, called by the dialog's buttons.
-    void resolveUseServer(); // replace local with the held server version
+    void resolveUseServer();
+    // v31.2 — what the last conflict could NOT merge, for the dialog to
+    // name. Empty whenever there is no pending conflict.
+    // v31.2 - what the last conflict could NOT merge, handed on whole so the
+    // dialog can say which SIDE each row came from. It used to be flattened
+    // to a QStringList of labels here, which threw away both the collection
+    // and the shape of the disagreement and left the dialog with nothing to
+    // describe. Empty whenever there is no pending conflict.
+    QVector<merge::Clash> pendingClashes() const { return m_clashes; }
+
+    // "Is any row actually governed by the two buttons?" False when every
+    // clash is an edit-vs-delete, where both merge plans agree - see
+    // merge::decidedByPreference.
+    bool hasContestedClash() const;  // replace local with the held server version
     void resolveKeepMine();  // force-push local, overwriting the server
 
     // v30.4.5 — "this device has unsent work", asserted from OUTSIDE.
@@ -111,7 +125,12 @@ private:
     AppData*    m_data;
     SyncClient* m_client;
 
-    void recordSuccess();     // stamp + persist lastSyncTime, one place
+    void recordSuccess();
+    // The sync BASE: the document both sides last agreed on. Written at
+    // every success, read when a conflict needs deciding. See Merge.h for
+    // why a two-way merge without it silently resurrects deletions.
+    QJsonObject loadBase() const;
+    void        saveBase(const QJsonObject& doc) const;     // stamp + persist lastSyncTime, one place
     void clearHeldConflict(); // held state dies WHOLE (see the .cpp story)
 
     int         m_lastRevision = 0;
@@ -129,7 +148,17 @@ private:
     bool        m_applying     = false;
     bool        m_busy         = false;
 
-    QJsonObject m_heldServerData;      // stashed during a conflict
+    QJsonObject m_heldServerData;
+    // v31.2 — the two candidate documents a conflict leaves behind. Both are
+    // FULLY MERGED; they differ only in which side won the handful of
+    // entities that were edited on both. So "keep mine" no longer throws the
+    // other device's day away — it decides the contested rows and keeps
+    // every uncontested one from both sides.
+    QJsonObject m_mergedPreferringMine;
+    QJsonObject m_mergedPreferringServer;
+    QVector<merge::Clash> m_clashes;
+    QString     m_basePath;
+    QJsonObject m_pushedDoc; // what a push put on the wire, to become the base      // stashed during a conflict
     int         m_heldServerRevision = 0;
 
     class QTimer* m_autoTimer = nullptr; // the debounce (owned, child)

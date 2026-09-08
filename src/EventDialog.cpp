@@ -343,8 +343,16 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     layout->addWidget(moveCaption);
     layout->addLayout(moveGrid);
 
-    // ---- repeat (v19.10) ----------------------------------------------------
-    // The combo APPLIES ON CHANGE, like the nudge buttons around it — this
+    // ---- repeat (v19.10; rebuilt on schedules in v31) -----------------------
+    //
+    // The control looks the same and now means something different, and the
+    // difference is the feature. It used to set Event::repeat, which rolled
+    // this block forward by ONE occurrence once its date had passed — so
+    // "weekly" never showed you next week. Choosing a repeat here now
+    // creates a SCHEDULE seeded from this block (Schedule.h), and the whole
+    // horizon materialises at once.
+    //
+    // Still applies on change, like the nudge buttons around it — this
     // dialog is a control panel, not a form; nothing here waits for an OK.
     // Items in enum order so currentIndex IS the enum (the TaskDetailDialog
     // precedent, same vocabulary, same trick).
@@ -353,21 +361,25 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     auto* repeatCaption = new QLabel(tr("Repeats"), this);
     repeatCaption->setObjectName("sub");
     auto* repeatCombo = new QComboBox(this);
+    repeatCombo->setObjectName(QStringLiteral("blockRepeatCombo"));
     repeatCombo->addItem(tr("Does not repeat")); // Repeat::None   == 0
     repeatCombo->addItem(tr("Daily"));           // Repeat::Daily  == 1
     repeatCombo->addItem(tr("Weekly"));          // Repeat::Weekly == 2
     repeatCombo->addItem(tr("Monthly"));         // Repeat::Monthly== 3
     repeatCombo->addItem(tr("Yearly"));          // Repeat::Yearly == 4
-    repeatCombo->setCurrentIndex(
-        int(m_data->eventById(m_eventId)->repeat));
+    // The block's CURRENT answer comes from the rule that made it, if any.
+    // A hand-placed block has no rule and reads as "does not repeat" —
+    // which is the truth about it, not a default.
+    if (const Event* e = m_data->eventById(m_eventId))
+        if (const Schedule* sched = m_data->scheduleById(e->scheduleId))
+            repeatCombo->setCurrentIndex(int(sched->repeat));
     repeatCombo->setToolTip(
-        tr("When this block's day has passed, the plan re-creates itself "
-           "on the next date the rule names (skipping dates whose slots "
-           "are taken). Tracked history stays on each past block."));
+        tr("Fills the calendar ahead with this block, on every date the "
+           "rule names, for the next few months. Set an end date, and edit "
+           "or stop the rule, from the activity it belongs to. Deleting one "
+           "of the blocks skips just that date."));
     connect(repeatCombo, &QComboBox::currentIndexChanged, this,
-            [this](int index) {
-                m_data->setEventRepeat(m_eventId, Task::Repeat(index));
-            });
+            [this](int index) { applyRepeatChoice(Task::Repeat(index)); });
     repeatRow->addWidget(repeatCombo);
     repeatRow->addStretch(1);
     layout->addWidget(repeatCaption);
@@ -811,5 +823,73 @@ void EventDialog::rebuildSegmentList()
         h->addWidget(text, 1);
         h->addWidget(x);
         m_segList->addWidget(row);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// applyRepeatChoice — "repeat this block" as ONE domain action.
+//
+// It lives here as a named method rather than inside the lambda above
+// because it makes three different decisions depending on what exists
+// already, and three branches inside a connect() is where a control panel
+// starts hiding logic:
+//
+//   no rule + a repeat chosen -> create one, seeded from this block
+//   a rule   + a repeat chosen -> edit it (the rule may already have an
+//                                 end date and skipped dates; both survive)
+//   a rule   + "does not repeat" -> delete the rule, keep every block that
+//                                 has real time or a verdict on it
+//
+// The seed deliberately starts at THIS block's date, so the block you are
+// looking at becomes the first occurrence rather than a stray extra one.
+// ---------------------------------------------------------------------------
+void EventDialog::applyRepeatChoice(Task::Repeat repeat)
+{
+    const Event* e = m_data->eventById(m_eventId);
+    if (!e)
+        return;
+    const QString existingId = e->scheduleId;
+
+    if (repeat == Task::Repeat::None) {
+        if (!existingId.isEmpty())
+            m_data->removeSchedule(existingId, QDate::currentDate());
+        return;
+    }
+
+    Schedule sched;
+    sched.activityId   = e->activityId;
+    // A task-linked block has no activity, so the rule takes the block's
+    // own label — and if it has none, the task's title, resolved NOW. The
+    // rule does not carry the task link forward: next week's block should
+    // say what it was about, not claim a deliverable that may be done by
+    // then. That judgement is inherited verbatim from the v9 roll it
+    // replaces.
+    sched.title        = e->title;
+    if (sched.activityId.isEmpty() && sched.title.trimmed().isEmpty())
+        if (const Task* t = m_data->taskById(e->taskId))
+            sched.title = t->title;
+    sched.startDate    = e->date;
+    sched.startMinutes = e->plannedStartMinutes;
+    sched.endMinutes   = e->plannedEndMinutes;
+    sched.repeat       = repeat;
+
+    if (existingId.isEmpty()) {
+        const QString id = m_data->addSchedule(sched);
+        if (id.isEmpty())
+            return; // the domain refused (nameless block); leave things be
+        // Adopt this block as the rule's first occurrence instead of letting
+        // syncSchedules make a second one beside it — isFree would refuse the
+        // duplicate anyway, but then the block you were looking at would not
+        // belong to the rule you just made, and stopping the rule later would
+        // leave it behind.
+        m_data->adoptEventIntoSchedule(m_eventId, id);
+        m_data->syncSchedules(QDate::currentDate());
+        return;
+    }
+
+    if (const Schedule* current = m_data->scheduleById(existingId)) {
+        Schedule edited = *current; // keep its end date and its skips
+        edited.repeat = repeat;
+        m_data->updateSchedule(edited, QDate::currentDate());
     }
 }

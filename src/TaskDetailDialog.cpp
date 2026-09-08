@@ -136,6 +136,11 @@ void applyTaskDetailAnswers(AppData& data, const QString& taskId,
     data.updateTask(taskId, form.chosenTitle(), form.chosenDescription(),
                     form.chosenDueDate(), form.chosenDueTime(),
                     form.chosenRepeat(), form.chosenPriority());
+    // AFTER updateTask, not before: updateTask clears the end whenever the
+    // repeat is None, so setting it first would be undone by the very call
+    // that saves the rule it belongs to. Ordering is the whole content of
+    // this line.
+    data.setTaskRepeatUntil(taskId, form.chosenRepeatUntil());
     data.setTaskSize(taskId, form.chosenEstimateMinutes(),
                      form.chosenChunkable());
 
@@ -237,6 +242,8 @@ void runTaskDetail(AppData& data, QString taskId, QWidget* windowParent)
                                 snapshot.repeat, snapshot.priority,
                                 snapshot.estimateMinutes, snapshot.chunkable,
                                 windowParent);
+
+        dialog.form().seedRepeatUntil(snapshot.repeatUntil); // v31
 
         // A piece gets the way back up. Guarded twice on purpose: isPiece()
         // says there SHOULD be a parent, taskById says there IS.

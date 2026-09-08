@@ -4,6 +4,7 @@
 #include "Widgets.h" // isCompactScreen
 
 #include "CategoryTaskModel.h"
+#include "ReorderListView.h" // reorder::kGripWidth — one band, two readers
 #include "Task.h"
 #include "Theme.h"
 
@@ -73,6 +74,32 @@ CategoryTaskDelegate::CategoryTaskDelegate(QObject* parent)
 {
 }
 
+void CategoryTaskDelegate::setReorderMode(bool on) { m_reorderMode = on; }
+
+namespace
+{
+// The two arrows, sized for a thumb and placed right-to-left. 48dp square on
+// a phone — the full Material target, which the row can finally afford
+// because reorder mode has cleared everything else off the right.
+void placeArrows(QRect& up, QRect& down, int& right, int cy, bool compact)
+{
+    const int side = compact ? 48 : 32;
+    down = QRect(right - side, cy - side / 2, side, side);
+    right -= side + 4;
+    up = QRect(right - side, cy - side / 2, side, side);
+    right -= side + 8;
+}
+
+void drawArrow(QPainter* p, const QRect& r, const QString& glyph, bool enabled)
+{
+    QFont f = p->font();
+    f.setPixelSize(14);
+    p->setFont(f);
+    p->setPen(enabled ? QColor("#2B2F36") : QColor("#C7CCC6"));
+    p->drawText(r, Qt::AlignCenter, glyph);
+}
+} // namespace
+
 CategoryTaskDelegate::RowGeom
 CategoryTaskDelegate::geometryFor(const QStyleOptionViewItem& option,
                                   const QModelIndex& index) const
@@ -84,14 +111,47 @@ CategoryTaskDelegate::geometryFor(const QStyleOptionViewItem& option,
     // editorEvent() read, so the checkbox you SEE and the checkbox you CAN
     // CLICK shift together by construction — an indent applied in paint
     // alone is the classic off-by-24px dead-zone bug.
-    if (index.data(cattask::IsPieceRole).toBool())
+    const bool piece = index.data(cattask::IsPieceRole).toBool();
+    if (piece)
         r.adjust(kPieceIndent, 0, 0, 0);
     const int cy = r.center().y();
 
-    g.check = QRect(r.left() + kPad, cy - kCheck / 2, kCheck, kCheck);
+    // v31 — the reorder grip, leading edge, ahead of everything else.
+    //
+    // NOT drawn on a piece, and the reason is a domain fact rather than a
+    // layout one: tasksIn() is parents-only, so a piece has no position in
+    // this list to move. An affordance for an operation the domain refuses
+    // is a promise the app cannot keep. (AppData::moveTaskBefore refuses a
+    // piece anyway — that is the wall; this is only honest chrome.)
+    //
+    // The band still costs its width on a piece row, so the checkbox column
+    // stays aligned down the whole list. Alignment is what makes a list
+    // scannable; a checkbox that shuffles left on every piece would cost
+    // more than the empty 22px does.
+    // gripWidth() is 0 on a phone, where there is no drag to hold and the
+    // reorder lives in the row's long-press menu instead — so the band costs
+    // nothing there and the row gets its 22dp back.
+    if (!piece && reorder::gripWidth() > 0)
+        g.grip = QRect(r.left(), r.top(), reorder::gripWidth(), r.height());
+
+    g.check = QRect(r.left() + reorder::gripWidth() + kPad, cy - kCheck / 2,
+                    kCheck, kCheck);
 
     // Right-side affordances, placed right-to-left; the title takes the rest.
     int right = r.right() - kPad;
+
+    // REORDER MODE: two arrows and nothing else. Everything the row normally
+    // carries on the right is a way to CHANGE the task, and none of it is
+    // what you came here to do — leaving it would also put a 48dp arrow
+    // beside a 24dp × and invite exactly the mis-taps the touch gate warns
+    // about.
+    if (m_reorderMode) {
+        placeArrows(g.up, g.down, right, cy, isCompactScreen());
+        const int titleLeftR = r.left() + reorder::gripWidth() + kPad;
+        g.title = QRect(titleLeftR, r.top(), right - titleLeftR, r.height());
+        return g; // no checkbox either: not while you are rearranging
+    }
+
     g.del = QRect(right - kDelW, cy - kDelW / 2, kDelW, kDelW);
     right -= kDelW + kGap;
 
@@ -105,7 +165,7 @@ CategoryTaskDelegate::geometryFor(const QStyleOptionViewItem& option,
     g.due = placePill(right, cy, dueBadgeText(index), pillFont);
 
     if (index.data(RepeatRole).toInt() != int(Task::Repeat::None)) {
-        const QString rep = QStringLiteral("\u27F3 %1").arg(
+        const QString rep = QStringLiteral("%1").arg(
             repeatLabel(Task::Repeat(index.data(RepeatRole).toInt())));
         g.repeat = placePill(right, cy, rep, pillFont);
     }
@@ -145,6 +205,40 @@ void CategoryTaskDelegate::paint(QPainter* painter,
     painter->setPen(QPen(QColor("#EEF0ED"), 1));
     painter->drawLine(option.rect.left() + kPad, option.rect.bottom(),
                       option.rect.right() - kPad, option.rect.bottom());
+
+    // The grip: six dots, the universal "pick me up" mark. Quiet grey — it
+    // is a handle, not a control that does anything on its own, and a list
+    // of twenty rows should not read as a column of twenty buttons.
+    if (!g.grip.isNull()) {
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QColor("#C7CCC6"));
+        const int cx = g.grip.center().x();
+        const int cy = g.grip.center().y();
+        for (int col = -1; col <= 1; col += 2)
+            for (int row = -1; row <= 1; ++row)
+                painter->drawEllipse(QPointF(cx + col * 3, cy + row * 5), 1.5,
+                                     1.5);
+        painter->setBrush(Qt::NoBrush);
+    }
+
+    if (m_reorderMode) {
+        QFont tf = option.font;
+        tf.setPixelSize(14);
+        painter->setFont(tf);
+        painter->setPen(done ? QColor("#AEB4AC") : QColor("#2B2F36"));
+        painter->drawText(g.title, Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(tf).elidedText(
+                              index.data(TitleRole).toString(),
+                              Qt::ElideRight, g.title.width()));
+        // Greyed at the ends rather than hidden, so the row's shape does not
+        // change as it travels and the arrows stay where the thumb learned
+        // they were.
+        drawArrow(painter, g.up, QStringLiteral("\u25B2"), index.row() > 0);
+        drawArrow(painter, g.down, QStringLiteral("\u25BC"),
+                  index.row() < index.model()->rowCount() - 1);
+        painter->restore();
+        return;
+    }
 
     // Checkbox: filled with a tick when done, empty outline otherwise.
     QPainterPath box;
@@ -201,7 +295,7 @@ void CategoryTaskDelegate::paint(QPainter* painter,
 
     // Repeat chip.
     if (!g.repeat.isNull()) {
-        const QString rep = QStringLiteral("\u27F3 %1").arg(
+        const QString rep = QStringLiteral("%1").arg(
             repeatLabel(Task::Repeat(index.data(RepeatRole).toInt())));
         drawPill(painter, g.repeat, rep, QColor("#EEF0ED"), QColor("#616974"),
                  pillFont);
@@ -282,6 +376,27 @@ bool CategoryTaskDelegate::editorEvent(QEvent* event,
         const int dh = qMax(0, option.rect.height() - r.height());
         return r.adjusted(-kGap / 2, -dh / 2, kGap / 2, dh - dh / 2);
     };
+
+    if (m_reorderMode) {
+        if (g.up.contains(p) && index.row() > 0) {
+            emit moveUpRequested(id);
+            return true;
+        }
+        if (g.down.contains(p)
+            && index.row() < index.model()->rowCount() - 1) {
+            emit moveDownRequested(id);
+            return true;
+        }
+        return true; // the rest of the row does nothing while rearranging
+    }
+
+    // The grip belongs to the VIEW, which swallows presses inside it before
+    // they ever reach here (ReorderListView::mousePressEvent). This guard is
+    // for the other case: a delegate is a reusable component and nothing
+    // stops it being handed to a plain QListView someday, where a tap on the
+    // handle would otherwise fall through to "edit this task".
+    if (!g.grip.isNull() && g.grip.contains(p))
+        return true;
 
     // Specific affordances first; the whole remaining row means "edit".
     if (touch::expand(g.check, compact).contains(p)) {

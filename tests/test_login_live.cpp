@@ -4,6 +4,7 @@
 #include "JsonStore.h"
 #include "SyncClient.h"
 #include "SyncService.h"
+#include "Merge.h" // merge::Clash — named, though SyncService.h drags it in
 #include "ShareClient.h"
 #include "UpdateClient.h"
 #include "Version.h"
@@ -654,35 +655,67 @@ private slots:
     // without it, every pull would immediately claim new work to push.
     QVERIFY(!service.dirty());
 
-    // Row 4 — CONFLICT, resolved "use server": both sides moved.
+    // Row 4 — BOTH SIDES MOVED, and since v31.2 that is NOT a question.
+    //
+    // This row used to assert a conflict and then, in its own words, "the
+    // server's two, ours gone" — a whole device's work discarded because two
+    // people added two DIFFERENT things. That is the defect the owner hit
+    // twice in an afternoon. The three-way merge keeps both and asks
+    // nothing, because nothing was actually contested.
     data.addCategory("Local edit", QColor("#D85A30")); // A is dirty now
     other.addCategory("Elsewhere again", QColor("#7F77DD"));
     QCOMPARE(awaitPush(clientB, JsonStore::toJsonObject(other), 2, false)
                  .first, SyncClient::Outcome::Success);        // server rev 3
 
+    QVERIFY(awaitService(service, [&]{ service.syncNow(); }, conflict));
+    QVERIFY(!conflict);                       // merged, no human needed
+    QCOMPARE(data.categories().size(), 3);    // BOTH sides survived
+    QStringList names;
+    for (const Category& c : data.categories())
+        names << c.name;
+    names.sort();
+    QCOMPARE(names, QStringList({"Elsewhere again", "From elsewhere",
+                                 "Local edit"}));
+    QVERIFY(!service.dirty());
+
+    // Row 5 — a REAL conflict: the same category, renamed differently on
+    // both sides. This is the residue the merge cannot settle, and the only
+    // thing a human should ever be asked about.
+    const QString sharedId = data.categories().first().id;
+    const QString sharedName = data.categories().first().name;
+    // Bring B's copy up to the merged state, then have each side rename the
+    // SAME row.
+    AppData bSide;
+    JsonStore::applyJsonObject(bSide, awaitPull(clientB).data, false);
+    QVERIFY(bSide.renameCategory(sharedId, "Renamed by them"));
+    QCOMPARE(awaitPush(clientB, JsonStore::toJsonObject(bSide),
+                       service.lastRevision(), false)
+                 .first, SyncClient::Outcome::Success);
+    QVERIFY(data.renameCategory(sharedId, "Renamed by me"));
+
     awaitService(service, [&]{ service.syncNow(); }, conflict);
-    QVERIFY(conflict); // a human must choose — nothing was overwritten yet
+    QVERIFY(conflict);                          // one row is genuinely torn
+    // v31.2 — the clash is handed on WHOLE, so the dialog can say which
+    // side it came from. Over a real socket, end to end: the collection it
+    // lives in, the label a person will recognise, and the shape of the
+    // disagreement.
+    QCOMPARE(service.pendingClashes().size(), 1);
+    const merge::Clash& clash = service.pendingClashes().first();
+    QCOMPARE(clash.collection, QStringLiteral("categories"));
+    QCOMPARE(clash.label, QStringLiteral("Renamed by me"));
+    QCOMPARE(clash.kind, merge::Clash::Kind::BothEdited);
+    // ...and this one IS a question, which is why a modal was raised at all.
+    QVERIFY(service.hasContestedClash());
 
     QVERIFY(awaitService(service, [&]{ service.resolveUseServer(); },
                          conflict));
-    QCOMPARE(service.lastRevision(), 3);
-    QCOMPARE(data.categories().size(), 2); // the server's two, ours gone
+    // The contested row went their way — and NOTHING ELSE was lost, which
+    // is the whole difference from the old all-or-nothing choice.
+    QCOMPARE(data.categories().size(), 3);
+    QVERIFY(data.categoryById(sharedId));
+    QCOMPARE(data.categoryById(sharedId)->name, QString("Renamed by them"));
     QVERIFY(!service.dirty());
-
-    // Row 4 again — CONFLICT, resolved "keep mine": the force-push path.
-    data.addCategory("Mine wins", QColor("#D4537E"));
-    QCOMPARE(awaitPush(clientB, JsonStore::toJsonObject(other), 3, false)
-                 .first, SyncClient::Outcome::Success);        // server rev 4
-    awaitService(service, [&]{ service.syncNow(); }, conflict);
-    QVERIFY(conflict);
-    QVERIFY(awaitService(service, [&]{ service.resolveKeepMine(); },
-                         conflict));
-    QCOMPARE(service.lastRevision(), 5); // force-push minted a new revision
-
-    // The server now holds A's version — B's next pull proves it.
-    PullResult final = awaitPull(clientB);
-    QCOMPARE(final.revision, 5);
-    QCOMPARE(final.data.value("categories").toArray().size(), 3);
+    Q_UNUSED(sharedName);
   }
 
   void sharingGatesReadAccessToAPeersPlanner() {
@@ -775,16 +808,27 @@ private slots:
     }, conflict));
     QVERIFY(!conflict);
 
-    // A second "device" moves the server behind our back…
+    // A second "device" moves the server behind our back — and since v31.2
+    // it has to move the SAME ROW, or there is nothing to conflict about.
+    //
+    // The old version of this test pushed a bare {"intruder": true}, a
+    // document with no collections at all. The merge reads that honestly as
+    // "they deleted everything", which is what that push literally says —
+    // so it produced no clash and the conflict never fired. A synthetic blob
+    // stopped being a synthetic CONFLICT the moment merging arrived.
     SyncClient rival("http://localhost:8091", token);
-    QJsonObject theirs; theirs["intruder"] = true;
-    QCOMPARE(awaitPush(rival, theirs, service.lastRevision(), false).first,
+    const QString rowId = data.categories().first().id;
+    AppData theirSide;
+    JsonStore::applyJsonObject(theirSide, awaitPull(rival).data, false);
+    QVERIFY(theirSide.renameCategory(rowId, "Theirs"));
+    QCOMPARE(awaitPush(rival, JsonStore::toJsonObject(theirSide),
+                       service.lastRevision(), false).first,
              SyncClient::Outcome::Success);
 
-    // …we edit too → genuinely concurrent → the debounce runs into a
-    // conflict and PARKS (auto-when, never auto-who-wins).
+    // …we rename the same row → genuinely contested → the debounce runs
+    // into a conflict and PARKS (auto-when, never auto-who-wins).
     awaitService(service, [&]() {
-        data.addCategory("Concurrent", QColor("#AA3366"));
+        data.renameCategory(rowId, "Ours");
     }, conflict);
     QVERIFY(conflict);
     QVERIFY(service.hasPendingConflict());

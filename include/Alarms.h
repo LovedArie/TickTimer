@@ -205,12 +205,30 @@ inline QVector<Alarm> upcoming(const AppData& data, const QDateTime& from,
         const bool tracked = !trackedEventId.isEmpty() && e.id == trackedEventId;
 
         if (!tracked) {
-            const QDateTime at = detail::instantOf(e.date, e.plannedStartMinutes);
+            // v31 — a scheduled block may ask to be announced EARLY. The
+            // lead lives on the rule (Schedule::reminderMinutes), not on
+            // each occurrence, so changing it changes every future chime at
+            // once and there is no second copy to fall out of step. A
+            // hand-placed block has no rule and keeps the original
+            // behaviour: announced at its start, exactly as since v19.7.
+            int lead = 0;
+            if (!e.scheduleId.isEmpty())
+                if (const Schedule* sched = data.scheduleById(e.scheduleId))
+                    lead = qMax(0, sched->reminderMinutes);
+
+            const QDateTime start =
+                detail::instantOf(e.date, e.plannedStartMinutes);
+            const QDateTime at = start.addSecs(-qint64(lead) * 60);
             if (at > from && at <= until) {
                 Alarm a;
                 a.key   = detail::keyFor(QStringLiteral("start"), e.id, at);
                 a.at    = at;
-                a.title = QStringLiteral("Starting now");
+                // The words have to change with the lead or the alarm lies:
+                // "Starting now" fifteen minutes early is worse than no
+                // reminder, because it is a fact the user will act on.
+                a.title = lead > 0
+                              ? QStringLiteral("In %1 min").arg(lead)
+                              : QStringLiteral("Starting now");
                 a.body  = QStringLiteral("%1 · %2").arg(label, when);
                 a.chime = Chime::Block;
                 out.append(a);

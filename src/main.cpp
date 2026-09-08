@@ -12,6 +12,8 @@
 #include "ResponsiveWatcher.h"
 #include "SessionStore.h"
 #include "MainWindow.h"
+
+#include <QMessageBox>
 #include "ProbeOverlay.h"
 #include "Theme.h"
 
@@ -107,6 +109,18 @@ int main(int argc, char* argv[])
         session::setDeviceToken(login.loggedInUser(), login.deviceToken());
 
     MainWindow window(login.loggedInUser());
+
+    // THE FORMAT FLOOR (design-addendum-format-floor.md). Checked before any
+    // of the sync wiring below and before show(): a planner written by a
+    // newer TickTimer was NOT opened, so this window holds nothing the user
+    // should see, let alone edit. Refusing here rather than inside the window
+    // keeps the decision where the app's lifetime is decided.
+    if (window.plannerRefused()) {
+        QMessageBox::critical(nullptr,
+                              QObject::tr("TickTimer cannot open this planner"),
+                              window.plannerError());
+        return 1;
+    }
     // Sync needs two things login just produced: where the server is, and
     // the session token proving who we are. Handed over once, here — the
     // window never sees a password. Note we ask the DIALOG for the URL, not

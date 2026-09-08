@@ -30,6 +30,7 @@
 // v1 offers single swaps and says so.
 // ---------------------------------------------------------------------------
 
+#include "DayLayout.h" // daylay::mergeSpans - one definition of "busy"
 #include "Event.h"
 #include "MissedBlocks.h"
 
@@ -184,6 +185,10 @@ inline QVector<Piece> freeOn(QDate day, const QVector<Event>& events,
     // Collect and merge the busy ranges. Merging first means the gap walk
     // below is a simple sweep — overlapping or touching blocks would
     // otherwise produce phantom zero-length gaps between them.
+    //
+    // The merge moved to daylay::mergeSpans in v31.3, when Affordability
+    // needed the same idea and getting it wrong there was silently costing
+    // free time. Two copies would have drifted the first time one was fixed.
     QVector<QPair<int, int>> busy;
     for (const Event& e : events) {
         if (e.date != day || e.id == ignoreEventId)
@@ -193,7 +198,7 @@ inline QVector<Piece> freeOn(QDate day, const QVector<Event>& events,
         if (s < t)
             busy.append({s, t});
     }
-    std::sort(busy.begin(), busy.end());
+    busy = daylay::mergeSpans(std::move(busy));
 
     int cursor = winStart;
     // NOT named `emit`: Qt #defines that to nothing, so `const auto emit =`
@@ -210,7 +215,7 @@ inline QVector<Piece> freeOn(QDate day, const QVector<Event>& events,
     for (const auto& span : busy) {
         if (span.first > cursor)
             emitGap(cursor, span.first);
-        cursor = qMax(cursor, span.second);
+        cursor = span.second; // merged spans are disjoint and ascending
     }
     if (cursor < winEnd)
         emitGap(cursor, winEnd);

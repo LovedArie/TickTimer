@@ -1,6 +1,7 @@
 #include "JsonStore.h"
 
 #include "AppData.h"
+#include "Ids.h" // ids::newId — the v9-repeat upgrade path mints a Schedule
 
 #include <algorithm> // std::max — the v13 estimate clamp
 
@@ -31,6 +32,11 @@ static QJsonObject toJson(const Category& c)
         {"color",    c.color.name()}, // "#4C6FE0" — readable, portable
         {"folderId", c.folderId},     // "" = top level (v3 addition)
         {"archived", c.archived},     // v8: retired life areas
+        // v15: which ordering this area's task list gives. A string, not the
+        // enum's int, for the same reason repeat and priority are strings —
+        // a hand-read file should say "manual", not 1, and an unknown value
+        // has to be able to fall back to the default rather than to garbage.
+        {"sortMode", sortModeToString(c.sortMode)},
     };
 }
 
@@ -42,6 +48,9 @@ static Category categoryFromJson(const QJsonObject& o)
     c.color = QColor(o["color"].toString());
     c.folderId = o["folderId"].toString(); // absent in v1/v2 files -> ""
     c.archived = o["archived"].toBool();   // absent pre-v8 -> false
+    // Absent pre-v15 -> "" -> Smart, which is the order every area has
+    // always been shown in. Nothing moves on upgrade.
+    c.sortMode = sortModeFromString(o["sortMode"].toString());
     return c;
 }
 
@@ -50,18 +59,26 @@ static QJsonObject toJson(const Activity& a)
     return QJsonObject{
         {"id",         a.id},
         {"name",       a.name},
-        {"categoryId", a.categoryId},
-        {"archived",   a.archived}, // v7
+        {"categoryId",  a.categoryId},
+        {"archived",    a.archived},    // v7
+        {"description", a.description}, // v15
+        {"sortKey",     a.sortKey},     // v15
     };
 }
 
 static Activity activityFromJson(const QJsonObject& o)
 {
     Activity a;
-    a.id         = o["id"].toString();
-    a.name       = o["name"].toString();
-    a.categoryId = o["categoryId"].toString();
-    a.archived   = o["archived"].toBool(); // missing key (pre-v7) -> false
+    a.id          = o["id"].toString();
+    a.name        = o["name"].toString();
+    a.categoryId  = o["categoryId"].toString();
+    a.archived    = o["archived"].toBool(); // missing key (pre-v7) -> false
+    // Missing key (pre-v15) -> "" -> the empty description every activity
+    // already had. Additive growth, no migration branch.
+    a.description = o["description"].toString();
+    // Absent pre-v15 -> 0 for every activity, which the stable sort in
+    // AppData::activitiesIn turns back into today's insertion order.
+    a.sortKey     = o["sortKey"].toInt();
     return a;
 }
 
@@ -105,15 +122,83 @@ static Segment segmentFromJson(const QJsonObject& o)
 
 static QJsonObject toJson(const Folder& folder)
 {
-    return QJsonObject{{"id", folder.id}, {"name", folder.name}};
+    return QJsonObject{{"id", folder.id},
+                       {"name", folder.name},
+                       {"archived", folder.archived}}; // v15
 }
 
 static Folder folderFromJson(const QJsonObject& o)
 {
     Folder folder;
-    folder.id   = o["id"].toString();
-    folder.name = o["name"].toString();
+    folder.id       = o["id"].toString();
+    folder.name     = o["name"].toString();
+    folder.archived = o["archived"].toBool(); // pre-v15 -> false
     return folder;
+}
+
+// ---- Schedule (v15) --------------------------------------------------------
+// skipDates is a QStringList of ISO dates and goes out as a JSON array of
+// strings -- the first array-valued field in this file that is not a nested
+// object. A comma-joined string would have been fewer lines and would have
+// made "what if a date ever contains a comma" a question somebody has to
+// answer; an array cannot be ambiguous.
+static QJsonObject toJson(const Schedule& sched)
+{
+    QJsonArray skips;
+    for (const QString& d : sched.skipDates)
+        skips.append(d);
+
+    QJsonArray weekdaysArray;
+    for (int d : sched.weekdays)
+        weekdaysArray.append(d);
+
+    return QJsonObject{
+        {"id",              sched.id},
+        {"activityId",      sched.activityId},
+        {"title",           sched.title},
+        {"startDate",       sched.startDate.toString(Qt::ISODate)},
+        // Invalid QDate -> "" -> parses back invalid = "open-ended". The
+        // same free ride the TBD due date has taken since v3.
+        {"endDate",         sched.endDate.toString(Qt::ISODate)},
+        {"startMinutes",    sched.startMinutes},
+        {"endMinutes",      sched.endMinutes},
+        {"repeat",          repeatToString(sched.repeat)},
+        // v16: which weekdays a weekly rule lands on, 1=Mon..7=Sun. An
+        // ABSENT key (every v15 file) reads as an empty list, which
+        // Schedule.h defines as "the weekday of startDate" — exactly what
+        // those rules already meant. Additive, no migration branch.
+        {"weekdays",        weekdaysArray},
+        {"reminderMinutes", sched.reminderMinutes},
+        {"skipDates",       skips},
+    };
+}
+
+static Schedule scheduleFromJson(const QJsonObject& o)
+{
+    Schedule sched;
+    sched.id              = o["id"].toString();
+    sched.activityId      = o["activityId"].toString();
+    sched.title           = o["title"].toString();
+    sched.startDate       = QDate::fromString(o["startDate"].toString(),
+                                              Qt::ISODate);
+    sched.endDate         = QDate::fromString(o["endDate"].toString(),
+                                              Qt::ISODate);
+    sched.startMinutes    = o["startMinutes"].toInt();
+    sched.endMinutes      = o["endMinutes"].toInt();
+    sched.repeat          = repeatFromString(o["repeat"].toString());
+    sched.reminderMinutes = o["reminderMinutes"].toInt();
+    for (const QJsonValue& v : o["skipDates"].toArray())
+        sched.skipDates.append(v.toString());
+    // v16; absent -> empty -> "the weekday of startDate" (Schedule.h).
+    // Values outside 1..7 are dropped rather than trusted: this is a file,
+    // and a file can say anything.
+    for (const QJsonValue& v : o["weekdays"].toArray()) {
+        const int d = v.toInt();
+        if (d >= 1 && d <= 7 && !sched.weekdays.contains(d))
+            sched.weekdays.append(d);
+    }
+    std::sort(sched.weekdays.begin(), sched.weekdays.end());
+    return sched;
 }
 
 static QJsonObject toJson(const Mood& mood)
@@ -196,6 +281,10 @@ static QJsonObject toJson(const Task& task)
         {"parentId",        task.parentId},
         {"estimateMinutes", task.estimateMinutes},
         {"chunkable",       task.chunkable},
+        {"sortKey",         task.sortKey}, // v15: the hand-dragged position
+        // v15: when the chain stops. Invalid -> "" -> parses back invalid =
+        // "forever", which is what every task before this meant.
+        {"repeatUntil",     task.repeatUntil.toString(Qt::ISODate)},
     };
 }
 
@@ -235,6 +324,9 @@ static Task taskFromJson(const QJsonObject& o)
     task.parentId        = o["parentId"].toString();
     task.estimateMinutes = std::max(0, o["estimateMinutes"].toInt());
     task.chunkable       = o["chunkable"].toBool();
+    task.sortKey         = o["sortKey"].toInt(); // v15: absent -> 0
+    task.repeatUntil     = QDate::fromString(o["repeatUntil"].toString(),
+                                             Qt::ISODate); // v15; absent -> forever
     return task;
 }
 
@@ -251,7 +343,12 @@ static QJsonObject toJson(const Event& e)
         {"endMinutes",   e.plannedEndMinutes},
         {"activityId",   e.activityId},
         {"taskId",       e.taskId},   // v6: block identity may be a Task…
-        {"repeat",       repeatToString(e.repeat)}, // v9: recurring blocks
+        // v15: which rule produced this block. It REPLACES the v9 "repeat"
+        // key, and the old key is deliberately still READ below rather than
+        // repurposed -- never repurpose a key (CLAUDE.md); a v9 file's
+        // "repeat" still means what it always meant, and the loader turns it
+        // into the thing that means it now.
+        {"scheduleId",   e.scheduleId},
         // v11: the catch-up verdict. Unset serialises to "", which is also
         // what a pre-v11 file's MISSING key reads back as — so the format
         // grows without a migration branch, the fourth time running.
@@ -290,7 +387,7 @@ static Event eventFromJson(const QJsonObject& o)
     // repeatFromString("") == None — pre-v9 files read exactly as they
     // behaved: nothing repeated. The same absent-field migration trick
     // the task's repeat used at v4.
-    e.repeat              = repeatFromString(o["repeat"].toString());
+    e.scheduleId          = o["scheduleId"].toString(); // v15; pre-v15 -> ""
     // v11: blockOutcomeFromString("") == Unset, and anything unrecognised
     // also degrades to Unset — garbage on disk can never invent a decision
     // the user didn't make. A movedToId whose target no longer exists is
@@ -350,6 +447,17 @@ QString JsonStore::filePathForUser(const QString& username)
     // it's filename-safe here without further scrubbing.
     return dir + QStringLiteral("/data-")
          + username.trimmed().toLower() + QStringLiteral(".json");
+}
+
+QString JsonStore::basePathForUser(const QString& username)
+{
+    QString path = filePathForUser(username);
+    // Same folder, same canonical name, different prefix — so the base can
+    // never land somewhere the data file did not, and a user who copies
+    // their profile carries both or neither.
+    path.insert(path.lastIndexOf(QLatin1Char('/')) + 1,
+                QStringLiteral("base-"));
+    return path; // .../base-data-<user>.json
 }
 
 bool JsonStore::adoptGlobalDataForUser(const QString& username)
@@ -437,18 +545,25 @@ bool JsonStore::migrateLegacyData()
     return migrated;
 }
 
-bool JsonStore::load(AppData& data)
+int JsonStore::formatVersionOf(const QJsonObject& root)
+{
+    // Absent is 0, not an error: every file written before v2 predates the
+    // key, and those must keep loading. Only a version ABOVE ours is fatal.
+    return root.value(QStringLiteral("version")).toInt(0);
+}
+
+JsonStore::LoadResult JsonStore::load(AppData& data)
 {
     m_error.clear();
 
     QFile file(m_filePath);
     if (!file.exists())
-        return false; // first run — not an error, just nothing to load yet
+        return LoadResult::Empty; // first run — not an error, nothing to load
 
     if (!file.open(QIODevice::ReadOnly)) {
         m_error = QStringLiteral("Could not open %1: %2")
                       .arg(m_filePath, file.errorString());
-        return false;
+        return LoadResult::Unreadable;
     }
 
     QJsonParseError parseError;
@@ -456,15 +571,52 @@ bool JsonStore::load(AppData& data)
     if (doc.isNull()) {
         m_error = QStringLiteral("Data file is not valid JSON: %1")
                       .arg(parseError.errorString());
-        return false;
+        return LoadResult::Unreadable;
     }
 
-    return applyJsonObject(data, doc.object(), /*announceChange=*/false);
+    // THE FLOOR. Checked here as well as inside applyJsonObject so the answer
+    // can name the numbers — the caller has to tell a human which version
+    // wrote this and which one is running, and "it failed" does not.
+    const int found = formatVersionOf(doc.object());
+    if (found > kFormatVersion) {
+        m_readOnly = true; // latched before any chance to save
+        m_error = QStringLiteral(
+                      "%1 was written by a newer version of TickTimer "
+                      "(data format %2). This copy understands format %3. "
+                      "Opening it would delete everything this version does "
+                      "not recognise, so it has not been opened. Update "
+                      "TickTimer.")
+                      .arg(m_filePath)
+                      .arg(found)
+                      .arg(kFormatVersion);
+        return LoadResult::TooNew;
+    }
+
+    if (!applyJsonObject(data, doc.object(), /*announceChange=*/false)) {
+        // applyJsonObject only refuses on the floor, which is already
+        // handled above — but if that ever stops being true, refusing to
+        // save is the safe answer, not seeding over the file.
+        m_readOnly = true;
+        if (m_error.isEmpty())
+            m_error = QStringLiteral("Could not apply the contents of %1")
+                          .arg(m_filePath);
+        return LoadResult::Unreadable;
+    }
+    return LoadResult::Loaded;
 }
 
 bool JsonStore::applyJsonObject(AppData& data, const QJsonObject& root,
                                 bool announceChange)
 {
+    // THE FLOOR (design-addendum-format-floor.md §F.2). Nothing below this
+    // line may run against a document we cannot fully read: every loop here
+    // is deliberately tolerant of keys it does not know, which is exactly
+    // what makes a newer document load quietly and lossily. Refuse before
+    // `data` is touched, so a rejected document leaves the caller's AppData
+    // as it found it.
+    if (formatVersionOf(root) > kFormatVersion)
+        return false;
+
     QVector<Category> categories;
     for (const QJsonValue& v : root["categories"].toArray())
         categories.append(categoryFromJson(v.toObject()));
@@ -474,8 +626,19 @@ bool JsonStore::applyJsonObject(AppData& data, const QJsonObject& root,
         activities.append(activityFromJson(v.toObject()));
 
     QVector<Event> events;
-    for (const QJsonValue& v : root["events"].toArray())
-        events.append(eventFromJson(v.toObject()));
+    // v15: the v9 "repeat" key is still read, into a side map rather than
+    // onto the Event -- the field it used to fill no longer exists. It is
+    // converted into a Schedule further down. Reading an old key for its
+    // original meaning is what a tolerant loader does; repurposing it would
+    // be the thing CLAUDE.md forbids.
+    QHash<QString, Task::Repeat> legacyEventRepeats;
+    for (const QJsonValue& v : root["events"].toArray()) {
+        const QJsonObject o = v.toObject();
+        events.append(eventFromJson(o));
+        if (o.contains("repeat"))
+            legacyEventRepeats.insert(o["id"].toString(),
+                                      repeatFromString(o["repeat"].toString()));
+    }
 
     // Version-1 files have no "tasks" key; a missing key reads as an
     // empty array — old files load into the grown format unchanged.
@@ -512,6 +675,50 @@ bool JsonStore::applyJsonObject(AppData& data, const QJsonObject& root,
     for (const QJsonValue& v : root["moods"].toArray())
         moods.append(moodFromJson(v.toObject()));
     data.setMoodsFromLoad(std::move(moods));
+
+    // v31 -- schedules land through the same silent door as moods, and for
+    // the same reason: one more container would otherwise mean an eighth
+    // parameter on resetFrom, replaceAll, and every call site of both.
+    QVector<Schedule> schedules;
+    for (const QJsonValue& v : root["schedules"].toArray())
+        schedules.append(scheduleFromJson(v.toObject()));
+
+    // ---- the one upgrade path in this file, and why it is not a migration --
+    //
+    // A file written before v15 may carry Event.repeat: the v9 rule that
+    // lived on the newest block of a chain. That mechanism is gone, so the
+    // fact is carried across to the mechanism that replaced it rather than
+    // dropped -- a user who set "repeats weekly" on a block should not find
+    // it silently forgotten by an upgrade.
+    //
+    // Note what this is NOT: the old key is still read exactly as it always
+    // meant, and no key was repurposed. The conversion is a READING of an
+    // old fact into the current model, which is what a tolerant loader is
+    // for; a v14 file loaded by a v14 build still behaves as it always did.
+    for (Event& e : events) {
+        const Task::Repeat legacy =
+            legacyEventRepeats.value(e.id, Task::Repeat::None);
+        if (legacy == Task::Repeat::None || !e.date.isValid())
+            continue;
+        Schedule sched;
+        sched.id           = ids::newId();
+        sched.activityId   = e.activityId;
+        sched.title        = e.title;
+        sched.startDate    = e.date;
+        sched.startMinutes = e.plannedStartMinutes;
+        sched.endMinutes   = e.plannedEndMinutes;
+        sched.repeat       = legacy;
+        // A block-carried repeat had no identity of its own when the block
+        // was task-linked; give the rule the task's title so the migrated
+        // schedule can still say what it is (schedules do not link tasks --
+        // see the v9 comment rollRepeats used to carry: next week's block
+        // should not claim a deliverable that may be done by then).
+        if (sched.activityId.isEmpty() && sched.title.trimmed().isEmpty())
+            continue; // nothing to name it with; drop the rule, keep the block
+        schedules.append(sched);
+        e.scheduleId = sched.id;
+    }
+    data.setSchedulesFromLoad(std::move(schedules));
 
     // Startup goes the silent way (nobody is listening yet); a live sync
     // pull goes the loud way so every screen rebuilds — see AppData.h.
@@ -558,13 +765,31 @@ QJsonObject JsonStore::toJsonObject(const AppData& data)
     for (const Mood& mood : data.moods())
         moodsJson.append(toJson(mood));
 
+    QJsonArray schedules;
+    for (const Schedule& sched : data.schedules())
+        schedules.append(toJson(sched));
+
     QJsonObject root{
         // The version number planted on day one, earning its keep: the
         // format grew a "tasks" array, so 1 becomes 2. The change is
         // additive (old files still load — see the loader), but bumping
         // costs nothing and lets any future reader that must care tell
         // the files apart.
-        {"version",     14}, // v14: + Event.movedToIds (the split's inverse —
+        // kFormatVersion, never a literal: the number written and the
+        // number refused on read are one constant (JsonStore.h).
+        {"version",     kFormatVersion},
+                             // v16: + Schedule.weekdays (a weekly rule names
+                             //      its own days; startDate no longer decides
+                             //      the weekday — see Schedule.h).
+                             //      v15: + the "schedules" array and
+                             //      Event.scheduleId (recurrence you can
+                             //      look FORWARD along, replacing the v9
+                             //      Event.repeat chain); + Activity
+                             //      .description/.sortKey, Folder.archived,
+                             //      Category.sortMode, Task.sortKey
+                             //      (editable activities, a semester that
+                             //      can retire whole, and hand ordering).
+                             //      v14: + Event.movedToIds (the split's inverse —
                              //      movedToId stays as its compat mirror);
                              //      v13: + Task.parentId / estimateMinutes /
                              //      chunkable (subtasks §I + sizing §J.1 —
@@ -576,6 +801,7 @@ QJsonObject JsonStore::toJsonObject(const AppData& data)
                              //      v9: + Event.repeat.
         {"categories",  categories},
         {"activities",  activities},
+        {"schedules",   schedules},   // v15
         {"events",      events},
         {"tasks",       tasks},
         {"folders",     folders},
@@ -598,6 +824,12 @@ QJsonObject JsonStore::toJsonObject(const AppData& data)
 
 bool JsonStore::save(const AppData& data)
 {
+    // The one file this binary must never replace is the one it could not
+    // understand. m_error is NOT cleared first: the sentence explaining which
+    // version wrote the file is the useful one, and it was set by load().
+    if (m_readOnly)
+        return false;
+
     m_error.clear();
 
     const QJsonObject root = toJsonObject(data);

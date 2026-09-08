@@ -57,6 +57,11 @@ private:
     AppData*        m_mine;    // live and editable — that's the point now
     TrackerService* m_tracker; // for EventDialog (timers keep working here)
     AppData         m_peer;    // owned snapshot — read-only forever
+    // v31, the format floor: true when the peer's planner was written by a
+    // NEWER TickTimer and therefore was NOT unpacked. m_peer is empty, and
+    // refresh() must say why rather than draw an empty day as if it were the
+    // peer's real one.
+    bool            m_peerUnreadable = false;
     QString         m_myName;  // the logged-in account, for the column header
     QString         m_peerName;
     QDate           m_day;

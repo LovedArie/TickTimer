@@ -34,6 +34,7 @@
 #include <QObject>
 #include <functional>
 #include <QString>
+#include <QStringList> // liveEventsNow - blocks may stack (v31.3)
 #include <QTimer>
 
 class AppData;
@@ -58,12 +59,22 @@ public:
     // top of the committed totals so numbers grow live on screen.
     qint64 liveSeconds() const;
 
-    // The id of the block whose planned window covers THIS INSTANT, or
-    // empty. Unambiguous by domain law: blocks on a day cannot overlap,
-    // so "the block under the clock" is at most one. Lives here (not in
-    // the Pomodoro link that wanted it) because it's a pure question
-    // about the schedule and the clock — the link is merely its first
-    // customer (v19.7 adoption).
+    // Every block whose planned window covers THIS INSTANT. Since v31.3 up
+    // to plan::kMaxConcurrentBlocks of them can, so the honest answer is a
+    // list. Lives here (not in the Pomodoro link that wanted it) because it
+    // is a pure question about the schedule and the clock — the link is
+    // merely its first customer (v19.7 adoption).
+    QStringList liveEventsNow() const;
+
+    // The one block under the clock, or empty WHEN THERE IS NOT EXACTLY ONE.
+    //
+    // This used to be unambiguous by domain law — "blocks on a day cannot
+    // overlap, so the block under the clock is at most one" — and v31.3
+    // retired that law. Deliberately empty rather than picking a winner:
+    // every auto-adopt rule (shortest, earliest, newest) is a guess, and this
+    // id is used to START TRACKING, so a wrong guess records your afternoon
+    // against the wrong block. With several live you choose by clicking the
+    // one you mean; with one live nothing about the old behaviour changes.
     QString liveEventNow() const;
 
     // (A plain public method, not a `slots:` section — PMF connects need

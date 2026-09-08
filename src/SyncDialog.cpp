@@ -7,6 +7,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 SyncDialog::SyncDialog(SyncService* sync, QWidget* parent)
     : QDialog(parent)
     , m_sync(sync)
@@ -34,17 +36,62 @@ SyncDialog::SyncDialog(SyncService* sync, QWidget* parent)
     m_conflictBox = new QWidget(this);
     auto* conflictLayout = new QVBoxLayout(m_conflictBox);
     conflictLayout->setContentsMargins(0, 8, 0, 0);
+    // v31.2 — THE WORDS CHANGED BECAUSE THE BEHAVIOUR DID.
+    //
+    // This used to say "Which version should win? (The other one is
+    // overwritten.)" — true then, and the reason a device could lose a whole
+    // day's work for having added something different. Everything both sides
+    // did independently is merged before this box is ever shown, so the only
+    // thing left to decide is the handful of rows edited in both places.
+    // Saying "the other one is overwritten" now would be a lie that makes
+    // people afraid of the safe choice.
+    // ---- half one: the rows that ARE a question ------------------------
+    m_contestedBox = new QWidget(m_conflictBox);
+    auto* contestedLayout = new QVBoxLayout(m_contestedBox);
+    contestedLayout->setContentsMargins(0, 0, 0, 0);
+
     auto* conflictText = new QLabel(
-        tr("Both this device and the server have changes. Which version "
-           "should win? (The other one is overwritten.)"),
-        m_conflictBox);
+        tr("Everything both devices changed separately has been merged. "
+           "A few items were edited in both places — pick which version "
+           "of those wins:"),
+        m_contestedBox);
     conflictText->setWordWrap(true);
-    auto* useServer = new QPushButton(tr("Use server version"), m_conflictBox);
-    auto* keepMine  = new QPushButton(tr("Keep mine (overwrite server)"),
-                                      m_conflictBox);
-    conflictLayout->addWidget(conflictText);
-    conflictLayout->addWidget(useServer);
-    conflictLayout->addWidget(keepMine);
+
+    // The items themselves, and WHICH SIDE each one came from. A choice
+    // between two unnamed versions is a coin toss; naming the rows made it a
+    // decision, and naming the two sides is what makes it an informed one.
+    m_clashList = new QLabel(m_contestedBox);
+    m_clashList->setWordWrap(true);
+    m_clashList->setStyleSheet(QStringLiteral("color:#616974;"));
+
+    auto* useServer = new QPushButton(tr("Use the server's"), m_contestedBox);
+    auto* keepMine  = new QPushButton(tr("Keep mine"), m_contestedBox);
+    contestedLayout->addWidget(conflictText);
+    contestedLayout->addWidget(m_clashList);
+    contestedLayout->addWidget(useServer);
+    contestedLayout->addWidget(keepMine);
+
+    // ---- half two: the rows that are merely REPORTED --------------------
+    // Below the buttons, because they answer "what else happened?" and not
+    // "what should I press?".
+    m_settledBox = new QWidget(m_conflictBox);
+    auto* settledLayout = new QVBoxLayout(m_settledBox);
+    settledLayout->setContentsMargins(0, 8, 0, 0);
+
+    auto* settledText = new QLabel(
+        tr("Kept automatically — a delete never overrides an edit. "
+           "Neither button changes these:"),
+        m_settledBox);
+    settledText->setWordWrap(true);
+
+    m_settledList = new QLabel(m_settledBox);
+    m_settledList->setWordWrap(true);
+    m_settledList->setStyleSheet(QStringLiteral("color:#616974;"));
+    settledLayout->addWidget(settledText);
+    settledLayout->addWidget(m_settledList);
+
+    conflictLayout->addWidget(m_contestedBox);
+    conflictLayout->addWidget(m_settledBox);
     m_conflictBox->hide();
 
     auto* layout = new QVBoxLayout(this);
@@ -80,6 +127,7 @@ SyncDialog::SyncDialog(SyncService* sync, QWidget* parent)
             });
     connect(m_sync, &SyncService::conflictDetected, this, [this](int) {
         m_status->clear();
+        showClashes(); // name the rows BEFORE showing the box
         m_conflictBox->show();
         m_syncBtn->setEnabled(true);
     });
@@ -94,10 +142,43 @@ SyncDialog::SyncDialog(SyncService* sync, QWidget* parent)
     // met a ⚠ button with a dialog that offered no choice. Position bugs
     // survive compilers; only reading the diff catches them.)
     if (m_sync->hasPendingConflict()) {
-        m_status->setText(tr("A background sync found a conflict — "
-                             "choose which version wins."));
+        m_status->setText(tr("A background sync merged what it could — "
+                             "a few items need your call."));
+        showClashes();
         m_conflictBox->show();
     }
+}
+
+void SyncDialog::showClashes()
+{
+    QVector<merge::Clash> all = m_sync->pendingClashes();
+
+    // SORTED, because merge::plan walks its ids out of a QSet and a QSet has
+    // no order to promise. Without this the same conflict lists itself in a
+    // different order every time it is shown, which reads as a different
+    // conflict — and no test could pin the text either. Collection first, so
+    // the grouping renderClashes does is contiguous.
+    std::sort(all.begin(), all.end(),
+              [](const merge::Clash& a, const merge::Clash& b) {
+                  if (a.collection != b.collection)
+                      return a.collection < b.collection;
+                  if (a.label != b.label)
+                      return a.label < b.label;
+                  return a.id < b.id;
+              });
+
+    // The split the whole box is built around: what the buttons decide, and
+    // what has already been decided for you.
+    QVector<merge::Clash> contested;
+    QVector<merge::Clash> settled;
+    for (const merge::Clash& c : all)
+        (merge::decidedByPreference(c.kind) ? contested : settled) << c;
+
+    m_clashList->setText(merge::renderClashes(contested));
+    m_contestedBox->setVisible(!contested.isEmpty());
+
+    m_settledList->setText(merge::renderClashes(settled));
+    m_settledBox->setVisible(!settled.isEmpty());
 }
 
 void SyncDialog::refreshInfo()

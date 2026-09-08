@@ -47,7 +47,12 @@ CompareDialog::CompareDialog(AppData* mine, TrackerService* tracker,
     // query (eventsOn, eventLabel, summarizeDay, the agenda's painting)
     // answers for the peer exactly as for you. Announce nothing: nothing
     // subscribes to a snapshot.
-    JsonStore::applyJsonObject(m_peer, peerBlob, /*announceChange=*/false);
+    // v31, the format floor: a peer running a NEWER TickTimer sends a shape
+    // this build reads only partially. m_peer is then left empty rather than
+    // filled in lossily — a comparison drawn from a half-read planner is
+    // worse than no comparison, because it looks like a real answer.
+    m_peerUnreadable =
+        !JsonStore::applyJsonObject(m_peer, peerBlob, /*announceChange=*/false);
 
     const bool compact = isCompactScreen();
 
@@ -270,6 +275,21 @@ void CompareDialog::planAt(QDate date, int slotIndex)
 
 void CompareDialog::refresh()
 {
+    if (m_peerUnreadable) {
+        // v31, the format floor. Everything below would draw an EMPTY peer
+        // day and a verdict computed from it ("you've focused 3h more than
+        // them") — a confident sentence about a planner that was never
+        // unpacked. Say the true thing instead and stop.
+        m_dayLabel->setText(m_day == QDate::currentDate()
+                                ? tr("Today")
+                                : m_day.toString(QStringLiteral("ddd d MMM")));
+        m_headline->setText(
+            tr("%1 is using a newer version of TickTimer, so their plan "
+               "cannot be read here. Update TickTimer to compare.")
+                .arg(m_peerName));
+        return;
+    }
+
     m_dayLabel->setText(m_day == QDate::currentDate()
                             ? tr("Today")
                             : m_day.toString(QStringLiteral("ddd d MMM")));

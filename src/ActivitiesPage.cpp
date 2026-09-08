@@ -5,11 +5,15 @@
 
 #include <QStyle>
 
+#include "ActivityDetailDialog.h"
+#include "ActivityListModel.h"
+#include "ActivityRowDelegate.h"
 #include "AppData.h"
 #include "CategoryTaskDelegate.h"
 #include "CategoryTaskModel.h"
 #include "DueDateDialog.h"
 #include "QuickAddParser.h"
+#include "ReorderListView.h"
 #include "QuickAddPreview.h"
 #include "TaskDetailDialog.h"
 #include "Theme.h"
@@ -186,7 +190,8 @@ ActivitiesPage::ActivitiesPage(AppData* data, QWidget* parent)
     // front of it.
     if (m_phoneShell)
         railHint->setText(
-            tr("Press and hold an area to move it to a folder."));
+            tr("Press and hold an area to move it, or a folder to archive "
+               "it. Hold a row's handle to reorder."));
 
     m_rail = new CategoryTree(railPanel);
     m_rail->setObjectName("railTree");
@@ -462,6 +467,8 @@ void ActivitiesPage::rebuildRail()
     };
 
     for (const Folder& folder : m_data->folders()) {
+        if (folder.archived)
+            continue; // v31: retired semesters live on the Archive page
         auto* folderItem = new QTreeWidgetItem(m_rail);
         const int inside = m_data->categoryCountInFolder(folder.id);
         folderItem->setText(0, inside > 0
@@ -478,14 +485,14 @@ void ActivitiesPage::rebuildRail()
         folderItem->setFont(0, bold);
 
         for (const Category& c : m_data->categories())
-            if (c.folderId == folder.id && !c.archived)
+            if (c.folderId == folder.id && !m_data->categoryHidden(c))
                 addCategoryItem(folderItem, c);
 
         folderItem->setExpanded(!m_collapsedFolders.contains(folder.id));
     }
 
     for (const Category& c : m_data->categories())
-        if (c.folderId.isEmpty() && !c.archived)
+        if (c.folderId.isEmpty() && !m_data->categoryHidden(c))
             addCategoryItem(nullptr, c);
 
     if (toSelect)
@@ -552,9 +559,36 @@ void ActivitiesPage::onRailContextMenu(const QPoint& pos)
             if (ok)
                 m_data->renameFolder(folderId, name);
         });
-        QAction* remove = menu.addAction(tr("Delete folder"));
-        // UI mirrors the rule; AppData enforces it — as always.
-        remove->setEnabled(m_data->categoryCountInFolder(folderId) == 0);
+        // ---- retire the whole semester (v31) ------------------------------
+        // The action a non-empty folder actually needs. Before this, the only
+        // thing offered was a Delete that could never fire, so the honest
+        // answer to "the session ended" was to move four areas out by hand
+        // and archive each one.
+        QAction* archive = menu.addAction(tr("Archive folder"));
+        connect(archive, &QAction::triggered, this, [this, folderId]() {
+            m_data->setFolderArchived(folderId, true);
+        });
+
+        menu.addSeparator();
+
+        // ---- delete, and WHY it is grey when it is grey --------------------
+        // The rule is unchanged (AppData::removeFolder refuses a folder that
+        // still holds areas, archived ones included) and it is the rule the
+        // owner asked for. What was missing was the reason: a disabled item
+        // labelled "Delete folder" is indistinguishable from a broken one,
+        // which is exactly how it was reported.
+        //
+        // The reason goes in the LABEL, not a tooltip. A tooltip needs a
+        // hovering pointer, and this menu is opened by long-press on the
+        // phone where there is no such thing — a tooltip there is a message
+        // written in ink only a desktop can see.
+        const int inside = m_data->categoryCountInFolder(folderId);
+        QAction* remove = menu.addAction(
+            inside == 0
+                ? tr("Delete folder")
+                : tr("Delete folder — move out %n life area(s) first", nullptr,
+                     inside));
+        remove->setEnabled(inside == 0);
         connect(remove, &QAction::triggered, this, [this, folderId]() {
             m_data->removeFolder(folderId);
         });
@@ -593,11 +627,51 @@ void ActivitiesPage::buildDetailPane()
     layout->addWidget(m_headerHost);
 
     // ---- TASKS: persistent input + a model/view list ----------------------
+    auto* tasksHead = new QHBoxLayout;
     auto* tasksTitle = new QLabel(tr("TASKS"), content);
     tasksTitle->setStyleSheet(
         "color:#616974; font-size:10px; font-weight:700; letter-spacing:1px;");
+    tasksHead->addWidget(tasksTitle);
+    tasksHead->addStretch(1);
+
+    // ---- the way BACK out of hand order (v31) -----------------------------
+    // Dragging a row flips this area to Manual, and without this button that
+    // would be a one-way decision: the only route back to "soonest deadline
+    // first" would be dragging every row into place by hand, which is the
+    // opposite of what the deadline sort is for.
+    //
+    // It sits on the TASKS caption because that is the list it governs — the
+    // same "controls near their effect need no label" rule the area switcher
+    // and the task-notes toggle already follow. It appears ONLY while the
+    // area is Manual: a control offering to undo something that has not
+    // happened is noise on every one of the areas that never get dragged.
+    // The reorder toggle, on the caption of the list it governs — the same
+    // "control on the thing it affects" rule the area switcher follows.
+    m_taskReorderBtn = makeReorderToggle(content);
+    connect(m_taskReorderBtn, &QPushButton::clicked, this, [this]() {
+        setTaskReorderMode(!m_taskDelegate->reorderMode());
+    });
+    tasksHead->addWidget(m_taskReorderBtn);
+
+    m_sortResetBtn = new QPushButton(tr("Sorted by hand · use deadlines"),
+                                     content);
+    m_sortResetBtn->setObjectName(QStringLiteral("sortResetButton"));
+    m_sortResetBtn->setCursor(Qt::PointingHandCursor);
+    m_sortResetBtn->setStyleSheet(
+        QStringLiteral("QPushButton { background:#EEF0ED; border:none; "
+                       "border-radius:8px; padding:4px 9px; color:#616974; "
+                       "font-size:11px; font-weight:600; }%1")
+            .arg(m_phoneShell ? QStringLiteral("QPushButton { min-height:40px; }")
+                              : QString()));
+    m_sortResetBtn->hide();
+    connect(m_sortResetBtn, &QPushButton::clicked, this, [this]() {
+        m_data->setCategorySortMode(m_selectedCategoryId,
+                                    Category::SortMode::Smart);
+    });
+    tasksHead->addWidget(m_sortResetBtn);
+
     layout->addSpacing(6);
-    layout->addWidget(tasksTitle);
+    layout->addLayout(tasksHead);
 
     auto* addTaskRow = new QHBoxLayout;
     m_taskInput = new QLineEdit(content);
@@ -666,9 +740,25 @@ void ActivitiesPage::buildDetailPane()
             this, &ActivitiesPage::editTask);
     connect(m_taskDelegate, &CategoryTaskDelegate::dueDateRequested,
             this, &ActivitiesPage::chooseDueDate);
+    connect(m_taskDelegate, &CategoryTaskDelegate::moveUpRequested, this,
+            [this](const QString& id) {
+                moveRowBy(displayedTaskIds(), id, -1);
+            });
+    connect(m_taskDelegate, &CategoryTaskDelegate::moveDownRequested, this,
+            [this](const QString& id) {
+                moveRowBy(displayedTaskIds(), id, +1);
+            });
 
-    m_taskView = new QListView(content);
+    m_taskView = new ReorderListView(cattask::IdRole, content);
     m_taskView->setModel(m_taskModel);
+    // The reorder payoff, and it is the same three-line shape the rail's
+    // drag already has: the view reports the gesture, the DOMAIN performs the
+    // move (flipping the area to Manual as it goes), and its changed()
+    // re-snapshots the model. The page is a thin translator, nothing more.
+    connect(m_taskView, &ReorderListView::reordered, this,
+            [this](const QString& movedId, const QString& beforeId) {
+                m_data->moveTaskBefore(movedId, beforeId);
+            });
     m_taskView->setItemDelegate(m_taskDelegate);
     m_taskView->setFrameShape(QFrame::NoFrame);
     m_taskView->setSelectionMode(QAbstractItemView::NoSelection);
@@ -682,17 +772,19 @@ void ActivitiesPage::buildDetailPane()
                 const QModelIndex index = m_taskView->indexAt(pos);
                 if (!index.isValid())
                     return;
-                const QString id =
-                    index.data(cattask::IdRole).toString();
-                if (index.data(cattask::IsPieceRole).toBool())
-                    return; // a piece has no pieces — no menu to offer yet
-                QMenu menu(m_taskView);
-                QAction* addPiece =
-                    menu.addAction(tr("Add a piece"));
-                connect(addPiece, &QAction::triggered, this,
-                        [this, id]() { startPieceUnder(id); });
-                menu.exec(m_taskView->viewport()->mapToGlobal(pos));
+                showTaskRowMenu(index.data(cattask::IdRole).toString(),
+                                m_taskView->viewport()->mapToGlobal(pos));
             });
+    // The touchscreen's door into the SAME menu. The view detects the hold
+    // itself — see ReorderListView.h for why a synthesised context-menu
+    // event never arrives here.
+    connect(m_taskView, &ReorderListView::rowLongPressed, this,
+            &ActivitiesPage::showTaskRowMenu);
+    // Holding the HANDLE means "I am moving this one": the list enters
+    // reorder mode, so the arrows are there when the finger lifts, and the
+    // same finger can drag the row straight away.
+    connect(m_taskView, &ReorderListView::gripHeld, this,
+            [this](const QString&) { setTaskReorderMode(true); });
     m_taskView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_taskView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_taskView->viewport()->setAutoFillBackground(false);
@@ -712,11 +804,19 @@ void ActivitiesPage::buildDetailPane()
     layout->addWidget(m_taskView);
 
     // ---- ACTIVITIES: persistent input + rows refilled in place ------------
+    auto* actsHead = new QHBoxLayout;
     auto* actsTitle = new QLabel(tr("ACTIVITIES"), content);
     actsTitle->setStyleSheet(
         "color:#616974; font-size:10px; font-weight:700; letter-spacing:1px;");
+    actsHead->addWidget(actsTitle);
+    actsHead->addStretch(1);
+    m_actReorderBtn = makeReorderToggle(content);
+    connect(m_actReorderBtn, &QPushButton::clicked, this, [this]() {
+        setActivityReorderMode(!m_actDelegate->reorderMode());
+    });
+    actsHead->addWidget(m_actReorderBtn);
     layout->addSpacing(10);
-    layout->addWidget(actsTitle);
+    layout->addLayout(actsHead);
 
     auto* addActRow = new QHBoxLayout;
     m_actInput = new QLineEdit(content);
@@ -735,11 +835,67 @@ void ActivitiesPage::buildDetailPane()
     addActRow->addWidget(addActBtn);
     layout->addLayout(addActRow);
 
-    m_actHost = new QWidget(content);
-    auto* actHostLayout = new QVBoxLayout(m_actHost);
-    actHostLayout->setContentsMargins(0, 0, 0, 0);
-    actHostLayout->setSpacing(8);
-    layout->addWidget(m_actHost);
+    // ---- the activity list, now model/view (v31) --------------------------
+    // It was a stack of hand-built QHBoxLayouts refilled on every changed().
+    // Reordering is what forced the conversion: widgets in a layout have no
+    // drag machinery, and Qt's item views do. See ActivityListModel.h for why
+    // this model resets where CategoryTaskModel diffs.
+    m_actModel    = new ActivityListModel(m_data, this);
+    m_actDelegate = new ActivityRowDelegate(this);
+    connect(m_actDelegate, &ActivityRowDelegate::editRequested, this,
+            [this](const QString& id) {
+                // window(), not `this`: a changed()-driven rebuild must not
+                // be able to delete a live dialog's parent.
+                runActivityDetail(*m_data, id, window());
+            });
+    connect(m_actDelegate, &ActivityRowDelegate::archiveRequested, this,
+            [this](const QString& id) { m_data->setActivityArchived(id, true); });
+    connect(m_actDelegate, &ActivityRowDelegate::deleteRequested, this,
+            [this](const QString& id) { m_data->removeActivity(id); });
+    connect(m_actDelegate, &ActivityRowDelegate::moveUpRequested, this,
+            [this](const QString& id) {
+                moveRowBy(displayedActivityIds(), id, -1);
+            });
+    connect(m_actDelegate, &ActivityRowDelegate::moveDownRequested, this,
+            [this](const QString& id) {
+                moveRowBy(displayedActivityIds(), id, +1);
+            });
+
+    m_actView = new ReorderListView(actrow::IdRole, content);
+    m_actView->setModel(m_actModel);
+    m_actView->setItemDelegate(m_actDelegate);
+    m_actView->setFrameShape(QFrame::NoFrame);
+    m_actView->setSelectionMode(QAbstractItemView::NoSelection);
+    m_actView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_actView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_actView->viewport()->setAutoFillBackground(false);
+    connect(m_actView, &ReorderListView::reordered, this,
+            [this](const QString& movedId, const QString& beforeId) {
+                m_data->moveActivityBefore(movedId, beforeId);
+            });
+
+    // The same door the task rows get, for the same reason — and it carries
+    // Edit as well, because on a phone the row's tap target is the whole row
+    // and a long press should still be able to say what it is offering.
+    m_actView->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_actView, &QListView::customContextMenuRequested, this,
+            [this](const QPoint& pos) {
+                const QModelIndex index = m_actView->indexAt(pos);
+                if (!index.isValid())
+                    return;
+                showActivityRowMenu(index.data(actrow::IdRole).toString(),
+                                    m_actView->viewport()->mapToGlobal(pos));
+            });
+    connect(m_actView, &ReorderListView::rowLongPressed, this,
+            &ActivitiesPage::showActivityRowMenu);
+    connect(m_actView, &ReorderListView::gripHeld, this,
+            [this](const QString&) { setActivityReorderMode(true); });
+
+    // Same "report your full height, let the pane scroll" contract the task
+    // list keeps — two lists inside one QScrollArea, neither scrolling itself.
+    connect(m_actModel, &QAbstractItemModel::modelReset,
+            this, &ActivitiesPage::updateActivityViewHeight);
+    layout->addWidget(m_actView);
 
     layout->addStretch(1);
     m_detailStack->addWidget(content);
@@ -757,9 +913,187 @@ void ActivitiesPage::refreshDetail()
     }
     m_detailStack->setCurrentIndex(1);
     refreshHeader();
+    // A mode is a state, and a state that survives a CONTEXT SWITCH is a
+    // trap: you pick a different life area and its list is mysteriously in
+    // arrows. So both drop when the selected area changes — and ONLY then.
+    //
+    // The distinction matters more than it looks. refreshDetail() also runs
+    // on every changed(), and a move IS a change, so resetting here
+    // unconditionally kicked the user out of the mode on their first tap —
+    // you could move one row and then had to press Reorder again for the
+    // next. Caught by the suite before the phone saw it, and only because
+    // the ejected mode let a row tap open a modal that blocks headlessly.
+    if (m_reorderAreaId != category->id) {
+        if (m_taskDelegate->reorderMode())
+            setTaskReorderMode(false);
+        if (m_actDelegate->reorderMode())
+            setActivityReorderMode(false);
+        m_reorderAreaId = category->id;
+    }
+
+    // The hand-order escape hatch shows itself only where it applies.
+    m_sortResetBtn->setVisible(category->sortMode == Category::SortMode::Manual);
     m_taskModel->setCategoryId(category->id); // re-point the model (no-op if same)
     updateTaskViewHeight();
     refreshActivities();
+}
+
+// ---------------------------------------------------------------------------
+// THE OTHER DOOR (v31.0.1). A grip drag is a mouse gesture and a phone has
+// none — QScroller owns press-and-move there, and two attempts to take it
+// back both lost (ReorderListView.h records why). So the same capability is
+// offered through the row's long-press menu, which is exactly what
+// CategoryTree did in v30.7 when its drag collided with scrolling.
+//
+// Both lists share this one function because both reorder through the same
+// pair of domain doors, and "move up" is the same idea in both: find the row
+// I am currently ABOVE or BELOW on screen, and go before it.
+//
+// The neighbour is read from the DISPLAYED order, not from sortKey, for the
+// same reason moveTaskBefore seeds from the display: before the first move
+// every key is 0, and "the row above this one" is a question about what the
+// user can see.
+void ActivitiesPage::moveRowBy(const QStringList& order, const QString& id,
+                               int delta)
+{
+    const int at = order.indexOf(id);
+    if (at < 0)
+        return;
+    const int to = at + delta;
+    if (to < 0 || to >= order.size())
+        return; // already at the end it is being pushed towards
+
+    // Moving DOWN means landing before whatever follows the row we are
+    // swapping with — which for the last position is nothing, i.e. the end.
+    const QString beforeId =
+        delta < 0 ? order[to]
+                  : (to + 1 < order.size() ? order[to + 1] : QString());
+
+    if (m_taskModel && m_data->taskById(id))
+        m_data->moveTaskBefore(id, beforeId);
+    else
+        m_data->moveActivityBefore(id, beforeId);
+}
+
+// ---------------------------------------------------------------------------
+// REORDER MODE (v31.0.3) — the door that does not depend on a gesture.
+//
+// Three gesture designs lost to QScroller on a real phone; the delegates'
+// headers carry the full account. A TAP has never failed on these rows, so
+// the reorder is built on taps, and a MODE is what buys the room: with the
+// due badge, the archive pill and the × out of the way, the arrows get a
+// full 48dp each instead of squeezing into a row that was already over
+// budget.
+// ---------------------------------------------------------------------------
+
+QPushButton* ActivitiesPage::makeReorderToggle(QWidget* parent)
+{
+    auto* b = new QPushButton(tr("Reorder"), parent);
+    b->setObjectName(QStringLiteral("reorderToggle"));
+    b->setCheckable(true);
+    b->setCursor(Qt::PointingHandCursor);
+    b->setStyleSheet(
+        QStringLiteral(
+            "QPushButton { background:#EEF0ED; border:none; border-radius:8px; "
+            "padding:4px 10px; color:#616974; font-size:11px; "
+            "font-weight:600; }"
+            "QPushButton:checked { background:#2F7E6E; color:#FFFFFF; }%1")
+            .arg(m_phoneShell ? QStringLiteral("QPushButton { min-height:40px; }")
+                              : QString()));
+    return b;
+}
+
+void ActivitiesPage::setTaskReorderMode(bool on)
+{
+    m_taskDelegate->setReorderMode(on);
+    m_taskReorderBtn->setChecked(on);
+    m_taskReorderBtn->setText(on ? tr("Done") : tr("Reorder"));
+    // Leaving the other list in its normal state is deliberate: the two
+    // lists are separate questions, and a mode that silently changed a list
+    // you were not looking at would be a surprise.
+    m_taskView->viewport()->update();
+}
+
+void ActivitiesPage::setActivityReorderMode(bool on)
+{
+    m_actDelegate->setReorderMode(on);
+    m_actReorderBtn->setChecked(on);
+    m_actReorderBtn->setText(on ? tr("Done") : tr("Reorder"));
+    m_actView->viewport()->update();
+}
+
+// The row menus. ONE builder each, reached by two doors — right-click on a
+// desktop, a held finger on a phone — because a menu that differs by how it
+// was opened is two menus that will drift.
+void ActivitiesPage::showTaskRowMenu(const QString& id, const QPoint& globalPos)
+{
+    if (!m_data->taskById(id))
+        return;
+    QMenu menu(m_taskView);
+
+    // v28.7 — the TickTick door for pieces. Offered only for parents (one
+    // level — the domain guard in addSubtask is the real wall, this is just
+    // honest chrome).
+    const Task* task = m_data->taskById(id);
+    if (task && !task->isPiece()) {
+        QAction* addPiece = menu.addAction(tr("Add a piece"));
+        connect(addPiece, &QAction::triggered, this,
+                [this, id]() { startPieceUnder(id); });
+        menu.addSeparator();
+    }
+
+    const QStringList order = displayedTaskIds();
+    addMoveActions(menu, order, id);
+    menu.exec(globalPos);
+}
+
+void ActivitiesPage::showActivityRowMenu(const QString& id,
+                                         const QPoint& globalPos)
+{
+    if (!m_data->activityById(id))
+        return;
+    QMenu menu(m_actView);
+    QAction* edit = menu.addAction(tr("Edit…"));
+    connect(edit, &QAction::triggered, this,
+            [this, id]() { runActivityDetail(*m_data, id, window()); });
+    menu.addSeparator();
+    addMoveActions(menu, displayedActivityIds(), id);
+    menu.exec(globalPos);
+}
+
+// Move up / Move down, disabled at the ends. Shared so the two lists cannot
+// end up wording or bounding the same idea differently.
+void ActivitiesPage::addMoveActions(QMenu& menu, const QStringList& order,
+                                    const QString& id)
+{
+    const int at = order.indexOf(id);
+    QAction* up = menu.addAction(tr("Move up"));
+    up->setEnabled(at > 0);
+    connect(up, &QAction::triggered, this,
+            [this, order, id]() { moveRowBy(order, id, -1); });
+    QAction* down = menu.addAction(tr("Move down"));
+    down->setEnabled(at >= 0 && at < order.size() - 1);
+    connect(down, &QAction::triggered, this,
+            [this, order, id]() { moveRowBy(order, id, +1); });
+}
+
+QStringList ActivitiesPage::displayedTaskIds() const
+{
+    QStringList ids;
+    for (int i = 0; i < m_taskModel->rowCount(); ++i) {
+        const QModelIndex ix = m_taskModel->index(i, 0);
+        if (!ix.data(cattask::IsPieceRole).toBool()) // pieces have no position
+            ids << ix.data(cattask::IdRole).toString();
+    }
+    return ids;
+}
+
+QStringList ActivitiesPage::displayedActivityIds() const
+{
+    QStringList ids;
+    for (int i = 0; i < m_actModel->rowCount(); ++i)
+        ids << m_actModel->index(i, 0).data(actrow::IdRole).toString();
+    return ids;
 }
 
 void ActivitiesPage::refreshHeader()
@@ -852,58 +1186,18 @@ void ActivitiesPage::refreshHeader()
 
 void ActivitiesPage::refreshActivities()
 {
-    clearLayout(m_actHost->layout());
     const Category* category = m_data->categoryById(m_selectedCategoryId);
-    if (!category)
-        return;
-    auto* host = static_cast<QVBoxLayout*>(m_actHost->layout());
-    const QString categoryId = category->id;
+    m_actModel->setCategoryId(category ? category->id : QString());
+    m_actModel->refresh(); // no-op-cheap when the id was already current
+    updateActivityViewHeight();
+}
 
-    // The reusable types — no checkbox, ever. Still widget-built rows (a
-    // different shape than tasks, and not the lesson here), just refilled in
-    // place instead of via a wholesale panel rebuild.
-    for (const Activity& a : m_data->activities()) {
-        if (a.categoryId != categoryId || a.archived)
-            continue; // archived activities: Archive page only
-        auto* row = new QHBoxLayout;
-        row->setSpacing(9);
-        auto* aDot = new QLabel(m_actHost);
-        aDot->setPixmap(colorDot(category->color, 9));
-        auto* aName = new QLabel(a.name, m_actHost);
-        row->addWidget(aDot);
-        row->addWidget(aName, 1);
-
-        const int used = m_data->eventCountUsing(a.id);
-        const QString activityId = a.id;
-        if (used > 0) {
-            auto* tag = new QLabel(tr("in use (%1)").arg(used), m_actHost);
-            tag->setStyleSheet("color:#616974; font-size:11px;");
-            row->addWidget(tag);
-            auto* arch = new QPushButton(tr("Archive"), m_actHost);
-            arch->setCursor(Qt::PointingHandCursor);
-            arch->setStyleSheet(
-                QStringLiteral(
-                    "background:#EEF0ED; border:none; border-radius:8px; "
-                    "padding:4px 9px; color:#616974; font-weight:600;%1")
-                    .arg(m_phoneShell ? " min-height:40px;" : ""));
-            connect(arch, &QPushButton::clicked, this, [this, activityId]() {
-                m_data->setActivityArchived(activityId, true);
-            });
-            row->addWidget(arch);
-        } else {
-            auto* x = new QPushButton(QStringLiteral("\u00D7"), m_actHost);
-            x->setObjectName("danger");
-            // A 24dp × on the delete-activity row. Narrow targets are
-            // worst where the action is destructive (v30.7).
-            x->setFixedWidth(touch::sizeFor(24, m_phoneShell));
-            x->setCursor(Qt::PointingHandCursor);
-            connect(x, &QPushButton::clicked, this, [this, activityId]() {
-                m_data->removeActivity(activityId);
-            });
-            row->addWidget(x);
-        }
-        host->addLayout(row);
-    }
+void ActivitiesPage::updateActivityViewHeight()
+{
+    int h = 0;
+    for (int i = 0; i < m_actModel->rowCount(); ++i)
+        h += m_actView->sizeHintForRow(i);
+    m_actView->setFixedHeight(h); // 0 rows -> collapses to nothing
 }
 
 void ActivitiesPage::updateTaskViewHeight()

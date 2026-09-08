@@ -3,6 +3,7 @@
 #include "PomodoroEngine.h"
 #include "Prefs.h"
 #include "Theme.h"
+#include "Widgets.h" // overlapsAnyScreen / availableScreenRects (v31.3.1)
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -100,8 +101,24 @@ PomodoroMiniWindow::PomodoroMiniWindow(PomodoroEngine* engine)
 
     // Reopen where it was last left (invalid point on first ever run —
     // then Qt's default placement is fine).
+    //
+    // ...but ONLY IF THAT PLACE STILL EXISTS. MainWindow has checked this
+    // since the window-memory work (its isReachable / restoreWindowState
+    // pair); the card was given the same memory and not the same check, so
+    // it was the half of the app that could still restore onto a monitor
+    // that had been unplugged. Reported as "the mini timer doesn't work any
+    // more" — which is exactly how it looks: the button responds, the
+    // window really is created and shown, and it is at x=1937 on a desktop
+    // that now ends at 1919.
+    //
+    // Falling back to Qt's default placement rather than clamping, because
+    // that is already the documented first-run behaviour one line above, and
+    // because the saved point is deliberately LEFT ALONE: plug the second
+    // monitor back in and the card returns to where you put it. The first
+    // drag rewrites it either way.
     const QPoint saved = prefs::pomodoroMiniPos();
-    if (!saved.isNull())
+    if (!saved.isNull()
+        && overlapsAnyScreen(QRect(saved, sizeHint()), availableScreenRects()))
         move(saved);
 
     refresh();

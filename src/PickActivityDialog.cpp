@@ -288,13 +288,16 @@ void PickActivityDialog::buildChoiceList()
     };
 
     // Folders first, each folder's categories — exactly the rail's order.
-    for (const Folder& f : m_data->folders())
+    for (const Folder& f : m_data->folders()) {
+        if (f.archived)
+            continue; // v31: a retired semester is not plannable either
         for (const Category& c : m_data->categories())
-            if (c.folderId == f.id && !c.archived)
+            if (c.folderId == f.id && !m_data->categoryHidden(c))
                 addCategory(c); // retired life areas: not plannable
+    }
     // Then the top-level (folder-less) categories.
     for (const Category& c : m_data->categories())
-        if (c.folderId.isEmpty() && !c.archived)
+        if (c.folderId.isEmpty() && !m_data->categoryHidden(c))
             addCategory(c);
 
     if (m_list->count() == 0) {

@@ -29,9 +29,12 @@
 #include "PomodoroLink.h"
 #include "TrackerService.h"
 #include "JsonStore.h"
+#include "Merge.h"      // v31.2 -- the three-way merge
+#include "Recurrence.h" // v31 -- the pure recurrence walk
 #include "TaskCoverage.h"
 #include "MissedBlocks.h"
 #include "Affordability.h"
+#include "DayLayout.h" // v31.3 -- concurrency and column packing
 #include "NudgePhrasing.h"
 #include "CheckIn.h"
 #include "LlmProvider.h"
@@ -39,6 +42,10 @@
 #include "Memory.h"
 #include "MemoryStore.h"
 
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -142,16 +149,26 @@ private slots:
     }
 
     // ---- planning rules ------------------------------------------------------
-    void overlappingEventsAreRejected()
+    // v31.3: overlap is ALLOWED, up to plan::kMaxConcurrentBlocks. This test
+    // used to be `overlappingEventsAreRejected` and asserted the opposite; it
+    // is kept and inverted rather than deleted, because the boundary it
+    // guards has moved rather than gone away.
+    void overlappingEventsAreAcceptedUpToTheCap()
     {
         AppData data;
         const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
         const QString act = data.addActivity("Study", cat);
         const QDate day(2026, 7, 1);
 
-        QVERIFY(!data.addEvent(day, 540, 600, act).isEmpty()); // 9:00–10:00
-        QVERIFY(data.addEvent(day, 570, 630, act).isEmpty());  // overlaps -> no
+        QVERIFY(!data.addEvent(day, 540, 600, act).isEmpty()); // 9:00-10:00
+        QVERIFY(!data.addEvent(day, 570, 630, act).isEmpty()); // overlaps -> ok
         QVERIFY(!data.addEvent(day, 600, 660, act).isEmpty()); // adjacent -> ok
+
+        // 09:30-10:00 is now covered by the first two. A third there is the
+        // cap; a fourth is refused.
+        QVERIFY(!data.addEvent(day, 570, 600, act).isEmpty());
+        QVERIFY(data.addEvent(day, 570, 600, act).isEmpty());
+
         // Same times on ANOTHER day never conflict:
         QVERIFY(!data.addEvent(day.addDays(1), 540, 600, act).isEmpty());
     }
@@ -170,9 +187,13 @@ private slots:
         QCOMPARE(e->plannedEndMinutes - e->plannedStartMinutes, 60);
         QCOMPARE(e->segments.size(), 1); // the tracked FACT travelled along
 
-        const QString blocker = data.addEvent(day, 660, 690, act);
-        QVERIFY(!blocker.isEmpty());
-        QVERIFY(!data.moveEvent(ev, 660)); // landing on the blocker: refused
+        // v31.3: landing ON another block is allowed now - stacking by drag
+        // is the manual route to it. What is still refused is landing on a
+        // slot already FULL, so the blocker here is a full stack of three.
+        QVERIFY(!data.addEvent(day, 660, 690, act).isEmpty());
+        QVERIFY(!data.addEvent(day, 660, 690, act).isEmpty());
+        QVERIFY(!data.addEvent(day, 660, 690, act).isEmpty());
+        QVERIFY(!data.moveEvent(ev, 660)); // onto a full slot: still refused
     }
 
     void resizeChangesSpanButGuardsTheRules()
@@ -211,8 +232,14 @@ private slots:
         const QString b = data.addEvent(day, 660, 720, act);  // 11:00–12:00
         QVERIFY(!a.isEmpty() && !b.isEmpty());
 
-        // Growing 'a' into 'b' is refused; 'a' is left exactly as it was.
-        QVERIFY(!data.resizeEvent(a, 540, 690)); // would cover 11:00–11:30
+        // v31.3: growing 'a' into 'b' is allowed - two blocks may share an
+        // instant. Growing it into a slot that is already FULL is not.
+        QVERIFY(data.resizeEvent(a, 540, 690));  // covers 11:00-11:30, stacks
+        QCOMPARE(data.eventById(a)->plannedEndMinutes, 690);
+        QVERIFY(data.resizeEvent(a, 540, 600));  // put it back
+        QVERIFY(!data.addEvent(day, 660, 720, act).isEmpty()); // b has company
+        QVERIFY(!data.addEvent(day, 660, 720, act).isEmpty()); // ...and is full
+        QVERIFY(!data.resizeEvent(a, 540, 690)); // now genuinely refused
         QCOMPARE(data.eventById(a)->plannedEndMinutes, 600);
         // Growing 'a' up to (not into) 'b' is allowed — adjacency is legal.
         QVERIFY(data.resizeEvent(a, 540, 660));  // 9:00–11:00, touches b's start
@@ -252,11 +279,123 @@ private slots:
 
         // The distracted kind round-trips through JSON unchanged.
         AppData loaded;
-        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
         const stats::Totals t = stats::eventTotals(*loaded.eventById(ev));
         QCOMPARE(t.distractedSeconds, qint64(15 * 60));
         QCOMPARE(t.focusSeconds,      qint64(30 * 60));
         QCOMPARE(t.breakSeconds,      qint64(5 * 60));
+    }
+
+    // ---- the format floor (design-addendum-format-floor.md) ---------------
+
+    // A document one above our format is refused, and refused BEFORE the
+    // AppData is touched. The second half is the point: a partial apply
+    // followed by a save is precisely the loss being prevented.
+    void aTooNewDocumentIsRefusedAndChangesNothing()
+    {
+        AppData mine;
+        const QString cat = mine.addCategory(QStringLiteral("Study"), Qt::blue);
+        const QString act = mine.addActivity(QStringLiteral("Reading"), cat);
+
+        QJsonObject fromTheFuture;
+        fromTheFuture["version"] = JsonStore::kFormatVersion + 1;
+        fromTheFuture["categories"] = QJsonArray{};
+        fromTheFuture["activities"] = QJsonArray{};
+
+        QVERIFY(!JsonStore::applyJsonObject(mine, fromTheFuture, false));
+
+        // Untouched: not emptied, not partially replaced.
+        QCOMPARE(mine.categories().size(), 1);
+        QCOMPARE(mine.activities().size(), 1);
+        QVERIFY(mine.activityById(act) != nullptr);
+    }
+
+    // Our own format, and everything below it, still loads. The floor must
+    // not narrow the additive-growth guarantee it exists to protect.
+    void ourOwnFormatAndOlderStillLoad()
+    {
+        AppData mine;
+        mine.addCategory(QStringLiteral("Study"), Qt::blue);
+
+        QJsonObject doc = JsonStore::toJsonObject(mine);
+        QCOMPARE(doc["version"].toInt(), JsonStore::kFormatVersion);
+
+        AppData same;
+        QVERIFY(JsonStore::applyJsonObject(same, doc, false));
+        QCOMPARE(same.categories().size(), 1);
+
+        doc["version"] = 1; // the oldest file that ever existed
+        AppData ancient;
+        QVERIFY(JsonStore::applyJsonObject(ancient, doc, false));
+        QCOMPARE(ancient.categories().size(), 1);
+    }
+
+    // load() tells the four cases apart. The bool it replaced could not, and
+    // its one caller answered two of them with seedDefaults().
+    void loadDistinguishesItsFourOutcomes()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("planner.json"));
+
+        AppData scratch;
+        QCOMPARE(JsonStore(path).load(scratch), JsonStore::LoadResult::Empty);
+
+        {
+            AppData mine;
+            mine.addCategory(QStringLiteral("Study"), Qt::blue);
+            QVERIFY(JsonStore(path).save(mine));
+        }
+        AppData good;
+        QCOMPARE(JsonStore(path).load(good), JsonStore::LoadResult::Loaded);
+
+        QFile bad(path);
+        QVERIFY(bad.open(QIODevice::WriteOnly));
+        bad.write("{ this is not json");
+        bad.close();
+        AppData none;
+        QCOMPARE(JsonStore(path).load(none), JsonStore::LoadResult::Unreadable);
+    }
+
+    // THE REGRESSION, written as the thing that actually went wrong: a binary
+    // that cannot understand a planner must leave the bytes alone. Asserting
+    // save()==false would pass even if the file had been rewritten, so this
+    // compares the file's contents before and after.
+    void aBinaryThatCannotReadAPlannerCannotOverwriteIt()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("planner.json"));
+
+        AppData future;
+        future.addCategory(QStringLiteral("Semester"), Qt::green);
+        QJsonObject doc = JsonStore::toJsonObject(future);
+        doc["version"] = JsonStore::kFormatVersion + 1;
+        doc["somethingWeHaveNeverHeardOf"] = QStringLiteral("keep me");
+
+        {
+            QFile f(path);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(QJsonDocument(doc).toJson(QJsonDocument::Indented));
+        }
+        QFile before(path);
+        QVERIFY(before.open(QIODevice::ReadOnly));
+        const QByteArray original = before.readAll();
+        before.close();
+
+        JsonStore store(path);
+        AppData mine;
+        QCOMPARE(store.load(mine), JsonStore::LoadResult::TooNew);
+        QVERIFY(store.isReadOnly());
+        QVERIFY(!store.errorMessage().isEmpty());
+
+        // The caller does the worst thing it could do next.
+        mine.seedDefaults();
+        QVERIFY(!store.save(mine));
+
+        QFile after(path);
+        QVERIFY(after.open(QIODevice::ReadOnly));
+        QCOMPARE(after.readAll(), original);
     }
 
     void statsDeriveFromSegments()
@@ -739,82 +878,1025 @@ private slots:
         QCOMPARE(data.tasks().size(), 2);
     }
 
-    void repeatingBlocksRollForwardHonestly()
+    // ---- v31: a task chain that stops ----------------------------------------
+    //
+    // Task repeat has regenerated on completion since v19.10 (the comment in
+    // Task.h claiming otherwise was eleven versions stale). What it lacked
+    // was an END, which is what "repeat this from August 1st to January
+    // first" needs.
+    void aTaskChainStopsAtItsEndDate()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Health", QColor("#4CA96A"));
+        const QString id = data.addTask("Weigh in", cat, QDate(2026, 7, 1));
+        QVERIFY(data.updateTask(id, "Weigh in", QString(), QDate(2026, 7, 1),
+                                QTime(), Task::Repeat::Weekly));
+        QVERIFY(data.setTaskRepeatUntil(id, QDate(2026, 7, 20)));
+
+        // Jul 8 is inside the window, so the chain continues.
+        QVERIFY(data.setTaskDone(id, true));
+        QCOMPARE(data.tasks().size(), 2);
+        const Task* second = nullptr;
+        for (const Task& t : data.tasks())
+            if (t.id != id)
+                second = &t;
+        QVERIFY(second);
+        QCOMPARE(second->dueDate, QDate(2026, 7, 8));
+        // The end rides along with the rule, or the second link would run
+        // forever and the limit would apply to exactly one completion.
+        QCOMPARE(second->repeatUntil, QDate(2026, 7, 20));
+
+        const QString secondId = second->id;
+        QVERIFY(data.setTaskDone(secondId, true)); // -> Jul 15, still inside
+        QCOMPARE(data.tasks().size(), 3);
+        QString thirdId;
+        for (const Task& t : data.tasks())
+            if (t.id != id && t.id != secondId)
+                thirdId = t.id;
+        QCOMPARE(data.taskById(thirdId)->dueDate, QDate(2026, 7, 15));
+
+        // Jul 22 is PAST the end. Completing succeeds; it simply spawns
+        // nothing. The check is against the NEXT date, not today, so when
+        // the box was ticked cannot change the answer.
+        QVERIFY(data.setTaskDone(thirdId, true));
+        QCOMPARE(data.tasks().size(), 3);
+        QVERIFY(data.taskById(thirdId)->done);
+    }
+
+    void clearingTheRepeatClearsItsEndDate()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Health", QColor("#4CA96A"));
+        const QString id = data.addTask("Weigh in", cat, QDate(2026, 7, 1));
+        data.updateTask(id, "Weigh in", QString(), QDate(2026, 7, 1), QTime(),
+                        Task::Repeat::Weekly);
+        data.setTaskRepeatUntil(id, QDate(2026, 7, 20));
+        QCOMPARE(data.taskById(id)->repeatUntil, QDate(2026, 7, 20));
+
+        // No rule, no end — the same pairing the due date keeps with its
+        // time. A stranded end would be believed the next time a repeat is
+        // set.
+        data.updateTask(id, "Weigh in", QString(), QDate(2026, 7, 1), QTime(),
+                        Task::Repeat::None);
+        QVERIFY(!data.taskById(id)->repeatUntil.isValid());
+
+        // And the door refuses to strand one on its own.
+        QVERIFY(data.setTaskRepeatUntil(id, QDate(2026, 8, 1)));
+        QVERIFY(!data.taskById(id)->repeatUntil.isValid());
+
+        // Round trip.
+        data.updateTask(id, "Weigh in", QString(), QDate(2026, 7, 1), QTime(),
+                        Task::Repeat::Weekly);
+        data.setTaskRepeatUntil(id, QDate(2026, 12, 31));
+        AppData copy;
+        QVERIFY(JsonStore::applyJsonObject(copy, JsonStore::toJsonObject(data), false));
+        QCOMPARE(copy.taskById(id)->repeatUntil, QDate(2026, 12, 31));
+    }
+
+    // ---- v31: schedules replace the roll ------------------------------------
+    //
+    // These three replace repeatingBlocksRollForwardHonestly,
+    // rollSkipsOccupiedDatesInsteadOfFighting and
+    // eventRepeatSurvivesTheJsonRoundTrip... — the v19.10 tests for the
+    // mechanism this feature retired. Two of their promises are KEPT and
+    // re-pinned here (never backfill the past; skip an occupied slot rather
+    // than fight it); the third — "the rule lives on the newest link" — is
+    // gone with the chain that needed it, replaced by a rule that outlives
+    // every occurrence.
+
+    // The pure brain first, on its own, with no AppData in sight. This is
+    // the table the whole feature rests on.
+    void recurrenceWalksTheRuleAndStopsWhereItIsTold()
+    {
+        Schedule weekly;
+        weekly.startDate    = QDate(2026, 8, 25); // a Tuesday
+        weekly.startMinutes = 13 * 60 + 30;
+        weekly.endMinutes   = 17 * 60;
+        weekly.repeat       = Task::Repeat::Weekly;
+
+        // Open-ended: the caller's window is the only limit.
+        auto dates = recur::occurrences(weekly, QDate(2026, 8, 25),
+                                        QDate(2026, 9, 15));
+        QCOMPARE(dates,
+                 QVector<QDate>({QDate(2026, 8, 25), QDate(2026, 9, 1),
+                                 QDate(2026, 9, 8), QDate(2026, 9, 15)}));
+
+        // The window's start clips the front WITHOUT moving the anchor: the
+        // weekday still comes from startDate, so asking about September does
+        // not silently re-phase the rule onto a September weekday.
+        dates = recur::occurrences(weekly, QDate(2026, 9, 2),
+                                   QDate(2026, 9, 20));
+        QCOMPARE(dates, QVector<QDate>({QDate(2026, 9, 8), QDate(2026, 9, 15)}));
+
+        // An end date landing exactly ON an occurrence includes it —
+        // "inclusive" is a promise the header makes, so it gets a test.
+        weekly.endDate = QDate(2026, 9, 8);
+        dates = recur::occurrences(weekly, QDate(2026, 8, 25),
+                                   QDate(2026, 12, 31));
+        QCOMPARE(dates, QVector<QDate>({QDate(2026, 8, 25), QDate(2026, 9, 1),
+                                        QDate(2026, 9, 8)}));
+
+        // A skipped date is absent, and the ones around it are unmoved: a
+        // skip is a hole, not a shift.
+        weekly.skipDates << QStringLiteral("2026-09-01");
+        dates = recur::occurrences(weekly, QDate(2026, 8, 25),
+                                   QDate(2026, 12, 31));
+        QCOMPARE(dates, QVector<QDate>({QDate(2026, 8, 25), QDate(2026, 9, 8)}));
+
+        // Repeat::None is ONE dated block, not a degenerate case — it is how
+        // a single session gets on the calendar.
+        Schedule once;
+        once.startDate    = QDate(2026, 8, 25);
+        once.startMinutes = 9 * 60;
+        once.endMinutes   = 10 * 60;
+        QCOMPARE(recur::occurrences(once, QDate(2026, 8, 1), QDate(2026, 8, 31)),
+                 QVector<QDate>({QDate(2026, 8, 25)}));
+        QCOMPARE(recur::occurrences(once, QDate(2026, 9, 1), QDate(2026, 9, 30)),
+                 QVector<QDate>());
+
+        // An end before the start describes nothing, and says so rather than
+        // spinning to kMaxSteps.
+        Schedule backwards = weekly;
+        backwards.endDate = QDate(2026, 1, 1);
+        QVERIFY(recur::occurrences(backwards, QDate(2026, 8, 25),
+                                   QDate(2026, 12, 31))
+                    .isEmpty());
+    }
+
+    // ---- v31.2: the three-way merge -----------------------------------------
+    //
+    // The owner tested on a phone and a desktop separately, and sync could
+    // only say "Conflict — pick one and lose the other". His question was
+    // the right one: merge first, ask only about what is genuinely
+    // contested. This is the table that makes that safe.
+    //
+    // The row that MATTERS most is the delete one. With only two documents,
+    // "on the server but not on my phone" is ambiguous — added there, or
+    // deleted here? A union answers "added" every time and resurrects
+    // everything you have deleted. The BASE is what makes it decidable.
+    void mergeDecidesEveryRowOfTheTable()
+    {
+        const auto row = [](const QString& id, const QString& title) {
+            return QJsonObject{{"id", id}, {"title", title}};
+        };
+        const auto doc = [](std::initializer_list<QJsonObject> rows) {
+            QJsonArray a;
+            for (const QJsonObject& r : rows)
+                a.append(r);
+            return QJsonObject{{"version", 16}, {"tasks", a}};
+        };
+        const auto titles = [](const merge::Result& r) {
+            QStringList out;
+            for (const QJsonValue& v : r.merged.value("tasks").toArray())
+                out << v.toObject().value("title").toString();
+            out.sort();
+            return out;
+        };
+
+        // ADDED ON EITHER SIDE — the owner's actual case: phone gained
+        // tasks, server gained schedules, neither touched the other.
+        {
+            const auto base   = doc({row("a", "A")});
+            const auto local  = doc({row("a", "A"), row("b", "phone task")});
+            const auto server = doc({row("a", "A"), row("c", "server task")});
+            const merge::Result r = merge::plan(base, local, server);
+            QCOMPARE(titles(r), QStringList({"A", "phone task", "server task"}));
+            QVERIFY(r.clashes.isEmpty()); // nothing to ask
+        }
+
+        // DELETED ON ONE SIDE, untouched on the other — stays deleted. This
+        // is the row a two-way union gets wrong.
+        {
+            const auto base   = doc({row("a", "A"), row("b", "B")});
+            const auto local  = doc({row("a", "A")});            // deleted B
+            const auto server = doc({row("a", "A"), row("b", "B")});
+            const merge::Result r = merge::plan(base, local, server);
+            QCOMPARE(titles(r), QStringList({"A"}));
+            QVERIFY(r.clashes.isEmpty());
+        }
+        {   // ...and the same in the other direction.
+            const auto base   = doc({row("a", "A"), row("b", "B")});
+            const auto local  = doc({row("a", "A"), row("b", "B")});
+            const auto server = doc({row("a", "A")});            // deleted B
+            const merge::Result r = merge::plan(base, local, server);
+            QCOMPARE(titles(r), QStringList({"A"}));
+            QVERIFY(r.clashes.isEmpty());
+        }
+
+        // EDITED ON ONE SIDE ONLY — that side wins, no question asked.
+        {
+            const auto base   = doc({row("a", "A")});
+            const auto local  = doc({row("a", "A edited here")});
+            const auto server = doc({row("a", "A")});
+            QCOMPARE(titles(merge::plan(base, local, server)),
+                     QStringList({"A edited here"}));
+        }
+        {
+            const auto base   = doc({row("a", "A")});
+            const auto local  = doc({row("a", "A")});
+            const auto server = doc({row("a", "A edited there")});
+            QCOMPARE(titles(merge::plan(base, local, server)),
+                     QStringList({"A edited there"}));
+        }
+
+        // EDITED ON BOTH SIDES, DIFFERENTLY — the one true conflict.
+        {
+            const auto base   = doc({row("a", "A")});
+            const auto local  = doc({row("a", "mine")});
+            const auto server = doc({row("a", "theirs")});
+            const merge::Result r = merge::plan(base, local, server);
+            QCOMPARE(r.clashes.size(), 1);
+            QCOMPARE(r.clashes.first().collection, QStringLiteral("tasks"));
+            QCOMPARE(r.clashes.first().id, QStringLiteral("a"));
+            QCOMPARE(r.clashes.first().label, QStringLiteral("mine"));
+            QCOMPARE(r.clashes.first().kind,
+                     merge::Clash::Kind::BothEdited);
+            // Ours is held until the human decides — never dropped on the
+            // floor while the question is open.
+            QCOMPARE(titles(r), QStringList({"mine"}));
+        }
+
+        // EDITED HERE, DELETED THERE — a delete must not silently eat an
+        // edit, so this is a conflict rather than a quiet removal.
+        {
+            const auto base   = doc({row("a", "A"), row("b", "B")});
+            const auto local  = doc({row("a", "A"), row("b", "B edited")});
+            const auto server = doc({row("a", "A")});
+            const merge::Result r = merge::plan(base, local, server);
+            QCOMPARE(r.clashes.size(), 1);
+            QCOMPARE(r.clashes.first().kind,
+                     merge::Clash::Kind::EditedHereDeletedThere);
+            QCOMPARE(titles(r), QStringList({"A", "B edited"}));
+        }
+
+        // DELETED HERE, EDITED THERE — the mirror of the case above, which
+        // had no test until v31.2 because nothing yet distinguished it.
+        {
+            const auto base   = doc({row("a", "A"), row("b", "B")});
+            const auto local  = doc({row("a", "A")});
+            const auto server = doc({row("a", "A"), row("b", "B edited")});
+            const merge::Result r = merge::plan(base, local, server);
+            QCOMPARE(r.clashes.size(), 1);
+            QCOMPARE(r.clashes.first().kind,
+                     merge::Clash::Kind::DeletedHereEditedThere);
+            QCOMPARE(titles(r), QStringList({"A", "B edited"}));
+        }
+
+        // THE CLAIM THE CONFLICT DIALOG RESTS ON (v31.2). For the two
+        // edit-vs-delete shapes, plan() keeps the edited version whichever
+        // way preferServer is set — so both candidate documents are the same
+        // document and the two buttons offer one outcome twice. The dialog
+        // now SAYS so ("kept automatically"), and SyncService skips the modal
+        // entirely when every clash is one of these.
+        //
+        // This test is the tripwire under that sentence: anyone
+        // "completing" plan() by consulting preferServer in those branches
+        // turns the dialog into a liar, and finds out here rather than from
+        // a user.
+        {
+            const auto base   = doc({row("a", "A"), row("b", "B")});
+            const auto local  = doc({row("a", "A"), row("b", "B edited")});
+            const auto server = doc({row("a", "A")});
+            QCOMPARE(merge::plan(base, local, server, false).merged,
+                     merge::plan(base, local, server, true).merged);
+            QVERIFY(!merge::anyDecidedByPreference(
+                merge::plan(base, local, server).clashes));
+        }
+        {   // ...and the mirror.
+            const auto base   = doc({row("a", "A"), row("b", "B")});
+            const auto local  = doc({row("a", "A")});
+            const auto server = doc({row("a", "A"), row("b", "B edited")});
+            QCOMPARE(merge::plan(base, local, server, false).merged,
+                     merge::plan(base, local, server, true).merged);
+            QVERIFY(!merge::anyDecidedByPreference(
+                merge::plan(base, local, server).clashes));
+        }
+        {   // Edited on both, by contrast, is genuinely a question: the two
+            // plans differ, which is what makes the buttons mean something.
+            const auto base   = doc({row("a", "A")});
+            const auto local  = doc({row("a", "mine")});
+            const auto server = doc({row("a", "theirs")});
+            QVERIFY(merge::plan(base, local, server, false).merged
+                    != merge::plan(base, local, server, true).merged);
+            QVERIFY(merge::anyDecidedByPreference(
+                merge::plan(base, local, server).clashes));
+        }
+
+        // SAME EDIT ON BOTH SIDES is agreement, not conflict.
+        {
+            const auto base   = doc({row("a", "A")});
+            const auto same   = doc({row("a", "both renamed it this")});
+            const merge::Result r = merge::plan(base, same, same);
+            QVERIFY(r.clashes.isEmpty());
+            QCOMPARE(titles(r), QStringList({"both renamed it this"}));
+        }
+
+        // DELETED ON BOTH SIDES — agreement again.
+        {
+            const auto base   = doc({row("a", "A"), row("b", "B")});
+            const auto gone   = doc({row("a", "A")});
+            const merge::Result r = merge::plan(base, gone, gone);
+            QVERIFY(r.clashes.isEmpty());
+            QCOMPARE(titles(r), QStringList({"A"}));
+        }
+    }
+
+    // ---- v31.2: the conflict box's SENTENCES -----------------------------
+    //
+    // These are pinned here, in a suite that links no widgets, because the
+    // text is a pure function of the clash list (Merge.h). The complaint
+    // that produced them: the box named WHAT clashed and never which SIDE it
+    // came from, which leaves a choice between two devices as close to a
+    // coin toss as naming nothing at all.
+    void aConflictSaysWhichSideEachRowCameFrom()
+    {
+        const auto clash = [](const char* coll, const char* id,
+                              const char* label, merge::Clash::Kind k) {
+            return merge::Clash{QString::fromLatin1(coll),
+                                QString::fromLatin1(id),
+                                QString::fromLatin1(label), k};
+        };
+
+        // Each of the three shapes names BOTH sides, and the two settled
+        // ones name their outcome as well — that is what makes them a report
+        // rather than a question.
+        QVERIFY(merge::describeSides(merge::Clash::Kind::BothEdited)
+                    .contains(QStringLiteral("on the server")));
+        QVERIFY(merge::describeSides(merge::Clash::Kind::EditedHereDeletedThere)
+                    .contains(QStringLiteral("your version is kept")));
+        QVERIFY(merge::describeSides(merge::Clash::Kind::DeletedHereEditedThere)
+                    .contains(QStringLiteral("the server's version is kept")));
+        // The three are genuinely different sentences. Before v31.2 all
+        // three rendered identically, which is the defect in one line.
+        QSet<QString> distinct;
+        for (auto k : {merge::Clash::Kind::BothEdited,
+                       merge::Clash::Kind::EditedHereDeletedThere,
+                       merge::Clash::Kind::DeletedHereEditedThere})
+            distinct.insert(merge::describeSides(k));
+        QCOMPARE(distinct.size(), 3);
+
+        // Grouped under an uppercased collection heading, one heading per
+        // group, each row followed by its two-sided description.
+        const QVector<merge::Clash> rows = {
+            clash("activities", "a1", "LOG635 - TP",
+                  merge::Clash::Kind::BothEdited),
+            clash("tasks", "t1", "Lab 4", merge::Clash::Kind::BothEdited),
+            clash("tasks", "t2", "Read ch. 3", merge::Clash::Kind::BothEdited),
+        };
+        const QStringList lines =
+            merge::renderClashes(rows).split(QLatin1Char('\n'));
+        QCOMPARE(lines.first(), QStringLiteral("ACTIVITIES"));
+        QVERIFY(lines.contains(QStringLiteral("TASKS")));
+        QCOMPARE(lines.count(QStringLiteral("TASKS")), 1); // once, not per row
+        QVERIFY(lines.contains(QStringLiteral("  • Lab 4")));
+        QVERIFY(merge::renderClashes(rows)
+                    .contains(merge::describeSides(
+                        merge::Clash::Kind::BothEdited)));
+
+        // A row with no human field falls back to its id rather than
+        // printing a blank bullet.
+        const QVector<merge::Clash> nameless = {
+            clash("tasks", "t9", "", merge::Clash::Kind::BothEdited)};
+        QVERIFY(merge::renderClashes(nameless)
+                    .contains(QStringLiteral("  • t9")));
+
+        // Capped at six rows, and the tail counts what it hid.
+        QVector<merge::Clash> many;
+        for (int i = 0; i < 10; ++i)
+            many << merge::Clash{QStringLiteral("tasks"),
+                                 QStringLiteral("id%1").arg(i),
+                                 QStringLiteral("Task %1").arg(i),
+                                 merge::Clash::Kind::BothEdited};
+        const QString capped = merge::renderClashes(many);
+        QVERIFY(capped.contains(QStringLiteral("Task 5")));
+        QVERIFY(!capped.contains(QStringLiteral("Task 6")));
+        // The tail, asserted as the LAST LINE rather than as a substring:
+        // "contains 4" is also true of "Task 4", so the loose version passed
+        // whether or not the cap said anything at all.
+        QCOMPARE(capped.split(QLatin1Char('\n')).last(),
+                 QObject::tr("…and %n more", nullptr, 4));
+
+        // Empty in, empty out — the dialog hides a section on exactly this.
+        QVERIFY(merge::renderClashes({}).isEmpty());
+    }
+
+    // ---- v31.3: up to three blocks may cover one instant -----------------
+    //
+    // The rule this replaced was "two Events on the same day cannot overlap",
+    // one of the aggregate invariants. Relaxing an invariant is the kind of
+    // change that is only safe if the arithmetic is pinned, so it is pinned
+    // here, in the suite that links no widgets.
+    void threeBlocksMayShareAnInstantAndAFourthMayNot()
     {
         AppData data;
         const QString cat = data.addCategory("School", QColor("#4C6FE0"));
-        const QString act = data.addActivity("Study PHY335", cat);
-        // A weekly Monday block, last materialized Jun 29 (a Monday):
-        const QString ev = data.addEvent(QDate(2026, 6, 29),
-                                         10 * 60, 12 * 60, act);
-        data.setEventRepeat(ev, Task::Repeat::Weekly);
+        const QString act = data.addActivity("Lecture", cat);
+        const QDate day(2026, 9, 7);
 
-        // Twelve days pass unopened. The roll must NOT backfill Jul 6 —
-        // an empty plan for a day you weren't there is noise, not
-        // history — it re-arms at the first rule date >= today: Jul 13.
-        QCOMPARE(data.rollRepeats(QDate(2026, 7, 11)), 1);
+        QVERIFY(!data.addEvent(day, 13 * 60, 15 * 60, act).isEmpty());
+        QVERIFY(!data.addEvent(day, 13 * 60, 15 * 60, act).isEmpty());
+        QVERIFY(!data.addEvent(day, 13 * 60, 15 * 60, act).isEmpty());
+        QCOMPARE(data.eventsOn(day).size(), 3);
+
+        // The fourth is refused, and the refusal can SAY why - the same
+        // contract recur::problemWith introduced, so a dialog can quote the
+        // domain instead of inventing kinder words.
+        QVERIFY(data.addEvent(day, 13 * 60, 15 * 60, act).isEmpty());
+        QVERIFY(!data.hasRoomFor(day, 13 * 60, 15 * 60));
+        QVERIFY(!data.whyNoRoomFor(day, 13 * 60, 15 * 60).isEmpty());
+        QCOMPARE(data.eventsOn(day).size(), 3);
+
+        // A block that only TOUCHES the full stack is fine: 15:00 is the
+        // instant the three end, and an end is exclusive.
+        QVERIFY(!data.addEvent(day, 15 * 60, 16 * 60, act).isEmpty());
+
+        // isFree still means "nothing is there", which is NOT hasRoomFor.
+        // Keeping both is deliberate: the agenda offers its "+ plan"
+        // invitation on emptiness, never on remaining capacity.
+        QVERIFY(!data.isFree(day, 13 * 60, 15 * 60));
+        const QString solo = data.addEvent(day, 9 * 60, 10 * 60, act);
+        QVERIFY(!solo.isEmpty());
+        QVERIFY(!data.isFree(day, 9 * 60, 10 * 60));      // occupied
+        QVERIFY(data.hasRoomFor(day, 9 * 60, 10 * 60));   // but has room
+    }
+
+    // CONCURRENCY IS NOT A COUNT OF OVERLAPS, and this is the case that makes
+    // the difference: three blocks chained by overlap, where no single
+    // instant carries more than two. Counting events that overlap the range
+    // would say 3 and refuse a legal fourth; counting concurrency says 2.
+    void concurrencyCountsInstantsNotPairs()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 9, 8);
+        data.addEvent(day,  9 * 60,      10 * 60, act);
+        data.addEvent(day,  9 * 60 + 30, 10 * 60 + 30, act);
+        data.addEvent(day, 10 * 60,      11 * 60, act);
+
+        const QVector<const Event*> rows = data.eventsOn(day);
+        QCOMPARE(daylay::peakConcurrency(rows, 9 * 60, 11 * 60), 3);
+        // ...and a block spanning the whole chain is still allowed, because
+        // at its busiest instant only two of the three are live.
+        QVERIFY(data.hasRoomFor(day, 9 * 60, 11 * 60));
+    }
+
+    // WHERE EACH BLOCK DRAWS. Pure geometry, no widget in sight.
+    void stackedBlocksGetTheirOwnColumns()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Lecture", cat);
+        const QDate day(2026, 9, 9);
+
+        const QString a = data.addEvent(day, 13 * 60, 15 * 60, act);
+        const QString b = data.addEvent(day, 13 * 60, 15 * 60, act);
+        const QString c = data.addEvent(day, 13 * 60, 15 * 60, act);
+        auto cols = daylay::columns(data.eventsOn(day));
+        QCOMPARE(cols.size(), 3);
+        QSet<int> used;
+        for (const QString& id : {a, b, c}) {
+            QCOMPARE(cols.value(id).columnCount, 3); // one width per cluster
+            used.insert(cols.value(id).column);
+        }
+        QCOMPARE(used, QSet<int>({0, 1, 2}));        // and three distinct ones
+
+        // A block alone keeps the full width.
+        AppData solo;
+        const QString c2 = solo.addCategory("Rest", QColor("#4CA96A"));
+        const QString a2 = solo.addActivity("Nap", c2);
+        const QString only = solo.addEvent(day, 9 * 60, 10 * 60, a2);
+        QCOMPARE(daylay::columns(solo.eventsOn(day)).value(only).columnCount, 1);
+
+        // A LATER block reclaims column 0 once the first has finished, and
+        // the cluster it belongs to decides its width - not the whole day.
+        QVERIFY(!solo.addEvent(day, 9 * 60 + 30, 10 * 60 + 30, a2).isEmpty());
+        const QString third = solo.addEvent(day, 10 * 60, 11 * 60, a2);
+        const auto packed = daylay::columns(solo.eventsOn(day));
+        QCOMPARE(packed.value(third).column, 0); // column 0 freed at 10:00
+        QCOMPARE(packed.value(only).columnCount, 2);
+    }
+
+    // MERGED BUSY TIME - the shared definition of "spoken for". Affordability
+    // summed durations before v31.3 and would double-count a stacked hour.
+    void busyMinutesCountAMinuteOnce()
+    {
+        using Span = QPair<int, int>;
+        // Two blocks stacked on the same hour: sixty minutes, not a hundred
+        // and twenty.
+        QCOMPARE(daylay::busyMinutes({Span{540, 600}, Span{540, 600}}), 60);
+        // Nested.
+        QCOMPARE(daylay::busyMinutes({Span{540, 660}, Span{570, 600}}), 120);
+        // Touching ranges are one stretch: there is no free minute between
+        // 10:00-11:00 and 11:00-12:00.
+        QCOMPARE(daylay::mergeSpans({Span{600, 660}, Span{660, 720}}).size(), 1);
+        // Disjoint stay separate.
+        QCOMPARE(daylay::mergeSpans({Span{600, 660}, Span{700, 720}}).size(), 2);
+        QCOMPARE(daylay::busyMinutes({}), 0);
+    }
+
+    // A LOST OR ABSENT BASE must fail safe. Without it nothing can be
+    // proven deleted, so nothing is deleted — the pessimistic direction.
+    // Losing data because a settings file went missing would be the worst
+    // possible trade.
+    void mergeWithNoBaseKeepsEverythingRatherThanGuessing()
+    {
+        const auto row = [](const QString& id, const QString& t) {
+            return QJsonObject{{"id", id}, {"title", t}};
+        };
+        QJsonArray la; la.append(row("a", "A")); la.append(row("b", "B"));
+        QJsonArray sa; sa.append(row("a", "A")); sa.append(row("c", "C"));
+        const QJsonObject local{{"tasks", la}};
+        const QJsonObject server{{"tasks", sa}};
+
+        const merge::Result r = merge::plan(QJsonObject(), local, server);
+        QStringList out;
+        for (const QJsonValue& v : r.merged.value("tasks").toArray())
+            out << v.toObject().value("title").toString();
+        out.sort();
+        QCOMPARE(out, QStringList({"A", "B", "C"})); // union, nothing lost
+        QVERIFY(r.clashes.isEmpty()); // "a" is identical on both sides
+    }
+
+    // The merge is GENERIC: it walks whatever id-bearing arrays it finds, so
+    // a collection nobody taught it about still merges. That is the property
+    // that stops the next version's collection being silently skipped.
+    void mergeHandlesEveryCollectionIncludingOnesItWasNeverTaught()
+    {
+        const QJsonObject base{
+            {"tasks", QJsonArray{QJsonObject{{"id","t1"},{"title","T"}}}},
+            {"widgets", QJsonArray{QJsonObject{{"id","w1"},{"name","W"}}}}};
+        const QJsonObject local{
+            {"tasks", QJsonArray{QJsonObject{{"id","t1"},{"title","T"}}}},
+            {"widgets", QJsonArray{QJsonObject{{"id","w1"},{"name","W"}},
+                                   QJsonObject{{"id","w2"},{"name","new here"}}}}};
+        const QJsonObject server{
+            {"tasks", QJsonArray{QJsonObject{{"id","t1"},{"title","T"}}}},
+            {"widgets", QJsonArray{QJsonObject{{"id","w1"},{"name","W"}},
+                                   QJsonObject{{"id","w3"},{"name","new there"}}}}};
+
+        const merge::Result r = merge::plan(base, local, server);
+        QCOMPARE(r.merged.value("widgets").toArray().size(), 3);
+        QVERIFY(r.clashes.isEmpty());
+    }
+
+    // Device-local state must NOT cross the wire in a merge. "running" is
+    // the crash-insurance block naming the timer THIS machine has going;
+    // adopting the other machine's would claim you are tracking a block you
+    // are not sitting in front of.
+    void mergeKeepsDeviceLocalStateLocal()
+    {
+        const QJsonObject base{{"version", 16}};
+        const QJsonObject local{{"version", 16},
+                                {"running", QJsonObject{{"eventId","mine"}}}};
+        const QJsonObject server{{"version", 16},
+                                 {"running", QJsonObject{{"eventId","theirs"}}}};
+        const merge::Result r = merge::plan(base, local, server);
+        QCOMPARE(r.merged.value("running").toObject().value("eventId").toString(),
+                 QStringLiteral("mine"));
+    }
+
+    // ---- v31.1: the weekday is the rule's, not the start date's --------------
+    //
+    // Reported by the owner, and it is a design fault rather than a bug:
+    // "I have a class every Wednesday ... the start day of the repeat is a
+    // Monday". startDate used to fix the weekday, so a term that opened on a
+    // Monday turned a Wednesday class into a Monday one. The term and the
+    // timetable are independent facts and the model now says both.
+    void aWeeklyRuleLandsOnItsOwnDaysNotTheStartDates()
+    {
+        Schedule s;
+        // Aug 31 2026 is a MONDAY — the term opens here.
+        s.startDate    = QDate(2026, 8, 31);
+        QCOMPARE(s.startDate.dayOfWeek(), 1); // Qt: 1 = Monday
+        s.endDate      = QDate(2026, 9, 30);
+        s.startMinutes = 13 * 60 + 30;
+        s.endMinutes   = 17 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        s.weekdays     = {3}; // ...but the class is on WEDNESDAYS
+
+        const auto dates = recur::occurrences(s, QDate(2026, 8, 1),
+                                              QDate(2026, 12, 31));
+        QCOMPARE(dates, QVector<QDate>({QDate(2026, 9, 2), QDate(2026, 9, 9),
+                                        QDate(2026, 9, 16),
+                                        QDate(2026, 9, 23),
+                                        QDate(2026, 9, 30)}));
+        // Every one of them really is a Wednesday, and the first is the
+        // first Wednesday ON OR AFTER the term's opening Monday — never
+        // before it.
+        for (QDate d : dates) {
+            QCOMPARE(d.dayOfWeek(), 3);
+            QVERIFY(d >= s.startDate);
+        }
+
+        // TWO DAYS in one rule — the case that made a weekday SET the right
+        // shape rather than a single picker.
+        s.weekdays = {2, 4}; // Tuesday and Thursday
+        s.endDate  = QDate(2026, 9, 14);
+        QCOMPARE(recur::occurrences(s, QDate(2026, 8, 1), QDate(2026, 12, 31)),
+                 QVector<QDate>({QDate(2026, 9, 1), QDate(2026, 9, 3),
+                                 QDate(2026, 9, 8), QDate(2026, 9, 10)}));
+
+        // A skipped date is still a hole, and the days around it do not shift.
+        s.skipDates << QStringLiteral("2026-09-03");
+        QCOMPARE(recur::occurrences(s, QDate(2026, 8, 1), QDate(2026, 12, 31)),
+                 QVector<QDate>({QDate(2026, 9, 1), QDate(2026, 9, 8),
+                                 QDate(2026, 9, 10)}));
+    }
+
+    // The compatibility promise: a rule written before weekdays existed has
+    // an EMPTY set, which means "the weekday of startDate" — exactly what it
+    // meant when the stride was the only implementation. The owner has such
+    // a rule (Weekly, Fridays) and it must not move.
+    void aRuleWithNoDaySetKeepsMeaningItsStartDatesWeekday()
+    {
+        Schedule legacy;
+        legacy.startDate    = QDate(2026, 9, 4); // a Friday
+        QCOMPARE(legacy.startDate.dayOfWeek(), 5);
+        legacy.startMinutes = 9 * 60;
+        legacy.endMinutes   = 10 * 60;
+        legacy.repeat       = Task::Repeat::Weekly;
+        // weekdays deliberately left empty
+
+        QCOMPARE(recur::occurrences(legacy, QDate(2026, 9, 1),
+                                    QDate(2026, 9, 30)),
+                 QVector<QDate>({QDate(2026, 9, 4), QDate(2026, 9, 11),
+                                 QDate(2026, 9, 18), QDate(2026, 9, 25)}));
+        // And every reader that SHOWS the days resolves it the same way, so
+        // the sentence cannot promise a day the calendar will not deliver.
+        QCOMPARE(recur::effectiveWeekdays(legacy), QList<int>({5}));
+        QVERIFY(recur::summary(legacy).contains(
+            QLocale().dayName(5, QLocale::ShortFormat)));
+    }
+
+    // The validator is PURE and SHARED so the editor can refuse with the
+    // same definition the domain uses — before v31.1 the dialog validated
+    // nothing and an illegal rule closed it and vanished without a word.
+    void aRuleThatCannotWorkSaysWhyRatherThanVanishing()
+    {
+        Schedule ok;
+        ok.title        = QStringLiteral("Commute");
+        ok.startDate    = QDate(2026, 9, 1);
+        ok.startMinutes = 9 * 60;
+        ok.endMinutes   = 10 * 60;
+        ok.repeat       = Task::Repeat::Weekly;
+        ok.weekdays     = {2};
+        QVERIFY(recur::problemWith(ok).isEmpty());
+
+        Schedule backwards = ok;
+        backwards.endDate = QDate(2026, 8, 1); // before the start
+        QVERIFY(recur::problemWith(backwards).contains(QStringLiteral("before")));
+
+        Schedule zeroLength = ok;
+        zeroLength.endMinutes = zeroLength.startMinutes;
+        QVERIFY(!recur::problemWith(zeroLength).isEmpty());
+
+        Schedule beforeDawn = ok;
+        beforeDawn.startMinutes = 3 * 60;
+        beforeDawn.endMinutes   = 4 * 60;
+        QVERIFY(!recur::problemWith(beforeDawn).isEmpty());
+
+        Schedule nameless = ok;
+        nameless.title.clear();
+        QVERIFY(!recur::problemWith(nameless).isEmpty());
+
+        // The one only a weekday set can produce: days that never come round
+        // inside the rule's own window. It yields nothing, and "nothing" is
+        // the one failure a calendar cannot explain on its own.
+        Schedule impossible = ok;
+        impossible.startDate = QDate(2026, 9, 2);  // Wednesday
+        impossible.endDate   = QDate(2026, 9, 4);  // Friday
+        impossible.weekdays  = {1};                // Mondays only
+        QVERIFY(!recur::problemWith(impossible).isEmpty());
+        QVERIFY(recur::occurrences(impossible, QDate(2026, 9, 1),
+                                   QDate(2026, 9, 30)).isEmpty());
+
+        // And AppData refuses exactly what the pure rule refuses.
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Lab", cat);
+        Schedule domainOk = ok;
+        domainOk.title.clear();
+        domainOk.activityId = act;
+        QVERIFY(!data.addSchedule(domainOk).isEmpty());
+        Schedule domainBad = domainOk;
+        domainBad.endDate = QDate(2026, 8, 1);
+        QVERIFY(data.addSchedule(domainBad).isEmpty());
+    }
+
+    void schedulesFillTheHorizonAndNeverBackfillThePast()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("GTI350 Laboratoire", cat);
+
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate(2026, 6, 2); // a Tuesday, well in the past
+        s.endDate      = QDate(2026, 7, 21);
+        s.startMinutes = 13 * 60 + 30;
+        s.endMinutes   = 17 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        const QString id = data.addSchedule(s);
+        QVERIFY(!id.isEmpty());
+
+        // "Today" is Jul 1. June's four Tuesdays are NOT conjured — you
+        // cannot plan a day that has happened, and thirty invented blocks
+        // would hand the catch-up card thirty accidents that never were.
+        // Jul 7, 14, 21 are made; Jul 28 is past the rule's end.
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 3);
+        QVector<QDate> made;
+        for (const Event& e : data.events())
+            made.append(e.date);
+        std::sort(made.begin(), made.end());
+        QCOMPARE(made, QVector<QDate>({QDate(2026, 7, 7), QDate(2026, 7, 14),
+                                       QDate(2026, 7, 21)}));
+
+        // IDEMPOTENT: the same pass twice in a row must create nothing the
+        // second time. This runs at every startup and every midnight, so a
+        // pass that was not idempotent would double the plan overnight.
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 0);
+        QCOMPARE(data.events().size(), 3);
+
+        // The horizon really is a limit, not decoration.
+        AppData narrow;
+        const QString c2 = narrow.addCategory("School", QColor("#4C6FE0"));
+        const QString a2 = narrow.addActivity("Lab", c2);
+        Schedule open_;
+        open_.activityId   = a2;
+        open_.startDate    = QDate(2026, 7, 7);
+        open_.startMinutes = 9 * 60;
+        open_.endMinutes   = 10 * 60;
+        open_.repeat       = Task::Repeat::Weekly;
+        narrow.addSchedule(open_);
+        QCOMPARE(narrow.syncSchedules(QDate(2026, 7, 1), 14), 2); // Jul 7, 14
+    }
+
+    // v31.3: "an occupied slot is skipped, not fought" (addendum S.4) became
+    // "a FULL slot is skipped". A rule may now stack onto a date that already
+    // holds one or two blocks, which is the case that prompted the change:
+    // two rules naming the same day and time used to be accepted and then
+    // produce nothing at all.
+    void materialisingStacksUpToTheCapAndSkipsAFullSlot()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        // Jul 14 already has ONE hand-placed block at the same hours.
+        QVERIFY(!data.addEvent(QDate(2026, 7, 14), 10 * 60, 12 * 60, act)
+                     .isEmpty());
+
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate(2026, 7, 7);
+        s.endDate      = QDate(2026, 7, 21);
+        s.startMinutes = 10 * 60;
+        s.endMinutes   = 12 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        data.addSchedule(s);
+
+        // All three dates materialise now - Jul 14 stacks beside the block
+        // that was placed by hand, instead of silently producing nothing.
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 3);
+        QCOMPARE(data.events().size(), 4);
+        QCOMPARE(data.eventsOn(QDate(2026, 7, 14)).size(), 2);
+
+        // Fill Jul 14 to the cap by hand, then a SECOND rule on the same
+        // hours finds it full and skips only that date.
+        QVERIFY(!data.addEvent(QDate(2026, 7, 14), 10 * 60, 12 * 60, act)
+                     .isEmpty());
+        QCOMPARE(data.eventsOn(QDate(2026, 7, 14)).size(), 3);
+
+        Schedule s2 = s;
+        s2.id.clear();
+        data.addSchedule(s2);
+        data.syncSchedules(QDate(2026, 7, 1), 120);
+        QCOMPARE(data.eventsOn(QDate(2026, 7, 14)).size(), 3); // still full
+        QCOMPARE(data.eventsOn(QDate(2026, 7, 7)).size(), 2);  // but 7 stacked
+    }
+
+    // Deleting an occurrence means "not this week", and it must STAY
+    // deleted — otherwise the next midnight silently puts it back, which is
+    // the single most maddening thing a recurring calendar can do.
+    void deletingOneOccurrenceSkipsThatDateForGood()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate(2026, 7, 7);
+        s.endDate      = QDate(2026, 7, 21);
+        s.startMinutes = 10 * 60;
+        s.endMinutes   = 12 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        const QString id = data.addSchedule(s);
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 3);
+
+        QString jul14;
+        for (const Event& e : data.events())
+            if (e.date == QDate(2026, 7, 14))
+                jul14 = e.id;
+        QVERIFY(!jul14.isEmpty());
+        QVERIFY(data.removeEvent(jul14));
+
+        QCOMPARE(data.scheduleById(id)->skipDates,
+                 QStringList({QStringLiteral("2026-07-14")}));
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 0); // stays gone
         QCOMPARE(data.events().size(), 2);
-        const Event* spawned = nullptr;
-        for (const Event& e : data.events())
-            if (e.id != ev)
-                spawned = &e;
-        QCOMPARE(spawned->date, QDate(2026, 7, 13));
-        QCOMPARE(spawned->plannedStartMinutes, 10 * 60);
-        QCOMPARE(spawned->repeat, Task::Repeat::Weekly);   // newest link
-        QCOMPARE(data.eventById(ev)->repeat, Task::Repeat::None); // stripped
-        QVERIFY(spawned->segments.isEmpty()); // identity copies, not history
-
-        // Idempotent within a day: rolling again spawns nothing.
-        QCOMPARE(data.rollRepeats(QDate(2026, 7, 11)), 0);
     }
 
-    void rollSkipsOccupiedDatesInsteadOfFighting()
+    // Editing a rule must not rewrite history. Only future blocks nobody
+    // has touched are withdrawn and remade.
+    void editingARuleSparesEveryBlockThatHasSomethingOnIt()
     {
         AppData data;
         const QString cat = data.addCategory("School", QColor("#4C6FE0"));
         const QString act = data.addActivity("Study", cat);
-        const QString ev = data.addEvent(QDate(2026, 7, 6), // Monday
-                                         10 * 60, 12 * 60, act);
-        data.setEventRepeat(ev, Task::Repeat::Weekly);
-        // Jul 13's slots are already taken — the domain forbids overlap,
-        // and the roll must respect the door, not shove through it:
-        data.addEvent(QDate(2026, 7, 13), 10 * 60, 12 * 60, act);
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate(2026, 7, 7);
+        s.endDate      = QDate(2026, 7, 28);
+        s.startMinutes = 10 * 60;
+        s.endMinutes   = 12 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        const QString id = data.addSchedule(s);
+        data.syncSchedules(QDate(2026, 7, 1), 120);
+        QCOMPARE(data.events().size(), 4); // 7, 14, 21, 28
 
-        QCOMPARE(data.rollRepeats(QDate(2026, 7, 12)), 1);
-        // The chain re-armed one rule-step later, on the free Jul 20.
-        const Event* spawned = nullptr;
+        // Real time was tracked against Jul 14. Its hours are a FACT, and a
+        // change to the rule may not erase it.
+        QString jul14;
         for (const Event& e : data.events())
-            if (e.repeat == Task::Repeat::Weekly)
-                spawned = &e;
-        QVERIFY(spawned);
-        QCOMPARE(spawned->date, QDate(2026, 7, 20));
+            if (e.date == QDate(2026, 7, 14))
+                jul14 = e.id;
+        Segment seg;
+        seg.kind  = SegmentKind::Focus;
+        seg.start = QDateTime(QDate(2026, 7, 14), QTime(10, 0));
+        seg.end   = QDateTime(QDate(2026, 7, 14), QTime(11, 0));
+        QVERIFY(data.appendSegment(jul14, seg));
+
+        Schedule edited = *data.scheduleById(id);
+        edited.startMinutes = 14 * 60; // move the whole rule to the afternoon
+        edited.endMinutes   = 16 * 60;
+        QVERIFY(data.updateSchedule(edited, QDate(2026, 7, 1)));
+
+        // Jul 14 kept its morning slot AND its hour of tracked time; the
+        // untouched future blocks moved.
+        const Event* kept = data.eventById(jul14);
+        QVERIFY(kept);
+        QCOMPARE(kept->plannedStartMinutes, 10 * 60);
+        QCOMPARE(kept->segments.size(), 1);
+        for (const Event& e : data.events())
+            if (e.date > QDate(2026, 7, 14))
+                QCOMPARE(e.plannedStartMinutes, 14 * 60);
     }
 
-    void eventRepeatSurvivesTheJsonRoundTripAndOldFilesReadAsNone()
+    // Stopping a rule keeps the history it produced. Third instance of the
+    // DOWNGRADE pattern (removeTask was the first): not refuse, not cascade.
+    void deletingARuleKeepsThePastAndClearsTheFuture()
     {
         AppData data;
-        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
         const QString act = data.addActivity("Study", cat);
-        const QString ev  = data.addEvent(QDate(2026, 7, 13),
-                                          9 * 60, 10 * 60, act);
-        data.setEventRepeat(ev, Task::Repeat::Monthly);
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate::currentDate().addDays(-14);
+        s.startMinutes = 10 * 60;
+        s.endMinutes   = 12 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        const QString id = data.addSchedule(s);
+        data.syncSchedules(QDate::currentDate(), 21);
+        const int made = data.events().size();
+        QVERIFY(made >= 2);
+
+        // Pretend one of them already happened and was tracked.
+        const QString first = data.events().first().id;
+        Segment seg;
+        seg.kind  = SegmentKind::Focus;
+        seg.start = QDateTime(data.eventById(first)->date, QTime(10, 0));
+        seg.end   = seg.start.addSecs(3600);
+        data.appendSegment(first, seg);
+
+        QVERIFY(data.removeSchedule(id, QDate::currentDate()));
+        QVERIFY(!data.scheduleById(id));
+        // The tracked block survives, and is simply no longer owned by a
+        // rule that no longer exists.
+        QVERIFY(data.eventById(first));
+        QVERIFY(data.eventById(first)->scheduleId.isEmpty());
+        for (const Event& e : data.events())
+            QVERIFY(e.scheduleId.isEmpty());
+    }
+
+    void scheduleBirthRulesRefuseTheStatesThatCannotWork()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+
+        Schedule good;
+        good.activityId   = act;
+        good.startDate    = QDate(2026, 7, 7);
+        good.startMinutes = 600;
+        good.endMinutes   = 720;
+
+        // 03:00 is outside the app's one planning day (plan::, Event.h), so
+        // this rule could never make a block. Refused at the door, not
+        // accepted and then quietly barren.
+        Schedule beforeDawn = good;
+        beforeDawn.startMinutes = 3 * 60;
+        beforeDawn.endMinutes   = 4 * 60;
+        QVERIFY(data.addSchedule(beforeDawn).isEmpty());
+
+        Schedule noStart = good;
+        noStart.startDate = QDate();
+        QVERIFY(data.addSchedule(noStart).isEmpty());
+
+        Schedule backwards = good;
+        backwards.endDate = QDate(2026, 1, 1);
+        QVERIFY(data.addSchedule(backwards).isEmpty());
+
+        Schedule zeroLength = good;
+        zeroLength.endMinutes = zeroLength.startMinutes;
+        QVERIFY(data.addSchedule(zeroLength).isEmpty());
+
+        Schedule nameless = good;
+        nameless.activityId.clear(); // and no title either
+        QVERIFY(data.addSchedule(nameless).isEmpty());
+
+        Schedule adHoc = good;
+        adHoc.activityId.clear();
+        adHoc.title = QStringLiteral("Commute"); // a title IS an identity
+        QVERIFY(!data.addSchedule(adHoc).isEmpty());
+
+        Schedule ghost = good;
+        ghost.activityId = QStringLiteral("no-such-activity");
+        QVERIFY(data.addSchedule(ghost).isEmpty()); // never born broken
+
+        QVERIFY(!data.addSchedule(good).isEmpty());
+    }
+
+    void schedulesRoundTripAndAV9RepeatBecomesOne()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        Schedule s;
+        s.activityId      = act;
+        s.startDate       = QDate(2026, 8, 25);
+        s.endDate         = QDate(2026, 12, 15);
+        s.startMinutes    = 13 * 60 + 30;
+        s.endMinutes      = 17 * 60;
+        s.repeat          = Task::Repeat::Weekly;
+        s.reminderMinutes = 15;
+        s.weekdays        = {3};
+        const QString id = data.addSchedule(s);
+        data.skipOccurrence(id, QDate(2026, 9, 1));
 
         AppData copy;
-        JsonStore::applyJsonObject(copy, JsonStore::toJsonObject(data),
-                                   /*announceChange=*/false);
-        QCOMPARE(copy.eventById(ev)->repeat, Task::Repeat::Monthly);
+        QVERIFY(JsonStore::applyJsonObject(copy, JsonStore::toJsonObject(data), false));
+        QCOMPARE(copy.schedules().size(), 1);
+        const Schedule* back = copy.scheduleById(id);
+        QVERIFY(back);
+        QCOMPARE(back->startDate, QDate(2026, 8, 25));
+        QCOMPARE(back->endDate, QDate(2026, 12, 15));
+        QCOMPARE(back->repeat, Task::Repeat::Weekly);
+        QCOMPARE(back->reminderMinutes, 15);
+        QCOMPARE(back->skipDates, QStringList({QStringLiteral("2026-09-01")}));
+        QCOMPARE(back->weekdays, QList<int>({3})); // v16: the day set rides too
 
-        // Pre-v9 files carry no field: absent must read as "nothing
-        // repeats" — exactly how those files always behaved.
-        QJsonObject blob = JsonStore::toJsonObject(data);
+        // ---- the one upgrade path: a v9 file's Event.repeat ---------------
+        // The old key is still READ, for exactly what it always meant, and
+        // becomes the thing that means it now. Nothing was repurposed.
+        AppData legacy;
+        const QString lcat = legacy.addCategory("School", QColor("#4C6FE0"));
+        const QString lact = legacy.addActivity("Study", lcat);
+        const QString lev =
+            legacy.addEvent(QDate(2026, 7, 13), 9 * 60, 10 * 60, lact);
+        QJsonObject blob = JsonStore::toJsonObject(legacy);
         QJsonArray events = blob["events"].toArray();
         QJsonObject e0 = events[0].toObject();
-        e0.remove("repeat");
+        e0.remove("scheduleId");
+        e0["repeat"] = QStringLiteral("monthly"); // as a v9..v14 file has it
         events[0] = e0;
         blob["events"] = events;
-        AppData old_;
-        JsonStore::applyJsonObject(old_, blob, /*announceChange=*/false);
-        QCOMPARE(old_.eventById(ev)->repeat, Task::Repeat::None);
+        blob.remove("schedules");
+
+        AppData upgraded;
+        QVERIFY(JsonStore::applyJsonObject(upgraded, blob, false));
+        QCOMPARE(upgraded.schedules().size(), 1);
+        const Schedule& made = upgraded.schedules().first();
+        QCOMPARE(made.repeat, Task::Repeat::Monthly);
+        QCOMPARE(made.startDate, QDate(2026, 7, 13));
+        QCOMPARE(made.startMinutes, 9 * 60);
+        QCOMPARE(upgraded.eventById(lev)->scheduleId, made.id);
+
+        // And a file with no such key at all reads as "nothing repeats",
+        // exactly how those files have always behaved.
+        QJsonObject plain = JsonStore::toJsonObject(legacy);
+        AppData none;
+        QVERIFY(JsonStore::applyJsonObject(none, plain, false));
+        QVERIFY(none.schedules().isEmpty());
     }
 
     void trackerStopsItselfWhenTheWindowCloses()
@@ -1075,7 +2157,7 @@ private slots:
 
         QVERIFY(JsonStore(path).save(original));
         AppData loaded;
-        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
 
         QCOMPARE(loaded.tasks().size(), 2);
         QVERIFY(!loaded.taskById(tbd)->dueDate.isValid()); // TBD survived
@@ -1108,7 +2190,7 @@ private slots:
         }
 
         AppData loaded;
-        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
         const Task* t = loaded.taskById(id);
         QVERIFY(t);
         QCOMPARE(t->title, QString("Lab 4 (revised)"));
@@ -1159,6 +2241,249 @@ private slots:
         QVERIFY(data.removeFolder(folder));                      // empty: legal
     }
 
+    // ---- v31: the activity grows an editor -----------------------------------
+    // The bug this closes is not "renaming is missing"; it is that a typo was
+    // PERMANENT. removeActivity refuses an activity used by any event, so the
+    // delete-and-recreate workaround stopped working the moment the activity
+    // was used once — which is the moment you notice the typo.
+    void activityStaysEditableEvenOnceItsHistoryIsWritten()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Health", QColor("#4CA96A"));
+        const QString act = data.addActivity("Gymm", cat);
+        QVERIFY(!data.addEvent(QDate(2026, 7, 1), 540, 600, act).isEmpty());
+
+        // The old escape hatch is genuinely shut — this is the premise.
+        QVERIFY(!data.removeActivity(act));
+
+        QVERIFY(data.renameActivity(act, "  Gym  ")); // trimmed like addActivity
+        QCOMPARE(data.activityById(act)->name, QStringLiteral("Gym"));
+
+        // A blank name is refused rather than stored: an unnamed row in every
+        // picker would be a state the user could not undo, since the delete
+        // door above is closed. The OLD name survives the refusal.
+        QVERIFY(!data.renameActivity(act, "   "));
+        QCOMPARE(data.activityById(act)->name, QStringLiteral("Gym"));
+
+        // Empty IS legal for a description — it is the default. The asymmetry
+        // with the name is the point of having two setters, not one.
+        QVERIFY(data.setActivityDescription(act, "Upper body, 45 min"));
+        QCOMPARE(data.activityById(act)->description,
+                 QStringLiteral("Upper body, 45 min"));
+        QVERIFY(data.setActivityDescription(act, QString()));
+        QVERIFY(data.activityById(act)->description.isEmpty());
+
+        QVERIFY(!data.renameActivity("no-such-id", "x"));
+        QVERIFY(!data.setActivityDescription("no-such-id", "x"));
+    }
+
+    // ---- v31: a whole semester retires ---------------------------------------
+    void archivingAFolderHidesItsAreasWithoutFlaggingThem()
+    {
+        AppData data;
+        const QString folder = data.addFolder("Summer 2026");
+        const QString log410 = data.addCategory("LOG410", QColor("#4C6FE0"));
+        const QString gti350 = data.addCategory("GTI350", QColor("#4CA96A"));
+        const QString health = data.addCategory("Health", QColor("#D98324"));
+        data.setCategoryFolder(log410, folder);
+        data.setCategoryFolder(gti350, folder);
+        // GTI350 is archived ON ITS OWN, BEFORE the folder is. This is the
+        // whole reason the cascade is a query and not a stamp: the restore
+        // below has to be able to tell these two states apart.
+        data.setCategoryArchived(gti350, true);
+
+        QVERIFY(data.setFolderArchived(folder, true));
+
+        QVERIFY(data.categoryHidden(*data.categoryById(log410)));
+        QVERIFY(data.categoryHidden(*data.categoryById(gti350)));
+        QVERIFY(!data.categoryHidden(*data.categoryById(health))); // top level
+        // Hidden, but NOT flagged — nothing was written to the children.
+        QVERIFY(!data.categoryById(log410)->archived);
+
+        // A task inside a folder-archived area is hidden too: the one cascade
+        // rule reaches two levels now, still from a single place.
+        const QString task = data.addTask("Lab 4", log410, QDate(2026, 7, 1));
+        QVERIFY(data.taskHidden(*data.taskById(task)));
+
+        QVERIFY(data.setFolderArchived(folder, false));
+        QVERIFY(!data.categoryHidden(*data.categoryById(log410)));
+        // ...and GTI350 is still archived, exactly as the user left it.
+        QVERIFY(data.categoryHidden(*data.categoryById(gti350)));
+        QVERIFY(data.categoryById(gti350)->archived);
+
+        QCOMPARE(data.archivedFolders().size(), 0);
+        data.setFolderArchived(folder, true);
+        QCOMPARE(data.archivedFolders().size(), 1);
+        QVERIFY(!data.setFolderArchived("no-such-id", true));
+    }
+
+    // Archiving is not a back door to deletion: the emptiness rule counts
+    // every area the folder holds, archived ones included. An archived area
+    // is hidden, not gone, and deleting its folder would strand it.
+    void folderDeletionCountsAreasItCanNoLongerSee()
+    {
+        AppData data;
+        const QString folder = data.addFolder("Summer 2026");
+        const QString cat = data.addCategory("LOG410", QColor("#4C6FE0"));
+        data.setCategoryFolder(cat, folder);
+
+        data.setCategoryArchived(cat, true);
+        QVERIFY(!data.removeFolder(folder)); // hidden still counts
+
+        data.setFolderArchived(folder, true);
+        QVERIFY(!data.removeFolder(folder)); // archiving the folder changes nothing
+
+        data.setCategoryFolder(cat, QString());
+        QVERIFY(data.removeFolder(folder));  // genuinely empty: legal
+    }
+
+    // ---- v31: hand ordering --------------------------------------------------
+    //
+    // The property that matters most is the one about the FIRST drag: a Smart
+    // list must not scramble when it becomes Manual. That is why the move
+    // doors seed from the displayed order rather than from the stored keys,
+    // which are all 0 until something moves.
+    void theFirstDragTurnsTheSmartOrderIntoTheManualOne()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString a = data.addTask("A", cat, QDate(2026, 7, 1));
+        const QString b = data.addTask("B", cat, QDate(2026, 7, 2));
+        const QString c = data.addTask("C", cat, QDate(2026, 7, 3));
+
+        const auto ids = [&] {
+            QStringList out;
+            for (const Task* t : data.tasksIn(cat))
+                out << t->title;
+            return out;
+        };
+        // Smart: soonest deadline first, which here is creation order.
+        QCOMPARE(ids(), QStringList({"A", "B", "C"}));
+        QCOMPARE(data.categoryById(cat)->sortMode, Category::SortMode::Smart);
+
+        // Drag C to the front. Everything else must stay exactly where it was.
+        QVERIFY(data.moveTaskBefore(c, a));
+        QCOMPARE(ids(), QStringList({"C", "A", "B"}));
+        QCOMPARE(data.categoryById(cat)->sortMode, Category::SortMode::Manual);
+
+        // An empty neighbour means "to the end".
+        QVERIFY(data.moveTaskBefore(c, QString()));
+        QCOMPARE(ids(), QStringList({"A", "B", "C"}));
+
+        // A NEW task lands last, not wherever key 0 happens to sort. An area
+        // someone has arranged should not get arrivals in its middle.
+        data.addTask("D", cat, QDate(2025, 1, 1)); // deliberately the most urgent
+        QCOMPARE(ids(), QStringList({"A", "B", "C", "D"}));
+
+        // Manual is not a trap: handing the list back to the deadline sort
+        // re-sorts it, and the arrangement is REMEMBERED rather than erased,
+        // so flipping back restores it.
+        QVERIFY(data.setCategorySortMode(cat, Category::SortMode::Smart));
+        QCOMPARE(ids(), QStringList({"D", "A", "B", "C"}));
+        QVERIFY(data.setCategorySortMode(cat, Category::SortMode::Manual));
+        QCOMPARE(ids(), QStringList({"A", "B", "C", "D"}));
+    }
+
+    // Done sinks in BOTH modes. Manual is a claim about the order of work you
+    // still have to do; a ticked task holding second place is not a position
+    // anyone chose.
+    void manualOrderStillSendsFinishedTasksToTheBottom()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString a = data.addTask("A", cat, QDate(2026, 7, 1));
+        const QString b = data.addTask("B", cat, QDate(2026, 7, 2));
+        const QString c = data.addTask("C", cat, QDate(2026, 7, 3));
+        data.moveTaskBefore(c, a); // C, A, B — and the area is Manual now
+
+        data.setTaskDone(c, true);
+        QStringList out;
+        for (const Task* t : data.tasksIn(cat))
+            out << t->title;
+        QCOMPARE(out, QStringList({"A", "B", "C"}));
+        Q_UNUSED(b);
+    }
+
+    // Activities have no smart order to fall back on, so they are ALWAYS in
+    // hand order — and a file written before v31 (every key 0) must load in
+    // the order it was written, not alphabetically. That is what the stable
+    // sort in activitiesIn() buys.
+    void activityOrderIsAlwaysManualAndStartsAsInsertionOrder()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Health", QColor("#4CA96A"));
+        const QString gym  = data.addActivity("Gym", cat);
+        const QString walk = data.addActivity("Walk", cat);
+        const QString food = data.addActivity("Aaa food", cat); // sorts first by name
+
+        const auto names = [&] {
+            QStringList out;
+            for (const Activity* a : data.activitiesIn(cat))
+                out << a->name;
+            return out;
+        };
+        QCOMPARE(names(), QStringList({"Gym", "Walk", "Aaa food"}));
+
+        QVERIFY(data.moveActivityBefore(food, gym));
+        QCOMPARE(names(), QStringList({"Aaa food", "Gym", "Walk"}));
+
+        // Archived activities leave the list, and are therefore not movable
+        // within it — the door refuses rather than silently renumbering
+        // around something nobody can see.
+        data.setActivityArchived(walk, true);
+        QCOMPARE(names(), QStringList({"Aaa food", "Gym"}));
+        QVERIFY(!data.moveActivityBefore(walk, gym));
+
+        QVERIFY(!data.moveActivityBefore(gym, gym));          // onto itself
+        QVERIFY(!data.moveActivityBefore(gym, "no-such-id")); // stranger
+    }
+
+    // A repeating routine keeps its place. Without this the next occurrence
+    // is born at key 0 and a hand-ordered morning list collapses to the top
+    // in whatever order the ticks happened.
+    void aRepeatingTaskCarriesItsPositionForward()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Health", QColor("#4CA96A"));
+        const QString stretch = data.addTask("Stretch", cat, QDate(2026, 7, 1));
+        const QString run     = data.addTask("Run", cat, QDate(2026, 7, 1));
+        data.moveTaskBefore(run, stretch); // Run, Stretch — Manual now
+        data.updateTask(run, "Run", QString(), QDate(2026, 7, 1), QTime(),
+                        Task::Repeat::Daily, Task::Priority::Medium);
+
+        data.setTaskDone(run, true);
+        // The spawned copy sits where its parent sat, not at the top.
+        const Task* next = nullptr;
+        for (const Task& t : data.tasks())
+            if (t.id != run && t.title == QStringLiteral("Run"))
+                next = &t;
+        QVERIFY(next);
+        QCOMPARE(next->sortKey, data.taskById(run)->sortKey);
+    }
+
+    void ordersSurviveTheRoundTrip()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("data.json");
+
+        AppData original;
+        const QString cat = original.addCategory("School", QColor("#4C6FE0"));
+        const QString a = original.addTask("A", cat, QDate(2026, 7, 1));
+        const QString b = original.addTask("B", cat, QDate(2026, 7, 2));
+        original.moveTaskBefore(b, a);
+        const QString g = original.addActivity("Gym", cat);
+        const QString w = original.addActivity("Walk", cat);
+        original.moveActivityBefore(w, g);
+
+        QVERIFY(JsonStore(path).save(original));
+        AppData loaded;
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
+
+        QCOMPARE(loaded.categoryById(cat)->sortMode, Category::SortMode::Manual);
+        QCOMPARE(loaded.tasksIn(cat).first()->title, QStringLiteral("B"));
+        QCOMPARE(loaded.activitiesIn(cat).first()->name, QStringLiteral("Walk"));
+    }
+
     void specialDayNextOccurrence()
     {
         SpecialDay birthday;
@@ -1204,13 +2529,23 @@ private slots:
         const QString cat = original.addCategory("Work", QColor("#4C6FE0"));
         original.setCategoryFolder(cat, folder);
         original.addSpecialDay("Christmas", QDate(2000, 12, 25), true);
+        // v15 format: the two new facts ride the same round trip.
+        const QString act = original.addActivity("Study", cat);
+        original.setActivityDescription(act, "Chapter 10, quiet room");
+        const QString retired = original.addFolder("Winter 2025");
+        original.setFolderArchived(retired, true);
 
         QVERIFY(JsonStore(path).save(original));
         AppData loaded;
-        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
 
-        QCOMPARE(loaded.folders().size(), 1);
+        QCOMPARE(loaded.folders().size(), 2);
         QCOMPARE(loaded.categoryById(cat)->folderId, folder);
+        QCOMPARE(loaded.activityById(act)->description,
+                 QStringLiteral("Chapter 10, quiet room"));
+        QCOMPARE(loaded.archivedFolders().size(), 1);
+        QCOMPARE(loaded.archivedFolders().first()->name,
+                 QStringLiteral("Winter 2025"));
         QCOMPARE(loaded.specialDays().size(), 1);
         QVERIFY(loaded.specialDays()[0].repeatsYearly);
         QCOMPARE(loaded.specialDays()[0].date, QDate(2000, 12, 25));
@@ -1233,7 +2568,7 @@ private slots:
         QVERIFY(JsonStore(path).save(original));
 
         AppData loaded;
-        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
 
         QCOMPARE(loaded.categories().size(), 1);
         QCOMPARE(loaded.categoryById(cat)->color, QColor("#4CA96A"));
@@ -1273,7 +2608,7 @@ private slots:
 
         // Next launch:
         AppData after;
-        QVERIFY(JsonStore(path).load(after));
+        QCOMPARE(JsonStore(path).load(after), JsonStore::LoadResult::Loaded);
         const QString message = after.recoverInterruptedTracking();
 
         QVERIFY(!message.isEmpty());               // the user is told
@@ -1303,7 +2638,10 @@ private slots:
         QCOMPARE(data.eventLabel(*e), QString("Lab 4"));
         QCOMPARE(data.eventCategoryId(*e), cat);       // via the Task's area
 
-        // The new door runs through the SAME overlap gate as the old one.
+        // The new door runs through the SAME capacity gate as the old one:
+        // stacking is allowed up to the cap, and the fourth is refused.
+        QVERIFY(!data.addTaskEvent(QDate(2026, 7, 6), 570, 630, task).isEmpty());
+        QVERIFY(!data.addTaskEvent(QDate(2026, 7, 6), 570, 630, task).isEmpty());
         QVERIFY(data.addTaskEvent(QDate(2026, 7, 6), 570, 630, task).isEmpty());
         // And it verifies its identity: a made-up task id is refused.
         QVERIFY(data.addTaskEvent(QDate(2026, 7, 6), 660, 720,
@@ -1414,7 +2752,7 @@ private slots:
 
         QVERIFY(JsonStore(path).save(original));
         AppData loaded;
-        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
 
         QCOMPARE(loaded.eventById(tev)->taskId, task);
         QCOMPARE(loaded.eventById(aev)->title, QString("Errand"));
@@ -1842,8 +3180,8 @@ private slots:
         // …and the flags SURVIVE the disk (the whole point: hide, never
         // forget). Round-trip through the same JSON path sync uses.
         AppData reloaded;
-        JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
-                                   false);
+        QVERIFY(JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
+                                           false));
         QCOMPARE(reloaded.archivedTasks().size(), 1);
         QCOMPARE(reloaded.archivedActivities().size(), 1);
 
@@ -1872,8 +3210,8 @@ private slots:
 
         // Survives the disk (v8 field round-trips)…
         AppData reloaded;
-        JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
-                                   false);
+        QVERIFY(JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
+                                           false));
         QVERIFY(reloaded.upcomingTasks().isEmpty());
 
         // …and one flip brings the whole world back, exactly as it was.
@@ -1895,8 +3233,8 @@ private slots:
 
         QVERIFY(data.setTaskPriority(t, Task::Priority::Urgent));
         AppData reloaded;
-        JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
-                                   false);
+        QVERIFY(JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
+                                           false));
         QCOMPARE(int(reloaded.upcomingTasks().first()->priority),
                  int(Task::Priority::Urgent));
 
@@ -1947,8 +3285,8 @@ private slots:
                                       QDate(2026, 3, 15), true,
                                       QColor("#D4589C")));
         AppData reloaded;
-        JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
-                                   false);
+        QVERIFY(JsonStore::applyJsonObject(reloaded, JsonStore::toJsonObject(data),
+                                           false));
         QCOMPARE(reloaded.specialDays().first().title,
                  QStringLiteral("Maman's birthday"));
         QCOMPARE(reloaded.specialDays().first().color, QColor("#D4589C"));
@@ -1958,8 +3296,8 @@ private slots:
         QVERIFY(data.updateSpecialDay(id, "Maman's birthday",
                                       QDate(2026, 3, 15), true, QColor()));
         AppData again;
-        JsonStore::applyJsonObject(again, JsonStore::toJsonObject(data),
-                                   false);
+        QVERIFY(JsonStore::applyJsonObject(again, JsonStore::toJsonObject(data),
+                                           false));
         QVERIFY(!again.specialDays().first().color.isValid());
     }
 
@@ -2267,8 +3605,8 @@ private slots:
         data.dismissTask(id, QDateTime(QDate(2026, 7, 22), QTime(21, 0)));
 
         AppData loaded;
-        JsonStore::applyJsonObject(loaded, JsonStore::toJsonObject(data),
-                                   false);
+        QVERIFY(JsonStore::applyJsonObject(loaded, JsonStore::toJsonObject(data),
+                                           false));
         QCOMPARE(loaded.taskById(id)->dismissCount, 2);
         QCOMPARE(loaded.taskById(id)->dismissedUntil,
                  QDateTime(QDate(2026, 7, 22), QTime(21, 0)));
@@ -2279,7 +3617,7 @@ private slots:
             {"id", "old1"}, {"title", "From v9"}, {"categoryId", ""},
             {"done", false}, {"dueDate", ""}}};
         AppData old;
-        JsonStore::applyJsonObject(old, root, false);
+        QVERIFY(JsonStore::applyJsonObject(old, root, false));
         QCOMPARE(old.taskById("old1")->dismissCount, 0);
         QVERIFY(!old.taskById("old1")->dismissedUntil.isValid());
     }
@@ -2384,8 +3722,8 @@ private slots:
         data.addTask("All day", cat, QDate(2026, 8, 9));
 
         AppData loaded;
-        JsonStore::applyJsonObject(loaded, JsonStore::toJsonObject(data),
-                                   false);
+        QVERIFY(JsonStore::applyJsonObject(loaded, JsonStore::toJsonObject(data),
+                                           false));
         const Task* timed = nullptr;
         const Task* allDay = nullptr;
         for (const Task& t : loaded.tasks())
@@ -2400,7 +3738,7 @@ private slots:
             {"id", "old1"}, {"title", "From v21"}, {"categoryId", ""},
             {"done", false}, {"dueDate", "2026-08-08"}}};
         AppData old;
-        JsonStore::applyJsonObject(old, root, false);
+        QVERIFY(JsonStore::applyJsonObject(old, root, false));
         QVERIFY(!old.taskById("old1")->dueTime.isValid());
     }
 
@@ -4116,16 +5454,21 @@ private slots:
         QCOMPARE(spy.count(), 1);
     }
 
-    // The slot has to be free. Declining beats forcing — the same contract
-    // as the three addEvent doors.
-    void rescheduleBlockDeclinesAnOccupiedSlot()
+    // The slot has to have ROOM. Declining beats forcing — the same contract
+    // as the three addEvent doors. v31.3 moved the boundary from "occupied"
+    // to "full": rescheduling onto a slot with one block now stacks.
+    void rescheduleBlockDeclinesAFullSlot()
     {
         AppData data;
         const QString cat = data.addCategory("School", QColor("#4C6FE0"));
         const QString act = data.addActivity("Study", cat);
         const QString oldId =
             data.addEvent(QDate(2026, 7, 19), 9 * 60, 10 * 60, act, "");
-        data.addEvent(QDate(2026, 7, 21), 9 * 60, 10 * 60, act, "taken");
+        // Three already there: the slot is full, so the move is declined and
+        // the source block is left untouched.
+        for (int i = 0; i < plan::kMaxConcurrentBlocks; ++i)
+            QVERIFY(!data.addEvent(QDate(2026, 7, 21), 9 * 60, 10 * 60, act,
+                                   "taken").isEmpty());
 
         QVERIFY(data.rescheduleBlock(oldId, QDate(2026, 7, 21),
                                      9 * 60, 10 * 60).isEmpty());
@@ -4170,7 +5513,7 @@ private slots:
         }
 
         AppData loaded;
-        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
         const Event* old = loaded.eventById(oldId);
         QVERIFY(old);
         QCOMPARE(old->outcome, BlockOutcome::Moved);
@@ -4355,7 +5698,7 @@ private slots:
         }
 
         AppData loaded;
-        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
         QCOMPARE(loaded.eventById(oldId)->movedToIds, pieces);
         QVERIFY(loaded.undoReschedule(oldId));         // and it still inverts
         QCOMPARE(loaded.events().size(), 1);
@@ -4811,8 +6154,9 @@ private slots:
         // this line — the suite's first real run caught it, which is the
         // tripwire working, one drop late. Moods still round-trip below
         // regardless of the number; the number is its own test. v29.3 -> 14
-        // (Event.movedToIds), bumped in the same drop this time.
-        QCOMPARE(root["version"].toInt(), 14);
+        // (Event.movedToIds), bumped in the same drop this time. v31 -> 15
+        // (Activity.description, Folder.archived).
+        QCOMPARE(root["version"].toInt(), 16);
 
         AppData back;
         QVERIFY(JsonStore::applyJsonObject(back, root, false));
@@ -5182,7 +6526,7 @@ private slots:
 
         QVERIFY(JsonStore(path).save(original));
         AppData loaded;
-        QVERIFY(JsonStore(path).load(loaded));
+        QCOMPARE(JsonStore(path).load(loaded), JsonStore::LoadResult::Loaded);
 
         QCOMPARE(loaded.taskById(piece)->parentId, parent);
         QCOMPARE(loaded.taskById(parent)->estimateMinutes, 120);

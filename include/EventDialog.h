@@ -13,6 +13,9 @@
 // live your block, and the mini bar keeps growing on the agenda.
 // ---------------------------------------------------------------------------
 
+#include "Task.h" // Task::Repeat — applyRepeatChoice speaks the app-wide
+                  // recurrence vocabulary, not one of its own
+
 #include <QDialog>
 #include <QVBoxLayout>
 
@@ -44,6 +47,11 @@ private slots:
 
 private:
     void rebuildSegmentList(); // the tracked-time editor rows (item 2)
+    // v31 — "repeat this block" as one domain action: create, edit or stop
+    // the Schedule behind it. A named method rather than a lambda inside the
+    // connect, because it branches three ways on what already exists and a
+    // control panel should not hide that in a signal wiring.
+    void applyRepeatChoice(Task::Repeat repeat);
 
     AppData*        m_data;
     TrackerService* m_tracker;

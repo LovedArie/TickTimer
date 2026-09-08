@@ -80,6 +80,15 @@ public:
     // timer and no retry, and enableSync() guards against running twice.
     void beginOffline(const QString& serverUrl);
 
+    // v31 — the format floor (design-addendum-format-floor.md). True when the
+    // planner on disk was written by a NEWER TickTimer and was therefore not
+    // opened at all. main() checks this BEFORE show(): a window built over a
+    // refused planner must never reach the screen, because everything in it
+    // would be a lie the user could then edit and autosave. plannerError()
+    // carries the sentence naming both versions.
+    bool    plannerRefused() const { return m_plannerRefused; }
+    QString plannerError() const;
+
 private:
     // v30.4.3 — the two halves of coming back online, shared by the silent
     // retry and the button, so they cannot drift into doing it differently.
@@ -216,6 +225,7 @@ private:
     // width. A desktop user who narrows a window is rearranging a desktop app;
     // they must not lose Archive, Ctrl+B or the rail because of it. See
     // docs/design-addendum-mobile-shell.md.
+    bool m_plannerRefused = false; // set in the constructor by a TooNew load
     bool m_phoneShell = false;
 
     ActivitiesPage* m_activities = nullptr; // typed: its life-area sheet
