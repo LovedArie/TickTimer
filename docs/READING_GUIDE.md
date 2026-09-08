@@ -17,6 +17,25 @@ developers approach any unfamiliar codebase.
 
 ---
 
+## Where the work lives *(before you look for something to do)*
+
+Two files, and only two, answer "what should I do next?" and "what must I check
+before shipping?":
+
+| File | Lifetime | Rule |
+|---|---|---|
+| `docs/BACKLOG.md` | **queue** — items are deleted when they ship | one line each; ranked risk → coverage → criticality; `git log -p` is its archive |
+| `docs/QA_CHECKLIST.md` | **living** — Part 1 permanent, Part 2 per release | ticked before every release, never copied to a new versioned file |
+
+Everything else in `docs/` is a **record**: written once, kept, never a to-do
+list. That separation is the fix for a real failure — §4 of
+`06_IterationPlan.md` was the queue for twenty versions while holding nothing
+but finished work, and drifted badly enough to need three self-corrections in
+its own text. `08_DevelopmentCase.md` §6 records what was retired and why. **A
+record and a queue have opposite lifetimes, so they never share a file.**
+
+---
+
 ## 0. Build it first (before reading anything)
 
 Seeing it run gives every file you read a face.
@@ -245,6 +264,20 @@ Deliberate simplifications (candidates for your first solo features):
 
 ## 4. Known Qt traps this codebase already survived (so you don't have to)
 
+**Not a Qt trap, but the most expensive one in this list — an OLD binary
+opening a NEW file.** "Additive growth" (`CLAUDE.md`) guarantees that new code
+reads old files; nothing guaranteed the reverse, and the reverse is where the
+data goes. v30.8.1 opened a format-16 planner, dropped the two keys it had
+never heard of, and saved it back at 14 — 5 recurrence rules and 73
+`Event.scheduleId` links gone, silently. The tell was two true sentences
+contradicting each other on screen: "in use (13)" and "Not on the calendar
+yet." The floor that now refuses this lives in `JsonStore::kFormatVersion` and
+`JsonStore::LoadResult` (`design-addendum-format-floor.md`), and it is
+forward-only: it cannot protect you from a copy that already shipped, which is
+why replacing every installed build is part of a format bump. Full story:
+`TROUBLESHOOTING.md`, "A recurring activity says 'in use (13)' and 'Not on the
+calendar yet.'"
+
 - Never name identifiers `slots`, `signals`, or `emit` — they're Qt macros
   (`Widgets.h` has the war story).
 - Never name a **namespace** after a POSIX function either — bionic declares
@@ -393,6 +426,13 @@ Deliberate simplifications (candidates for your first solo features):
   minimum is a number to *measure*, not to calculate — every rule in
   `Theme.h`'s compact block was tuned by rerunning the gate
   (`tests/test_ui.cpp::everyTouchTargetIsBigEnoughForAThumb`).
+- **U+27F3 (⟳) is not in Android's default font**, and the repeat chip drew
+  it for eleven versions — a tofu box in front of "Weekly" on the task
+  delegates, `TaskRow`, the due strip, the quick-add preview and (from v31)
+  every scheduled block on the agenda. Six surfaces, one unproven codepoint,
+  and nobody had looked at a phone. The chip's text is now `repeatChip()` in
+  `Task.h` and carries no glyph, so a seventh surface cannot bring the box
+  back. Proven-drawable in this app: ▼ U+25BC, ▲ U+25B2, × U+00D7, ≡ U+2261.
 - **Android's default font has a narrower glyph set than a desktop's, and a
   missing codepoint draws as an empty box.** U+2715 ✕ caught `SlidePanel`;
   U+25BE ▾ caught the life-area switcher two years later. The rule that would
@@ -466,6 +506,54 @@ Deliberate simplifications (candidates for your first solo features):
   push a whole page past a phone's budget, and no margin change can save it.
   `setWordWrap(true)` drops the minimum to the longest single word
   (`ArchivePage.cpp`, `SpecialDaysPage.cpp`).
+- **`QScroller` cannot be out-argued by the widget inside it.** Its flick
+  gesture is recognised through `QGestureManager`, and gesture filtering
+  happens in `QApplication::notify` — before the target widget's `event()`
+  or `viewportEvent()` is ever called. Setting `WA_AcceptTouchEvents` and
+  accepting `TouchBegin` on the child looks like the answer and is not: by
+  the time the child can claim the sequence, the recogniser upstream has
+  already seen it. The observable symptom is a drag that receives its press
+  and its release with **no moves between them**, so it silently does
+  nothing — except when the scroll area happens to be pinned at a limit and
+  declines, which makes it look intermittent rather than broken. The
+  resolution is not a cleverer filter but a different door: on a touchscreen
+  the scroll gesture wins (`ReorderListView.h`, `CategoryTree` v30.7,
+  responsive §3.31).
+- **`deleteLater()` is not processed inside a nested event loop.** Qt only
+  delivers DeferredDelete at the loop level that posted it, so anything
+  discarded before `exec()` outlives the modal it was making room for. Worse,
+  removing a widget from a LAYOUT does not remove it from the widget TREE —
+  it keeps its parent and keeps painting, now at (0,0) because nothing
+  positions it. A ghost label pinned to a dialog's corner is the tell.
+  `hide()` first (`ActivityDetailDialog::rebuildScheduleRows`).
+- **A view that swallows a mouse PRESS must swallow the RELEASE too.**
+  A delegate's `editorEvent` acts on `MouseButtonRelease`, and a view that
+  handles the press itself (a drag handle, say) never sees the matching
+  release come back — the release arrives at the view, and if the view then
+  chains to the base class the delegate fires its "the whole row means
+  edit" branch at the end of the gesture. Every drag would end by opening
+  the thing you just dragged. Handle both halves in the same place or
+  neither (`ReorderListView::mouseReleaseEvent`).
+- **`dropIndicatorPosition()` is computed by `QAbstractItemView::dragMoveEvent`,
+  not by Qt magic.** Override `dragMoveEvent` without chaining and it keeps
+  returning whatever it last held, so a hand-rolled drop lands wherever the
+  previous one did. Either chain, or compute the insertion point yourself
+  from `indexAt(pos)` and `visualRect(index).center()` — which is what
+  `ReorderListView` does, because it also wants to draw its own indicator
+  (Qt's is styled per-platform and reads as a selection rectangle over flat
+  rows).
+- **`QPainter::drawEllipse(QPoint(x, y), 1.5, 1.5)` does not compile**, and
+  the error names two candidates without saying which to pick. `QPoint`
+  binds the `(const QPoint&, int, int)` overload while `1.5` prefers the
+  `qreal` one, so neither is better. Use `QPointF` when the radii are
+  fractional (`CategoryTaskDelegate`, `ActivityRowDelegate` — the grip dots).
+- **A domain door that calls `QDate::currentDate()` inside itself cannot be
+  tested against a fixed calendar.** `AppData::updateSchedule` withdraws
+  *future* occurrences, so it must be told what "future" means; with the
+  clock hidden inside, a test built on 2026 dates silently withdraws nothing
+  and passes for the wrong reason. Take `today` as a parameter — the same
+  seam `TrackerService::nowProvider` and the old `rollRepeats(today)` open
+  (`design-addendum-schedules.md` §S.5).
 - **A layout gate measured against an empty fixture certifies nothing.**
   `ArchivePage` passed the width budget for three versions because the test
   account had nothing archived, so the page was three short labels. Seed the
@@ -577,6 +665,66 @@ Deliberate simplifications (candidates for your first solo features):
   which was solved by making the build hard-fail on a mismatch; `/app/` has no
   such check, so the redeploy belongs in the release routine
   (`docs/GITHUB.md`) rather than in someone's memory.
+
+- **A dialog that validates a draft which a LATER step completes will refuse
+  its own valid input.** Not a Qt trap — a consequence of moving validation
+  toward the user, which is otherwise the right move. `ActivityDetailDialog`
+  attached a new rule's `activityId` at *apply* time, so `Save` (which runs
+  first) handed `recur::problemWith` a rule with neither a link nor a title
+  and got *"Give it something to be called."* on a form where every field
+  was filled in. Editing an existing rule still worked, because its seed came
+  from the domain complete. The fix is to complete the draft
+  (`newScheduleSeed`), never to weaken the shared validator — that just
+  re-splits "is this legal?" into two answers. **Whenever validation moves
+  into a dialog, every field the apply step supplies has to move into the
+  seed with it** (`design-addendum-schedules.md` §S.11b,
+  `TROUBLESHOOTING.md`).
+
+- **State written on the way to a decision outlives the decision.** Not a Qt
+  trap; a control-flow one, and it has now bitten this repo three times in the
+  same field. `SyncService` assigned its held-conflict state *before* the
+  branch that decides whether to ask the user anything, so a conflict resolved
+  silently still left `m_heldServerRevision` standing — and
+  `hasPendingConflict()` is that field. Auto-sync gated shut and the ⚠ lit
+  after a **successful** sync. When a function grows an early-return path,
+  audit every field assigned above the branch: assign it inside the branch
+  that uses it, or clear it in the one that does not, and prefer the first
+  because there is nothing left to remember (`design-addendum-sync.md` §I.a,
+  `TROUBLESHOOTING.md`).
+
+- **A comment that justifies code by citing an invariant IS a dependency —
+  and prose is the only place it is written down.** `Affordability` summed
+  block durations as a plain total and said why: "because AppData's isFree
+  gate guarantees blocks never overlap — the domain invariant is what makes
+  this loop exact rather than an estimate." Correct, until v31.3 let three
+  blocks share an instant; then the sum double-counted a stacked hour and
+  under-reported free time, with no error, on a number people plan against.
+  No compiler, type or test could have flagged it. Before relaxing ANY
+  invariant, grep the prose for the rule by name — `no-overlap`,
+  `cannot overlap`, `at most one` — and treat every hit as a call site
+  (`design-addendum-overlapping-blocks.md` §V.6).
+
+- **Rename a predicate whose MEANING changes; do not re-point it.** `isFree`
+  meant "nothing is there"; v31.3 needed "fewer than three are there". The
+  new rule got a new name (`hasRoomFor`) and the compiler then walked every
+  call site — which is how four in `AgendaWidget` turned out to be asking the
+  old question after all (they gate the "+ plan" invitation, and a slot with
+  one block has room but no empty pixels). Re-pointing the old name would
+  have shipped an agenda inviting clicks onto occupied rows with a green
+  suite. The rename is not tidiness; it is the audit
+  (`design-addendum-overlapping-blocks.md` §V.3).
+
+- **A remembered position is a promise about hardware that may be gone — and
+  the second window is where you forget to check.** `MainWindow` has
+  validated restored geometry against today's screens since window memory
+  shipped (`isReachable`, over the pure `overlapsAnyScreen` in `Widgets.h`,
+  which even has an unplug-the-monitor test). `PomodoroMiniWindow` was given
+  the same memory (`pomodoro/miniPos`) and not the same check, so it restored
+  to x=1937 on a 1920-wide desktop and was reported as *"the mini timer
+  doesn't work any more"*. **An off-screen window is indistinguishable from a
+  dead button** — ask the OS for the window rect before believing a control
+  is broken. When a guard exists for one window, grep for every other reader
+  of the thing it guards (`TROUBLESHOOTING.md`).
 
 ## 5. New since v13 — landmarks worth a visit
 

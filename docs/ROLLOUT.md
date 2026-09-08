@@ -95,9 +95,9 @@ explicitly — read what it prints.
 
 ## Stage 1 — The field run you owe *(one evening)*
 
-Work through **`docs/QA_CHECKLIST_v30.0.md`** top to bottom. It covers v29.3
-(the split's inverse) and v30.0 (the memory file), and it is written as a
-follow-along, not a reference.
+Work through **`docs/QA_CHECKLIST.md`** top to bottom — Part 1 is the standing
+pass that every release gets, Part 2 is whatever the current release added. It
+is written as a follow-along, not a reference.
 
 The three steps that matter most, if you only have half an hour:
 

@@ -1,6 +1,6 @@
 # Development Case — TickTimer
 
-*Unified Process artifact · 08 · Construction update — reflects the shipped v11 app*
+*Unified Process artifact · 08 · Artifact review at v31*
 
 ## Revision History
 
@@ -8,6 +8,7 @@
 |---|---|---|---|
 | Inception draft | 2026-07-03 | First draft; process tailored for a small solo project. | Mentor + you |
 | Construction update | 2026-07-04 | Recorded practices that emerged: design addenda, automated domain tests, approval-by-use. | Mentor + you |
+| Artifact review | 2026-09-08 | Declared the two artifacts that had grown outside this document (Backlog, QA Checklist) and retired the thirty-three that had grown outside it unnoticed. See §6. | Mentor + you |
 
 ## 1. Introduction
 
@@ -28,6 +29,8 @@ Legend: **s** = started · **r** = refined · **–** = not used in that phase.
 | Iteration Plan (06) | Yes | Next iteration detailed | s | r | r | r |
 | Phase Plan (07) | Yes | Coarse | s | r | – | – |
 | Development Case (08) | Yes | This document | s | – | – | – |
+| **Backlog** (`BACKLOG.md`) | Yes | **The only queue.** One line per item, ranked, deleted on ship | – | – | r | r |
+| **QA Checklist** (`QA_CHECKLIST.md`) | Yes | Living: a standing pass, plus a per-release part rewritten each time | – | – | r | r |
 | Design Model | Informal | Sketched as needed, in code/on paper | – | s | r | – |
 | Software Architecture note | Minimal | A short note; the project is small | – | s | – | – |
 | Data Model | Informal | JSON schema now; SQLite later | – | s | r | – |
@@ -51,6 +54,39 @@ Choosing *not* to produce an artifact is a real decision — recording it here k
 ## 5. Rationale
 
 For one developer building a portfolio app, heavy process would cost far more than it returns. The guiding rule: **use the least process that still keeps us thinking clearly and reduces real risk.** This document is the meta-decision that kept the other seven artifacts appropriately *thin* rather than exhaustive. If the project grows — a team, real users, cross-device sync — this is the first document we would revisit, adding artifacts only as the project earns them.
+
+## 6. Artifact review at v31 — what grew here unasked
+
+By v31 `docs/` held **108** Markdown files. Thirty-three of them had never been
+declared in §2: thirty `CHANGES_v*.md` (one per version, recording what an
+addendum, `SESSION_NOTES.md` and `git log` each already recorded) and three
+`QA_CHECKLIST_v*.md` (one per slice, each a single-use script). All thirty-three
+were retired into git history; the checklists' durable half was mined out first
+and became Part 1 of the living `QA_CHECKLIST.md`.
+
+Larman's rule for the UP is that **all artifacts are optional and none should be
+created unless it adds value** — the pharmacy analogy: match the medicine to the
+ailment rather than taking one of each. The failure here was not that anyone
+disagreed with that. It was that artifacts were created *outside* this document,
+which is the one place the tailoring decision is supposed to be made, so nobody
+ever asked the question. **§3's principle cuts both ways: choosing not to produce
+an artifact is a real decision, and so is choosing to produce one.**
+
+Two artifacts already declared here had also quietly stopped being what they
+claim:
+
+- **Iteration Plan (06)** — declared *"next iteration detailed"*, had become an
+  archive of finished arcs. Its §4 is now record only, and the queue it was
+  pretending to be is `BACKLOG.md`.
+- **Risk List (05)** — declared *"living, re-ranked each iteration"*, last
+  touched at v11 and twenty versions behind. Unresolved on purpose: backlog item
+  **H1** forces the choice between re-ranking it and formally retiring it here.
+  A document that claims to be living and is not is worse than one that is
+  honestly dead.
+
+**The rule this review adds:** a record and a queue have opposite lifetimes and
+never share a file. A record is written once and kept; a queue item exists in
+order to be deleted. Every failure above is one file trying to be both.
 
 ---
 

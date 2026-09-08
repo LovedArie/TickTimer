@@ -128,3 +128,45 @@ JSON *string* rather than as a structured object.
   there is no window. In memory, an `Event` is handed to arbitrary readers for
   arbitrary durations, and any of them could hold a stale opinion. The rule:
   duplicate a fact only where you control every read and every write.
+
+---
+
+## Translation units, linkage, and why moving a function into a header needs `inline`
+
+Came up in v31.2, moving the conflict-box sentences out of `SyncDialog.cpp`
+and into `Merge.h` so tests could reach them.
+
+A **translation unit** is one .cpp file after the preprocessor has pasted in
+every `#include`. The compiler sees TUs one at a time and knows nothing about
+the others; the linker then joins the object files and must find exactly one
+definition of every symbol that is used. That "exactly one" is the **One
+Definition Rule**.
+
+An **anonymous namespace** (`namespace { ... }`) gives everything inside it
+*internal linkage*: the symbol is private to its TU, so two .cpp files can
+each define `headingFor` with no collision. That is what the helpers had
+while they lived in `SyncDialog.cpp` — and it is exactly why no test could
+call them. Internal linkage is not a visibility convention; the name is
+genuinely absent from every other TU.
+
+Move such a function into a header and the problem inverts. A header is
+pasted into every .cpp that includes it, so `Merge.h` included by
+`SyncDialog.cpp`, `SyncService.cpp`, `test_domain.cpp` and the rest would
+produce one definition of `renderClashes` per TU — several definitions of one
+symbol, and the linker refuses. `inline` is the permission slip: it tells the
+linker "you will see this definition many times, they are all identical,
+collapse them into one." In modern C++ that is what `inline` is *for*; the
+old "paste the body at the call site for speed" meaning is only a hint the
+compiler is free to ignore.
+
+So the whole `merge::` namespace is `inline` free functions in a header, and
+that is not an accident of style: a header-only pure function can be called
+from the domain suite, which links no widgets at all. The rule of thumb this
+codebase follows — extract the judgement, put it in a header, pin it with
+microsecond tests — depends on this mechanism to work.
+
+Worth working through next: why `static` at namespace scope means the same
+thing as an anonymous namespace (and why the anonymous namespace is
+preferred), and what `inline` does *not* promise — in particular that each TU
+must see a byte-identical definition, which is why editing a header requires
+rebuilding every file that includes it.

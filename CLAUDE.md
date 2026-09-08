@@ -9,6 +9,19 @@ plus `ticktimer-server`, a small self-hosted HTTP/JSON login + sync backend buil
 on `QTcpServer`. One CMake project builds both, plus six QTest suites. No
 dependencies beyond Qt (Widgets, Network, Test; Multimedia optional).
 
+## Read this first, every session
+
+**`docs/BACKLOG.md` is the one queue** — bugs, feature intents, tests owed, doc
+debt. Open it at the start of any working session; it is the answer to "what
+next?". Items are one line and are **deleted when they ship** (`git log -p` is
+the archive). Anything needing a paragraph is not a queue item: an understood
+bug goes to `TROUBLESHOOTING.md`, a feature being designed gets a design
+addendum, a pre-release check goes to `docs/QA_CHECKLIST.md`.
+
+The rule behind the split, learned the expensive way from §4 of
+`06_IterationPlan.md`: **a record and a queue have opposite lifetimes, so they
+never share a file.** Do not start a second tracker — add to the backlog.
+
 ## Build & test
 
 ```sh
@@ -74,7 +87,7 @@ one day forgets.
 | Layer | Files | Rule |
 |---|---|---|
 | domain | `AppData`, value structs (`Task`, `Event`, `Segment`, `Category`, …), `Stats`, `DayBriefing`, `TrackerService`, `PomodoroEngine` | no Qt Widgets, ever |
-| pure "brains" | `SyncPlan.h::decide`, `Compare.h`, `version::decideBanner`, `MissedBlocks.h`, `Reschedule.h`, `TaskCoverage.h`, `Affordability.h`, `ChatSession.h`, `LlmProvider.h`, `QuickAddParser` | each feature's one real judgement, extracted as a pure function so a table of microsecond tests can pin it |
+| pure "brains" | `SyncPlan.h::decide`, `Compare.h`, `version::decideBanner`, `MissedBlocks.h`, `Reschedule.h`, `TaskCoverage.h`, `Affordability.h`, `DayLayout.h`, `ChatSession.h`, `LlmProvider.h`, `QuickAddParser` | each feature's one real judgement, extracted as a pure function so a table of microsecond tests can pin it |
 | storage | `JsonStore` (atomic `QSaveFile` write-then-replace), `PlannerStore`/`AccountStore`/`ShareStore` server-side | all JSON knowledge quarantined here |
 | wire | `AuthClient`, `SyncClient`, `ShareClient`, `UpdateClient`, `ChatClient`, `LlmQuickAddClient`, `NudgeClient`, `IntakeClient` | async `QNetworkAccessManager` → typed `Outcome` signals; POST + timeouts only, no policy |
 | policy | `SyncService`, `AffordabilityService`, `CheckInService`, `BlockAlarmService` | decides; owns injection seams (`setNowProvider`, public `sweep()`) |
@@ -118,9 +131,31 @@ that tests already pin — never a second implementation of them.
 - **`test_domain` / `test_taskmodel` / `test_nlp` link without Qt Widgets.**
   That is the architecture test nobody wrote: the day a domain file includes a
   widget header, those targets stop building. Don't "fix" it by linking Widgets.
-- **JSON persistence grows additively only** (format v14, `src/JsonStore.cpp`).
-  A missing key or an unknown enum string must read as a safe default, so old
-  files load with no migration branch. Never repurpose a key.
+- **Sync MERGES before it asks** (v31.2). `Merge.h` is a three-way merge
+  against a stored BASE (`base-data-<user>.json` — the document both sides
+  last agreed on); only rows edited on both sides become a question. A
+  two-way union would resurrect every deletion, which is why the base is
+  load-bearing rather than an optimisation. It is generic over any
+  id-bearing collection, so a NEW collection merges with no edit there.
+- **JSON persistence grows additively only** (format v16, `JsonStore::
+  kFormatVersion`). A missing key or an unknown enum string must read as a safe
+  default, so old files load with no migration branch. Never repurpose a key.
+- **That rule has a second half, and it is the dangerous one: a tolerant
+  reader must not be a confident writer.** Additive growth is about NEW code
+  reading OLD files. Backwards, the same tolerance is lethal — an unrecognised
+  key is silence, not an error, so an OLD binary loads a NEW file *lossily* and
+  the next autosave writes the wreckage back. v30.8.1 did exactly this to a
+  format-16 planner and destroyed 5 schedules and 73 `Event.scheduleId` links
+  with no error at all; the only reason it was recoverable is that
+  `base-data-<user>.json` happened to still be at 16. The floor
+  (`design-addendum-format-floor.md`) now refuses a document above
+  `kFormatVersion` inside `applyJsonObject` — one guard for the file, a sync
+  pull and a Compare peer — and `load()` returns a four-state `LoadResult`
+  rather than a `bool` whose `false` the caller answered with `seedDefaults()`.
+  **It is forward-only.** No change can give the guard to a binary that already
+  shipped, so a format bump makes every older installed copy destructive rather
+  than stale: replacing them is part of the release (`docs/GITHUB.md`), not
+  housekeeping.
 - **After a version bump, check the APK's stamp before signing it**
   (`aapt2 dump badging <apk> | grep versionName`). CMake reads `Version.h`
   with `file(READ)` — a *configure*-time read — so `cmake --build` alone
@@ -137,6 +172,18 @@ that tests already pin — never a second implementation of them.
   "apply check"). `Version.h` also feeds the Windows resource compiler via
   `RC_INVOKED`, and a `static_assert` pins the string against the three macros.
   Release routine: `docs/GITHUB.md`.
+- **A comment that justifies code by citing an invariant IS a dependency on
+  it.** `Affordability` summed block durations because "the isFree gate
+  guarantees blocks never overlap"; v31.3 allowed three concurrent blocks and
+  the sum silently double-counted, under-reporting free time with no error.
+  Nothing but the prose recorded that dependency. Before relaxing an
+  invariant, grep for it in words (`no-overlap`, `cannot overlap`, `at most
+  one`) and treat every hit as a call site.
+- **Rename a predicate whose MEANING changes; never re-point it.** `isFree`
+  ("nothing is there") kept its name and its behaviour; the new capacity
+  question got a new one (`hasRoomFor`). The compiler then found four
+  `AgendaWidget` call sites that genuinely wanted the old question —
+  re-pointing would have shipped a bug with a green suite.
 - **Every domain-touching feature enters through a design addendum first**
   (`docs/design-addendum-*.md`, indexed at the end of `docs/design-doc.md` §3),
   in choice → why → alternative-rejected form. Ship the addendum with the code.
@@ -150,6 +197,12 @@ that tests already pin — never a second implementation of them.
 `docs/READING_GUIDE.md` §4 has the full list with the file that tells each war
 story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
 
+- **U+27F3 (⟳) is NOT renderable on Android** — it drew as a tofu box on
+  every repeat chip from v19.10 to v31, across six surfaces, because none
+  had been read on a device. The repeat chip's text now lives in ONE place,
+  `repeatChip()` in `Task.h`, and carries no glyph at all. The general rule
+  it re-proves: reuse a codepoint the app already draws (▼ U+25BC, ×
+  U+00D7, ≡ U+2261 are proven) rather than the nicest-looking one.
 - Never name an identifier `slots`, `signals`, or `emit`.
 - **Never name a namespace after a POSIX function.** `namespace sync`
   built on Windows for a year and failed the first Android compile:
@@ -174,6 +227,47 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
   a size hint (`setWidgetResizable(true)` makes the hint an aspiration).
   And an **unwrapped `QLabel` reports its whole text as its MINIMUM width**
   — one free-text row label can push a page past a phone's budget.
+- **A HOLD is not a drag, and that is the whole trick on a touchscreen.**
+  `QScroller` delays a press only until it can rule the gesture out as a
+  pan, so the moves after a half-second hold DO reach the widget where the
+  moves after a bare press do not. Reorder-by-drag works on the phone only
+  because it starts from a hold (`ReorderListView`). Once it is dragging,
+  the page's flick must be UNGRABBED for the duration and re-grabbed after,
+  or the screen scrolls under the row — flag-guarded and released in the
+  destructor, because an unbalanced ungrab leaves a page that can never
+  scroll again.
+- **A child widget cannot take a gesture back from `QScroller`.** Its flick
+  recogniser runs through `QGestureManager`, which filters at
+  `QApplication::notify` — BEFORE the target's `event()`/`viewportEvent()`.
+  So accepting `TouchBegin` on the child (`WA_AcceptTouchEvents`) does not
+  help, even though "an accepted touch is not offered to ancestors" is a
+  real rule. Inside a scrollable page a drag gets its press and its release
+  and **nothing in between**: the moves are eaten as a pan. Where a touch
+  gesture and a mouse gesture collide, the touchscreen keeps scrolling and
+  the rarer action finds another door — a long-press menu
+  (`ReorderListView.h` §O.5; `CategoryTree` reached this in v30.7).
+- **When a view and its delegate divide one row, divide it by RECT and
+  declare the rect once.** A delegate acts on `MouseButtonRelease`; a view
+  that swallows a PRESS (to start a drag from a grip) must swallow the
+  matching release too, or every drag ends by opening the row it moved.
+  `reorder::gripWidth()` is read by `ReorderListView` and by both delegates
+  so the band you see and the band that works cannot drift — and it returns
+  0 on a phone, where there is no drag to hold.
+- **`deleteLater()` does NOT run inside a nested event loop.** DeferredDelete
+  is only processed by the loop level that posted it, so a widget discarded
+  before `dialog.exec()` survives the dialog's whole life — and a widget
+  taken out of a LAYOUT keeps its parent, so it keeps painting, at (0,0).
+  The symptom is a stray clipped label welded to a dialog's top-left corner.
+  `hide()` before `deleteLater()` whenever the rebuild can run outside the
+  event loop (`ActivityDetailDialog::rebuildScheduleRows`).
+- **`dropIndicatorPosition()` is state, not a query** — it is set by
+  `QAbstractItemView::dragMoveEvent`, so an override that does not chain
+  leaves it stale and every drop lands where the last one did. Compute the
+  insertion point from `indexAt`/`visualRect` instead.
+- **A domain door that reads `QDate::currentDate()` internally cannot be
+  tested against a fixed calendar.** Anything that decides what "the future"
+  means takes `today` as a parameter (`syncSchedules`, `updateSchedule`,
+  `removeSchedule`) — the seam `TrackerService::nowProvider` opened.
 - **Never edit a source file with PowerShell text cmdlets.** `Get-Content
   -Raw` decodes a BOM-less file in the ANSI codepage and `Set-Content
   -Encoding utf8` re-encodes it, double-encoding every non-ASCII character,
@@ -203,7 +297,9 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
 
 ## Docs worth opening before changing anything
 
-`docs/READING_GUIDE.md` (reading order + landmarks) · `docs/design-doc.md`
+`docs/BACKLOG.md` (the queue — always) · `docs/QA_CHECKLIST.md` (the manual
+pass before a release) · `docs/READING_GUIDE.md` (reading order + landmarks) ·
+`docs/design-doc.md`
 (decisions + the addendum index) · `docs/TESTING.md` (manual force recipes) ·
 `docs/TROUBLESHOOTING.md` (symptom-indexed) · `docs/AI.md` (providers, keys,
 what leaves the machine) · `docs/SERVER.md` · `docs/SETUP.md` ·

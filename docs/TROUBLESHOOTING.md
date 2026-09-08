@@ -70,6 +70,78 @@ the same things in the same order:
 
 ## ── LOGGED ISSUES (TickTimer) ──
 
+### A schedule refuses to save with "Give it something to be called." — but every field IS filled in
+
+**SYMPTOM**
+In an activity's editor, WHEN → add a schedule, set repeat / weekday / first
+date / end date / times, press **Save**. A warning box appears:
+
+```
+That rule cannot work
+Give it something to be called.
+```
+
+Editing an EXISTING schedule in the same dialog saves fine. Only adding a
+new one fails.
+
+**CAUSE**
+A `Schedule` is named by *either* `activityId` *or* `title` (Schedule.h), and
+`recur::problemWith` refuses one that carries neither. The activity editor
+has no title field on purpose — an activity-backed rule is named by its
+activity — and it used to attach `activityId` only in the *apply* step,
+after the dialog closed. But Save validates **before** apply runs, so the
+draft it validated was genuinely nameless. The check was right; the draft
+was incomplete.
+
+The general shape, and the reason this is worth logging: **a dialog that
+validates a draft which a later step completes will refuse its own valid
+input.** Wherever validation moves closer to the user, every field filled in
+downstream has to move with it.
+
+**FIX**
+Seed the missing field at the moment the draft is created, not at apply time
+— `newScheduleSeed(activityId, today)` in `ActivityDetailDialog.cpp`. Do
+*not* weaken the validator to accept the incomplete draft: that re-splits
+"is this legal?" into two answers, which is the bug §S.11a of
+`docs/design-addendum-schedules.md` exists to have closed.
+
+**PREVENT**
+When a pure validator is shared between the domain and a dialog, check what
+the dialog hands it against every field the *apply* step fills in. Anything
+apply supplies must also be in the seed, or the validator sees a document the
+user was never given a way to complete.
+
+### Free time / "can I afford this task" reads LOW, and nothing errors
+
+**SYMPTOM**
+The affordability answer for a task says there is less free time before the
+deadline than the calendar visibly has. No error, no warning — just a number
+that is too small, and a verdict that may flip to "not affordable".
+
+**CAUSE**
+Two or more blocks covering the same hour, with busy time computed as a
+**sum** of block durations instead of a union. Two stacked one-hour blocks
+subtract two hours from a one-hour window.
+
+This was correct code until v31.3. `Affordability` summed on purpose and its
+comment said why: *"because AppData's isFree gate guarantees blocks never
+overlap — the domain invariant is what makes this loop exact rather than an
+estimate."* Allowing up to three concurrent blocks retired that guarantee and
+left the sum behind.
+
+**FIX**
+Use `daylay::busyMinutes` (`include/DayLayout.h`), which merges the spans
+before totalling them, so a minute is counted once however many blocks cover
+it. `Reschedule.h` uses the same function — one definition of "spoken for".
+
+**PREVENT**
+**A comment that justifies code by citing an invariant is a dependency on
+that invariant, and prose is the only place it is recorded.** No compiler,
+type or test flags it when the rule changes underneath. Before relaxing any
+invariant, grep the codebase for the rule stated in words — `no-overlap`,
+`cannot overlap`, `never overlap`, `at most one` — and treat every hit as a
+call site to be visited.
+
 ### "No account with that name — check the spelling" in Share & compare, but the account definitely exists
 
 **SYMPTOM**
@@ -710,10 +782,29 @@ is a single `clearHeldConflict()` both resolutions call; a live test now
 creates a real conflict, resolves it, and asserts the service returns to
 life. Lesson: when old state gains a NEW consumer, audit every write site.
 
+**AND A THIRD TIME, THROUGH A NEW DOOR (fixed in v31.2):** the merge-first
+work added a path that resolves a conflict *silently* — when the three-way
+merge settles everything, the service adopts the merged document and pushes
+without asking. But the held-conflict fields were assigned **above** that
+branch, before it was known whether a question would be asked, so a conflict
+that resolved itself perfectly still left `m_heldServerRevision` standing —
+and `hasPendingConflict()` is that field. Same three symptoms as above, now
+after a *successful* sync, and reachable on an ordinary two-device day rather
+than only after a real conflict. The fix is the shape of the original lesson
+rather than another janitor call: **nothing is held until the path that needs
+it is the path being taken.** The second merge (`theirs`) moved down with it,
+since nothing above the branch ever needed it.
+
 **PREVENT**
 Anchored/string-based edits: after applying, READ THE DIFF IN CONTEXT —
 the compiler checks syntax, never placement. And UI that reflects state
 should re-derive it (§3.5 for glyphs), never accumulate toggles.
+
+When a function grows an early-return path, check every field assigned
+*before* the branch: state written on the way to a decision outlives the
+decision. Assign it inside the branch that uses it, or clear it in the one
+that does not — the first is harder to get wrong, because there is nothing
+to remember.
 
 ---
 
@@ -821,6 +912,54 @@ Rule of thumb: `cd /tmp && ctest --test-dir <build>` must pass; if it
 doesn't, the harness has an undeclared dependency on your habits.
 
 ---
+
+### "The mini timer doesn't work any more" - the button does nothing visible
+
+**SYMPTOM**
+Pomodoro -> **Mini timer** appears to do nothing. No error, no flicker. The
+main window is fine and every other control works. Often first noticed after
+a display change - a monitor unplugged, a laptop undocked, a resolution drop.
+
+**CAUSE**
+It IS working. The card is created, shown and raised - just off-screen. The
+mini card remembers where it was last dropped (`pomodoro/miniPos` in
+QSettings) and, before v31.3.1, restored there unconditionally. Park it on a
+second monitor, unplug that monitor, and it reopens at coordinates no
+attached screen covers.
+
+Confirm it in one line - compare the stored point against the desktop:
+
+```powershell
+Get-ItemProperty "HKCU:\Software\TickTimer\TickTimer\pomodoro" |
+    Select-Object miniPos
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.SystemInformation]::VirtualScreen
+```
+
+A real reading from the report that produced this entry: `@Point(1937 23)`
+against a VirtualScreen of `1920 x 1080` - x was 17 pixels past the right
+edge of the only monitor left.
+
+**FIX**
+`PomodoroMiniWindow` now checks `overlapsAnyScreen(QRect(saved, sizeHint()),
+availableScreenRects())` before honouring the saved point, and otherwise lets
+Qt place it - which is already the documented first-run behaviour. The saved
+point is deliberately NOT cleared: plug the monitor back in and the card
+returns where you left it. To unstick an older build, drag the card once (any
+move rewrites the setting) or delete the `miniPos` value.
+
+**PREVENT**
+**Every remembered position needs the same reachability check, and a second
+window is where you forget it.** `MainWindow` had this guard from the day
+window memory shipped (`isReachable` -> `restoreWindowState`), and the pure
+policy behind it (`overlapsAnyScreen` in `Widgets.h`) even had its own
+"unplug the monitor" test. The card had the memory and not the check. When a
+guard exists for one window, grep for every other caller of the thing it
+guards - here, every reader of a saved `QPoint` or geometry blob.
+
+And note how it presented: **an off-screen window is indistinguishable from a
+dead button.** Before assuming a control is broken, ask the OS where its
+window actually is (`GetWindowRect`) rather than trusting the screen.
 
 ### Mini timer vanishes when the main window is minimized
 
@@ -2674,3 +2813,249 @@ places holding one fact, hand-synced. That one was solved by making
 equivalent check — the deployed folder is on another machine — so the
 protection here is procedural rather than mechanical, and saying so plainly is
 better than implying a gate exists. `design-addendum-web.md` §H.
+
+---
+
+### A drag ends by opening the row you just dragged
+
+**SYMPTOM**
+Reordering a task or an activity works — the row moves — and then the detail
+dialog for that row opens on top of the list.
+
+**CAUSE**
+Two things want the same gesture, and both are getting it. A delegate acts on
+`QEvent::MouseButtonRelease` in `editorEvent`, with a final "anywhere else on
+the row means edit" branch. A view that handles the PRESS itself (to start a
+drag from a grip) but then lets the base class handle the release hands that
+release straight to the delegate, which cannot tell it apart from a click.
+
+**FIX**
+Whichever object claims the press claims the release:
+
+```cpp
+void ReorderListView::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (!m_pressedId.isEmpty()) { m_pressedId.clear(); event->accept(); return; }
+    QListView::mouseReleaseEvent(event);
+}
+```
+
+and, belt and braces, have the delegate return `true` for a hit inside the
+grip rect — a delegate is a reusable component and nothing stops it being
+handed to a plain `QListView` someday, where no view is guarding it.
+
+**PREVENT**
+When a view and its delegate divide one row between them, divide it by RECT
+and state the rect in one place. `reorder::kGripWidth` is read by the view
+(to decide whether a press started in the handle) and by both delegates (to
+draw it and to shift the row right), so the band you see and the band that
+works cannot drift apart. This is the same rule a delegate's single
+`geometryFor()` already enforces *within* a row.
+
+---
+
+### A hand-rolled drop always lands in the same place
+
+**SYMPTOM**
+Dragging a row drops it correctly the first time and then always at that same
+position, no matter where the finger or cursor lets go.
+
+**CAUSE**
+`dropIndicatorPosition()` looks like a query about the current drag. It is
+not — it returns a value that `QAbstractItemView::dragMoveEvent` *stores*. A
+`dragMoveEvent` override that does not chain to the base never updates it, so
+it holds whatever the last drag left behind.
+
+**FIX**
+Compute the insertion point from geometry, which is two lines and cannot go
+stale:
+
+```cpp
+const QModelIndex index = indexAt(pos);
+const QRect r = visualRect(index);
+const bool before = pos.y() < r.center().y();
+```
+
+**PREVENT**
+This is the general Qt hazard of protected accessors on item views: several
+of them report state the base class's event handlers maintain, so overriding
+a handler quietly disables the accessor. If you are not calling the base,
+assume nothing it normally sets is set.
+
+---
+
+### A recurring activity says "in use (13)" and "Not on the calendar yet."
+
+**SYMPTOM**
+An activity's row shows the pill **"in use (13)"** while its detail dialog says
+**"Not on the calendar yet."** — one inch apart, flatly contradicting each
+other. More generally: recurrence rules, or any other recently-added field,
+have silently vanished from the planner. No error, no crash, nothing in a log.
+
+**CAUSE**
+An OLDER TickTimer opened the file. `data-<user>.json` had been written by v31
+at format 16; the v30.8.1 copy still installed in the Start Menu — which
+predates Schedules entirely — loaded it, ignored the keys it had never heard
+of, and saved it back at format 14. That destroyed all 5 `schedules` and the
+`scheduleId` on 73 events. The occurrences survived as ordinary blocks, so
+"in use (13)" was true; the rule that made them was gone, so "Not on the
+calendar yet." was also true.
+
+The house rule "**JSON persistence grows additively only**" is entirely about
+*new code reading old files*, and in that direction it works. Run it backwards
+and the same tolerance is lethal: a key the loader does not recognise is not an
+error, it is silence — so a new file loads *lossily* and the next autosave
+writes the wreckage back. **A tolerant reader must not also be a confident
+writer.**
+
+**FIX**
+The data is usually recoverable, because `base-data-<user>.json` (the sync
+base) is a full planner written at the previous format. Close the app, then
+copy the `schedules` array and the per-event `scheduleId` values back out of
+the base and into the planner, matching events by `id`. Check both files' final
+`"version"` line first — the base is the good one when its number is higher.
+
+Do **not** repair it by re-creating the rule in the UI: `syncSchedules` dedupes
+on `scheduleId@date`, and blocks orphaned this way have no `scheduleId`, so the
+rule cannot see them. Since v31.3 relaxed the guard from `isFree` to
+`hasRoomFor` (three blocks per slot), it will happily stack a second identical
+block onto every date instead of adopting the existing ones.
+
+**PREVENT**
+Two halves, and both are needed.
+
+*In code (v31, `design-addendum-format-floor.md`):* `JsonStore::kFormatVersion`
+is the version this binary writes **and** the highest it will read.
+`applyJsonObject` refuses a document above it — one guard covering the file, a
+sync pull and a Compare peer — `load()` returns `LoadResult::TooNew` instead of
+a `false` the caller would have answered with `seedDefaults()`, and the store
+latches read-only so `save()` cannot replace a file it could not understand.
+
+*At release time:* the guard is **forward-only**. It cannot be given to a
+binary that has already shipped, so nothing protects you from an older copy
+still installed. A format bump is the one change that makes old installed
+builds destructive rather than merely stale — replace every copy on every
+machine as part of shipping it, not later.
+
+### `drawEllipse` will not compile with a fractional radius
+
+**SYMPTOM**
+
+```
+error: call of overloaded 'drawEllipse(QPoint, double, double)' is ambiguous
+note: candidate 1: void QPainter::drawEllipse(const QPoint&, int, int)
+note: candidate 2: void QPainter::drawEllipse(const QPointF&, qreal, qreal)
+```
+
+**CAUSE**
+`QPoint` prefers the integer overload; `1.5` prefers the `qreal` one. Neither
+conversion sequence is better than the other, so the call is ambiguous —
+nothing is wrong with the arguments individually.
+
+**FIX**
+`QPointF(x, y)` when the radii are fractional. (Or integer radii, if the mark
+is large enough not to need the half-pixel.)
+
+**PREVENT**
+Two-overload ambiguity errors in Qt are almost always an int/qreal pair with
+the point type pulling one way and a literal pulling the other. Read which
+two candidates it names before reading the arguments — the message tells you
+the axis of the problem in its first two lines.
+
+---
+
+### A drag works on the desktop and does nothing on the phone
+
+**SYMPTOM**
+A drag handle reorders a list perfectly with a mouse. On Android the same
+gesture scrolls the page instead — usually. Occasionally it works, which
+makes it look flaky rather than absent.
+
+**CAUSE**
+`QScroller` is grabbed on the enclosing `QScrollArea`'s viewport, and its
+flick gesture is recognised through `QGestureManager`, which filters events
+in `QApplication::notify` — *before* the target widget's `event()` or
+`viewportEvent()` runs. The child receives the press and the release; every
+move in between is consumed as a pan. The occasional success is the case
+where the page was already at a scroll limit, so the scroller declined and
+the moves fell through.
+
+**WHAT DOES NOT FIX IT**
+`viewport()->setAttribute(Qt::WA_AcceptTouchEvents, true)` plus accepting
+`TouchBegin`. The rule it relies on — an accepted touch sequence is not
+offered to ancestors — is real, and it is still too late: the recogniser
+upstream has already seen the event. Verified on a device; the desktop suite
+stayed green throughout, because `QTouchEvent` cannot be forged from a test.
+
+**FIX**
+Give the capability a second door instead of fighting for the gesture. In
+this codebase that means the row's long-press context menu (Move up / Move
+down), and the drag handle is not drawn at all on a compact screen —
+`reorder::gripWidth()` returns 0 there, which also returns its width to the
+content.
+
+**PREVENT**
+Treat "press and move" on a touchscreen as already allocated. `CategoryTree`
+reached the same conclusion in v30.7 when its drag made the life-areas rail
+unscrollable, and responsive §3.31 reached it for the agenda's edge-resize.
+One organiser per input device.
+
+---
+
+### A clipped label is stuck to a dialog's top-left corner
+
+**SYMPTOM**
+A dialog shows a fragment of text — a truncated sentence from somewhere else
+in the same dialog — pinned over its top-left, on top of the real content,
+for as long as the dialog is open.
+
+**CAUSE**
+Two Qt facts meeting. Taking a widget out of a **layout** does not take it out
+of the widget **tree**: it keeps its parent, so it keeps painting, and with
+nothing positioning it any more it paints at (0,0). Normally the next trip
+through the event loop deletes it — except `deleteLater()` posts a
+DeferredDelete that Qt only processes **at the event-loop level that posted
+it**. A rebuild that runs before `dialog.exec()` posts at the outer level;
+`exec()` opens a nested one; the deletion waits for a loop that will not run
+again until the dialog is gone.
+
+**FIX**
+
+```cpp
+const auto discard = [](QWidget* w) { w->hide(); w->deleteLater(); };
+```
+
+**PREVENT**
+`deleteLater()` alone is only safe where the code reliably returns to the
+loop that posted it — which is true of a page rebuilding on `changed()` and
+false of anything constructing a modal. If a rebuild can run on the way into
+`exec()`, hide as you discard.
+
+---
+
+### A small box appears before a word on the phone, and only on the phone
+
+**SYMPTOM**
+A chip or label that reads "⟳ Weekly" on the desktop reads "▯ Weekly" on
+Android — a hollow rectangle, then the word.
+
+**CAUSE**
+The box is Unicode's "no glyph for this codepoint" tofu. Android's default
+font covers far less than a desktop font, and the character was chosen by
+how it looked in an editor rather than from what the app had already been
+seen to draw. U+27F3 (⟳) is one of these; it was drawn on every repeat chip
+from v19.10 and rendered as a box on every phone for eleven versions,
+because the chip had never been read on a device.
+
+**FIX**
+Drop the glyph, or swap it for one this app has been SEEN to render — ▼
+U+25BC, ▲ U+25B2, × U+00D7, ≡ U+2261. Put the answer in one function so the
+next surface cannot reintroduce it (`repeatChip()` in `Task.h`).
+
+**PREVENT**
+Two habits. First, never introduce a codepoint the app does not already draw
+somewhere that a phone has rendered. Second, remember that this class of bug
+is invisible to every test and to every desktop run — the only instrument is
+a screenshot from the device, which is the same conclusion the touch-gesture
+work reached from the other direction.
+

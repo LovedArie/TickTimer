@@ -10,8 +10,9 @@ planning screen on owner feedback — editable special days).*
 > below is a snapshot of that moment — the version, the test count, and the
 > doc-debt list are all historical, not current. Ten versions of work landed
 > after it (the AI arc, catch-up, subtasks & sizing, the write boundary,
-> intake); their record lives in `docs/CHANGES_v2*.md`, the design addenda,
-> and `docs/PROJECT_LOG.md`. Kept as-is rather than rewritten: it is a log,
+> intake); their record lives in the design addenda and `docs/PROJECT_LOG.md`.
+> (It lived also in a set of per-version `docs/CHANGES_v2*.md` files, retired
+> at v31 as duplicated record; they remain in git history.) Kept as-is rather than rewritten: it is a log,
 > and back-dating a log destroys the only thing it is for.
 
 ---

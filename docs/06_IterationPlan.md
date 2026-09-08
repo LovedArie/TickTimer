@@ -1,6 +1,6 @@
 # Iteration Plan — TickTimer
 
-*Unified Process artifact · 06 · Roadmap review — reflects the shipped v21.2 app*
+*Unified Process artifact · 06 · **Record only.** The queue lives in `docs/BACKLOG.md`.*
 
 ## Revision History
 
@@ -9,6 +9,7 @@
 | Inception draft | 2026-07-03 | First draft; Iteration 1 detailed, rest sketched. | Mentor + you |
 | Construction update | 2026-07-04 | Iterations 1–5 completed; two unplanned feature iterations recorded; backlog re-planned. | Mentor + you |
 | Roadmap review | 2026-07-18 | Arcs v12–v21.2 recorded (§3c); backlog re-planned around the AI/secretary direction (§4a); model/view and sync retired; "tasks meet the plan" and Android flagged. | Mentor + you |
+| Queue split out | 2026-09-08 | §4 was a "backlog" holding only finished work; the arcs it recorded moved to §3d as history, and the queue became `docs/BACKLOG.md`. §4b/4c retired into it. | Mentor + you |
 
 ## 1. Introduction
 
@@ -45,7 +46,7 @@ The near-term plan, **iteration by iteration**. Each iteration is a short (~1–
 | **6 — Tasks & Deadlines** | One-off obligations with optional due dates; the Upcoming view. | UC6 | Owner request ("screenshot as spec") → **design addendum #1** → domain, tests, UI |
 | **7 — Organizing & Special Days** | Folders in the rail; special days with countdowns. | UC3, UC7 | Owner requests → classified (domain vs. derived) → **design addendum #2** |
 
-## 3c. Arcs completed since *(v12 – v21.2)*
+## 3c. Arcs completed *(v12 – v21.2)*
 
 Feature work stopped arriving as numbered iterations and started arriving as
 **arcs** — a run of sessions on one theme, each shipping a version, a design
@@ -60,9 +61,13 @@ addendum, tests, and a diagram. Recorded here so the plan matches reality.
 | **Quick-add / AI** | v21.0–v21.2 | ✅ Pure NL parser → global Ctrl+N capture overlay → LLM fallback (wire/pure split). *Marked "in progress" until the v26.8 audit; it finished at v21.2 and the arc it grew into (provider → chat → foundation) has its own rows below.* |
 | **Catch-up & settings nav** | v26.1–v26.8 | ✅ Settings as shell + pages (v26.1); catch-up domain then surfaces (v26.2, format **v11**); the chip's three intensities (v26.7); horizon default dropped to 3 days (v26.8). **Shipped with no session notes at all** — reconstructed from the addenda during the v26.8 audit |
 
-## 4. Beyond These Iterations *(the re-planned backlog)*
+## 3d. The AI and cross-platform arcs *(v21 – v31)*
 
-### 4a. The AI arc — the current direction
+*This section spent its life titled "the re-planned backlog" while every
+row in it was finished work. It is history, and it is filed as history
+now; the queue moved to `docs/BACKLOG.md`.*
+
+### The destination this arc was aimed at
 
 The stated destination is an **AI assistant / secretary**: it chats with you,
 asks how the day went, plans tomorrow, and makes decisions on your behalf.
@@ -123,33 +128,27 @@ i.e. exactly the same plumbing as a cloud provider. Cloud GLM-5.2 stays cheap
 (~$1.40/$4.40 per Mtok first-party; ~$0.93/$3 via OpenRouter) if quality
 matters more than privacy. The ladder changes; the provider layer does not.
 
-### 4b. Still open from the original backlog
+## 4. What next
 
-- ~~**Tasks meet the plan**~~ — **stale entry, corrected 2026-07-18:** this
-  shipped long ago (task blocks via the picker, task-linking on existing
-  blocks — `design-doc.md §5` retired it as "done twice over"; this bullet
-  was doc drift). The *real* remaining gap it pointed at — the app never
-  **noticing** that an urgent task has no block — is now its own arc:
-  **"Needs a block"** (`design-addendum-needs-a-block.md`). **All three parts
-  shipped** — domain (v21.3), gated glance panel (v21.4), placement +
-  week-view card (v21.5); the arc is complete. Still relevant to the secretary:
-  a model proposing "block the lab report Thursday?" will read
-  `tasksNeedingBlock` and write through the same doors.
-- **Android build** — its own iteration once desktop is polished. Code is
-  Android-ready and `ANDROID.md` is written, but ⚠️ **no APK has been built or
-  deployed**; the README has claimed "Android-ready" for many versions on the
-  strength of the build config alone. Deserves a short reality-check session.
-- **Polish & habits** — drag-and-drop into folders; remember window/sidebar
-  state (`QSettings`); debounced saves.
-- **SQLite migration** — the format is versioned and ready; no pressing need
-  while JSON holds up.
+**The queue is `docs/BACKLOG.md`, and it is the only one.** Bugs, feature
+intents, tests owed and doc debt live there, one line each, ranked, deleted
+when they ship. Nothing above this line is a plan; it is all record.
 
-### 4c. Retired
+This section used to *be* the queue, and the way it failed is worth keeping in
+front of us. Finished work was never removed from it, so the ratio of history
+to plan grew until the file stopped being opened; it then drifted long enough
+to accumulate three self-corrections in its own text — *"Doc drift fixed
+2026-07-20"*, *"stale entry, corrected 2026-07-18"*, and a row that
+*"overclaimed for six versions"*. `08_DevelopmentCase.md` had committed this
+project to an Iteration Plan with only *the next* iteration detailed, and to a
+Risk List *"re-ranked each iteration"*. Both promises were sound. Neither was
+kept, because the artifact that recorded them was also the artifact that
+buried them.
 
-- ~~**Model/view refactor**~~ — ✅ delivered in full across v20.0–v20.3.
-- ~~**Sync spike, then a sync iteration**~~ — ✅ risk #1 retired; sync, accounts,
-  and share & compare all shipped.
+The rule that follows, and the reason `BACKLOG.md` exists as a separate file:
+**a record and a queue have opposite lifetimes, so they never share a file.** A
+record is written once and kept; a queue item exists in order to be destroyed.
 
 ---
 
-*Note: this plan is re-planned at the start of each iteration, using the re-ranked Risk List and what the previous iteration taught us. Early iterations lean toward architecturally significant and risky work; later ones fill in well-understood features. This is the direct link back to the Risk List — the highest risks decide what we prove first.*
+*Note: the ranking is redone when work is picked up, not on a schedule, using what the last iteration taught us — risk first, then coverage, then criticality. That ranking now happens in `docs/BACKLOG.md`. The Risk List (`05_RiskList.md`) is the other half of it and is currently stale at v11; item **H1** in the backlog exists to settle whether it is re-ranked or formally retired.*

@@ -43,3 +43,6 @@ CLAUDE.local.md
 *.jks
 android-release-key*
 
+
+# Claude Code session state and worktrees - never part of the project.
+.claude/
