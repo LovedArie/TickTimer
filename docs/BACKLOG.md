@@ -52,6 +52,26 @@ idea comes back on its own.
 
 *Found in use. One line: what you did, what you expected, what you saw.*
 
+- **B8** **A mouse wheel over an open block silently destroys its recurrence
+  rule.** Reported as "not a bug, but a problem" — it is a bug, and it is the
+  most destructive one open. `EventDialog`'s **Repeats** `QComboBox` is wired
+  straight to `currentIndexChanged` → `applyRepeatChoice`, and Qt's combo acts
+  on a wheel event while merely HOVERED, with no click and no focus. Scrolling
+  one notch to "Does not repeat" calls `removeSchedule()`, which drops future
+  untouched occurrences and clears `scheduleId` on every survivor — exactly
+  the reported "removes all the detail of all the existing recurring block".
+  Scrolling to a different cadence calls `updateSchedule()` and
+  re-materialises the term. **There is no wheel guard anywhere in this
+  codebase** (`grep wheelEvent` returns nothing) and combos, spin boxes and
+  date edits sit inside scrollable dialogs throughout, so this is a class of
+  bug, not one widget. The rule to adopt: **a control that mutates data must
+  ignore the wheel unless it has focus.**
+- **B9** **Changing a block's recurrence destroys a rule with no confirmation
+  and no scope question.** Even by deliberate click, picking "Does not repeat"
+  removes the whole Schedule instantly. This is the same missing question as
+  **F8** — "only this occurrence, or all of them?" — arriving through a
+  different door, and it is why B8 is destructive rather than merely annoying.
+  Fixing B8 stops the accident; this stops the silent loss.
 - **B7** **The installer declares a version it does not verify it is shipping
   — and this is the root cause of B3.** `%LOCALAPPDATA%\Programs\TickTimer\`
   was installed on **4 Sep** by an installer stamped **31.0.0**, and the two
@@ -96,6 +116,37 @@ idea comes back on its own.
 *One line of intent only. The reasoning belongs in the design addendum you
 write when you pick it up — never here.*
 
+- **F12** **Drag a planned block to another slot or day** on the calendar —
+  "move Friday's block to Saturday" without opening anything. Note what it has
+  to answer that a dialog does not: dropping an occurrence of a recurring rule
+  is F7 and F8 all over again, so the scope question has to be settled first or
+  the drag will invent its own answer.
+- **F13** **Make the day summary drillable.** The glance panel says you spent
+  time in a life area; clicking one should open what you actually worked on
+  inside it. The data is already there and already derived — Segments carry
+  their Event, and `Stats` computes the totals — so this is a view, not a new
+  fact.
+- **F14** **The assistant should behave like one.** Today it answers when
+  spoken to. Wanted: it notices — an open block with nothing tracked, a day
+  drifting off plan — and asks. Deliberately large and deliberately vague at
+  this stage; needs its own conversation before any addendum. Note it lands
+  squarely on ground the project has already surveyed: the v28 arc's whole
+  thesis is "code decides WHEN, code computes WHAT IS TRUE, the model only
+  PHRASES", and `AssistantVerbs.h` gives Nudge and CheckIn deliberately EMPTY
+  verb lists. Anything here is a change to that boundary and must be argued as
+  one.
+- **F15** An expand icon, top-right of every description box, opening the text
+  larger for reading and editing. One control, applied everywhere a description
+  is edited — activity notes, task notes, block notes — rather than per screen.
+- **F16** **Pieces do not serve a repeating routine, and that needs a
+  conversation.** A morning routine is the case: a repeating parent with a
+  checklist you want back, unticked, every morning. Two things to establish
+  before designing — (a) whether ticking a repeating parent regenerates its
+  pieces at all (the spawn carries `parentId` and size, but nothing in
+  `setTaskDone` clones a parent's children, so the next occurrence looks empty)
+  and (b) what "link multiple pieces" means: one piece shared by several
+  parents, or ticking several at once. The owner should say which; guessing
+  here would design the wrong feature.
 - **F6** Delete a single occurrence of a recurring block, leaving the rule and
   every other date alone. **The domain already does this** —
   `AppData::skipOccurrence(scheduleId, date)` exists and `Schedule::skipDates`
