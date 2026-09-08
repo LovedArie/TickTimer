@@ -85,9 +85,6 @@ idea comes back on its own.
   "calendar" is doing two jobs. Same class as the folder-delete complaint in
   `design-addendum-folder-archiving.md`: the rule was right, the reason was
   invisible.
-- **B1** The VPS advertises **30.8.1** at `/version` while the desktop app is
-  **31.0.0** — release step 6 (`tools\publish-version.bat`) has not run for
-  31.0.0, so nobody on an older build is told there is a newer one.
 - **B2** `/app/` (the WebAssembly build served to iPhones) has not been
   redeployed since v30.4, so the web app and `server/version.json` disagree —
   release step 7, `docs/GITHUB.md`. Nothing hard-fails on this seam by design.
