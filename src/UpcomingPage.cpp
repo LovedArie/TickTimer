@@ -200,7 +200,7 @@ void UpcomingPage::refreshEmptyState()
     } else {
         headline = tr("Your horizon is clear \u2713");
         hint = tr("Give a task a due date (and a time, if it has one) in the "
-                  "Activities tab and it will line up here.");
+                  "Life areas tab and it will line up here.");
     }
     m_empty->setText(QStringLiteral(
         "<div style='font-size:17px; font-weight:600; color:#2B2F36;'>%1</div>"

@@ -17,7 +17,7 @@ This defines the noteworthy terms of TickTimer so every stakeholder uses them th
 
 | Term | Definition | Format / data | Rules & relationships | Aliases |
 |---|---|---|---|---|
-| **Category** | A life-area that groups activities and tasks (e.g. Work/Study, Health, Rest). | `name`: text; `colour`: colour value; `folderId`: optional | `name` non-empty; deletable only when it contains **no activities and no tasks**; optionally lives in one Folder | life-area |
+| **Category** | A life-area that groups activities and tasks (e.g. Work/Study, Health, Rest). | `name`: text; `colour`: colour value; `folderId`: optional | `name` non-empty; deletable only when it contains **no activities and no tasks**; optionally lives in one Folder | life-area; "activity set" (the owner's phrase) |
 | **Folder** | A named grouping of Categories in the rail (e.g. "School"). | `name`: text | one level deep (no nesting); deletable only when it contains no categories | — |
 | **Activity** | A reusable *type* of thing the user does (e.g. "Study Math", "Gym"). Never "done" — types have no completion. | `name`: text | belongs to **exactly one** Category; cannot be deleted while used by an Event | — |
 | **Event** | A planned block placed on the calendar for a given day and time — the user's **intention**. | `date`; planned start/end stored as **minutes after midnight** (30-minute granularity; 1440 = midnight); `note`: text (optional) | references **exactly one** Activity; must **not overlap** another Event on the same day; up to 4 slots (2 h) | planned block, block |
@@ -33,15 +33,36 @@ This defines the noteworthy terms of TickTimer so every stakeholder uses them th
 
 | Term | What it is |
 |---|---|
+| **Life areas page** | The master-detail screen holding the rail of life-areas and, inside the selected one, its tasks and activities. **Called "Activities" until v31.1**, which made one word name both a container and its contents — see §4. |
 | **Agenda** | The scrollable 6 AM–midnight day timeline where blocks live. |
 | **Block** | An Event as drawn on the agenda (pastel fill, identity stripe, mini plan-vs-actual bar). |
 | **Glance panel** | The day view's live sidebar: focus/break totals, category bars, encouragement line. |
 | **View switcher** | The clickable period label ("Today") — click cycles Day → Week → Month. |
-| **Rail** | The left tree on the Activities page: folders and life-areas (the *master* in master-detail). |
-| **Detail pane** | The right side of the Activities page: the selected life-area's tasks and activities. |
+| **Rail** | The left tree on the Life areas page: folders and life-areas (the *master* in master-detail). |
+| **Detail pane** | The right side of the Life areas page: the selected life-area's tasks and activities. |
 | **Picker** | The choose-an-activity dialog opened by clicking a free slot. |
 | **Event card** | A block's detail dialog: reschedule, timer controls, note, delete. |
 
 ## 4. Notes
+
+### "Activity" names exactly one thing (v31.1)
+
+The word describes **one reusable type of thing you do** — "LOG635 - TP",
+"Gym". It never names the group they sit in. That group is a **Category**, and
+in every sentence a user reads it is a **life area**.
+
+The distinction was in this glossary and in some forty UI strings ("Life
+areas", "Life area colour", "Switch life area", "New life area…") from early
+on. One place contradicted it: the desktop nav tab was called **Activities**
+while the page contained both the rail of life areas and the activities within
+them — so the tab taught users that "activity" meant a container as well as a
+thing, which the owner reported as *"activity can mean two things: the activity
+action, and the activity set"*. The phone shell had already shipped saying
+"Life areas"; only the desktop array had drifted.
+
+Renamed in v31.1. **The test of any new name here: does it name the thing, or
+does it name what the thing contains?** A screen named after its contents
+collapses a level of the model every time someone reads it.
+
 
 The rules above (*no overlapping Events*, *`end ≥ start`*, the extended referential-integrity family) are behavioural requirements the implementation must enforce — and since construction, they are enforced in one place (the domain's aggregate root) and verified by the automated test suite.

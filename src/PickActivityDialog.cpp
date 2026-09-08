@@ -302,7 +302,7 @@ void PickActivityDialog::buildChoiceList()
 
     if (m_list->count() == 0) {
         auto* empty = new QListWidgetItem(
-            tr("No activities yet — add some in the Activities tab first."),
+            tr("No activities yet — add some in the Life areas tab first."),
             m_list);
         empty->setFlags(Qt::NoItemFlags);
         empty->setForeground(theme::inkSoft());

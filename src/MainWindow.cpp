@@ -554,7 +554,13 @@ MainWindow::MainWindow(const QString& username)
             [this](responsive::Mode mode) { applyChromeMode(mode); });
     applyChromeMode(responsive::modeOf(m_pages)); // pull at birth
 
-    const char* navNames[] = {"Calendar", "Upcoming", "Activities",
+    // "Life areas", not "Activities" (v31.1). The page holds BOTH the
+    // life-area rail and the activities inside it, so naming the tab after
+    // its contents made one word cover two levels -- the owner reported it as
+    // "activity can mean two things: the action, and the set". Every other
+    // string on the page already says "life area", and the PHONE nav has said
+    // "Life areas" since the mobile shell shipped; only this array drifted.
+    const char* navNames[] = {"Calendar", "Upcoming", "Life areas",
                               "Special days", "Pomodoro"};
     for (int i = 0; i < 5; ++i) {
         auto* b = new QToolButton(nav);

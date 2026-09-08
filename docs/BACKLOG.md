@@ -167,16 +167,6 @@ write when you pick it up — never here.*
 
 *Documentation and process debt. Small, but it is what rots first.*
 
-- **H6** **The "Activities" tab is the reason "activity" seems to mean two
-  things.** The domain and nearly every UI string are already clean — the
-  glossary defines Category with "life-area" as its synonym, and the screens
-  say "Life areas", "Life area colour", "Switch life area", "New life area…".
-  The exception is the nav tab, which is named **Activities** and contains
-  both the life-area rail and the activities inside it, plus the string "No
-  activities yet — add some in the Activities tab first." One page name
-  teaching the ambiguity that the other forty strings avoid. Rename the tab,
-  and add the distinction explicitly to `04_Glossary.md` §3 (UI component
-  names) so it stays decided.
 - **H5** **The phones are still on pre-v31 binaries.** Windows is done — 31.1.0
   is installed, running, and its registry entry agrees with its exes. The
   sideloaded APK and the WebAssembly app at `/app/` were never updated past
