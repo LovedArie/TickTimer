@@ -96,6 +96,40 @@ idea comes back on its own.
 *One line of intent only. The reasoning belongs in the design addendum you
 write when you pick it up — never here.*
 
+- **F6** Delete a single occurrence of a recurring block, leaving the rule and
+  every other date alone. **The domain already does this** —
+  `AppData::skipOccurrence(scheduleId, date)` exists and `Schedule::skipDates`
+  is persisted; `Schedule.h` calls it "the one piece of state a purely-derived
+  design would not need". This is a missing UI door, not a domain change.
+- **F7** Move a single occurrence of a recurring block to another date. Unlike
+  F6 there is no domain door yet, and it has to answer what happens to the
+  occurrence's `scheduleId` — a moved lecture is still that lecture, but the
+  rule must not re-materialise the slot it left.
+- **F8** The scope question F6 and F7 both need: **"only this occurrence" or
+  "this and all future ones"**, asked once and answered the same way by both.
+  Every calendar app has this; the reason it is its own item is that answering
+  it twice, differently, is how the two verbs drift apart.
+- **F9** When picking what to put in an open block, show **only activities** —
+  a task gets linked onto the activity afterwards instead of appearing as a
+  peer. **Reverses a deliberate decision**: `PickActivityDialog::
+  buildChoiceList` lists activities *and* open tasks on purpose ("the picker
+  mirrors what the rail already teaches: activities and tasks live side by
+  side under a category"), and task blocks were their own arc (design-doc
+  §3.25–§3.29). Worth doing, but it is a real design reversal and needs the
+  addendum to say why the old reason no longer holds.
+- **F10** Make the picker's text box a **live search** over existing
+  activities, creating a new one only when nothing matches — instead of
+  scrolling a grouped list. The two halves already exist separately
+  (`confirmAdHoc`/`enteredTitle` creates; the list browses); this joins them so
+  one box does both. Pairs naturally with F9, which is what makes a single flat
+  result list possible.
+- **F11** Edit an activity's colour icon. **Collides with a documented
+  decision**: `Activity.h` states plainly that an Activity holds no colour, and
+  why — it comes from its Category so that recolouring "Health" once changes
+  every gym session ever planned, design-doc §3.4's "reference, don't copy". A
+  per-activity colour is a real want and a real override of that, so the
+  addendum has to answer what happens when the category is then recoloured:
+  does the override win forever, or is it a tint the category still drives?
 - **F5** A door from "these 13 blocks look weekly" to a Schedule that **adopts**
   them instead of duplicating them — the thing B5 makes impossible today, and
   the only way an activity planned before v31 can ever get a rule.
