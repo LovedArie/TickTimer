@@ -116,6 +116,26 @@ idea comes back on its own.
 *One line of intent only. The reasoning belongs in the design addendum you
 write when you pick it up — never here.*
 
+- **F17** **A block should be able to carry SEVERAL tasks, because "what the
+  block is" and "what I plan to work on in it" are two questions the model
+  currently answers with one field.** `Event.h` gives a block three possible
+  IDENTITIES — `activityId`, `taskId`, or a bare `title` — as alternatives.
+  So `taskId` is doing double duty: it says what the block *is*, and it is
+  also the only way to say which deliverable the block is *about*. A
+  three-hour "LOG635 - TP" can therefore name exactly one lab. **This is the
+  same defect the project already fixed once**: v29.3 turned `movedToId` into
+  `movedToIds` after concluding the problem "was the link's CARDINALITY not
+  its direction" (`design-addendum-split-inverse.md`). Same shape, one field
+  over. Identity stays singular (activity, or ad-hoc title); contents become a
+  `taskIds` list, read additively beside the old `taskId` exactly as
+  `movedToIds` was. **F9 is the UI half of this same change** — a picker that
+  offers only activities makes sense precisely because tasks stop being a
+  block's identity and become its contents — so the two want one addendum,
+  not two. The question that must be answered in it: when a block covering
+  three tasks is tracked, does the time split between them, or does the block
+  stay the unit of tracking with the tasks recording only intent? (Splitting
+  invents minutes nobody measured, which is the thing "derive, don't store"
+  exists to prevent.)
 - **F12** **Drag a planned block to another slot or day** on the calendar —
   "move Friday's block to Saturday" without opening anything. Note what it has
   to answer that a dialog does not: dropping an occurrence of a recurring rule
