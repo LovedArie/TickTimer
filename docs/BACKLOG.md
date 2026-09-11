@@ -48,6 +48,23 @@ idea comes back on its own.
 
 ---
 
+## Now
+
+*The iteration in progress: ids only, in the order they will be done. The
+whole section is deleted when its release ships, along with the items' own
+lines below.*
+
+**v31.2 — move and swap planned blocks.** Then test the web app (iOS) and
+Android on that release.
+
+- **F18** · **F12** · **B8** · **H5** (phones and `/app/` to v31.2 as part of
+  the release)
+
+*Next iteration, as decided by the owner 2026-09-11:* **F6** with **F8** —
+delete one occurrence, asking the scope question.
+
+---
+
 ## Bugs
 
 *Found in use. One line: what you did, what you expected, what you saw.*
@@ -105,9 +122,6 @@ idea comes back on its own.
   "calendar" is doing two jobs. Same class as the folder-delete complaint in
   `design-addendum-folder-archiving.md`: the rule was right, the reason was
   invisible.
-- **B2** `/app/` (the WebAssembly build served to iPhones) has not been
-  redeployed since v30.4, so the web app and `server/version.json` disagree —
-  release step 7, `docs/GITHUB.md`. Nothing hard-fails on this seam by design.
 
 <!-- Add yours here, newest concern at the top of the section. -->
 
@@ -116,6 +130,27 @@ idea comes back on its own.
 *One line of intent only. The reasoning belongs in the design addendum you
 write when you pick it up — never here.*
 
+- **F19** **A red "now" line across the calendar.** The owner liked it in
+  `prototypes/move-and-swap.html` (2026-09-11). `AgendaWidget` never reads
+  the clock today; the line must come from `TrackerService::nowProvider`, not
+  `currentDateTime()`, so the debug panel's fake clock moves it too.
+- **F18** **Swap two planned blocks.** "Plan B at 13:00 has to happen at 10:00
+  instead, so Plan A takes 13:00." Owner decision 2026-09-11: they trade
+  START times and each keeps its own length, refused if either new spot is
+  full.
+- **F12** **Move a planned block to an open slot, on any day**, without
+  deleting and re-creating it — by drag on the calendar where it can be seen.
+  Dropping an occurrence of a recurring rule is F7 ground, so the addendum
+  has to say what happens to its `scheduleId` and the date it left.
+- **F6** Delete a single occurrence of a recurring block, leaving the rule and
+  every other date alone. **The domain already does this** —
+  `AppData::skipOccurrence(scheduleId, date)` exists and `Schedule::skipDates`
+  is persisted; `Schedule.h` calls it "the one piece of state a purely-derived
+  design would not need". This is a missing UI door, not a domain change.
+- **F8** The scope question F6 and F7 both need: **"only this occurrence" or
+  "this and all future ones"**, asked once and answered the same way by both.
+  Every calendar app has this; the reason it is its own item is that answering
+  it twice, differently, is how the two verbs drift apart.
 - **F17** **A block should be able to carry SEVERAL tasks, because "what the
   block is" and "what I plan to work on in it" are two questions the model
   currently answers with one field.** `Event.h` gives a block three possible
@@ -136,11 +171,6 @@ write when you pick it up — never here.*
   stay the unit of tracking with the tasks recording only intent? (Splitting
   invents minutes nobody measured, which is the thing "derive, don't store"
   exists to prevent.)
-- **F12** **Drag a planned block to another slot or day** on the calendar —
-  "move Friday's block to Saturday" without opening anything. Note what it has
-  to answer that a dialog does not: dropping an occurrence of a recurring rule
-  is F7 and F8 all over again, so the scope question has to be settled first or
-  the drag will invent its own answer.
 - **F13** **Make the day summary drillable.** The glance panel says you spent
   time in a life area; clicking one should open what you actually worked on
   inside it. The data is already there and already derived — Segments carry
@@ -167,11 +197,6 @@ write when you pick it up — never here.*
   and (b) what "link multiple pieces" means: one piece shared by several
   parents, or ticking several at once. The owner should say which; guessing
   here would design the wrong feature.
-- **F6** Delete a single occurrence of a recurring block, leaving the rule and
-  every other date alone. **The domain already does this** —
-  `AppData::skipOccurrence(scheduleId, date)` exists and `Schedule::skipDates`
-  is persisted; `Schedule.h` calls it "the one piece of state a purely-derived
-  design would not need". This is a missing UI door, not a domain change.
 - **F7** Move a single occurrence of a recurring block to another date. Unlike
   F6 there is no domain door yet, and it has to answer what happens to the
   occurrence's `scheduleId` — a moved lecture is still that lecture, but the
@@ -240,9 +265,10 @@ write when you pick it up — never here.*
 
 - **H5** **The phones are still on pre-v31 binaries.** Windows is done — 31.1.0
   is installed, running, and its registry entry agrees with its exes. The
-  sideloaded APK and the WebAssembly app at `/app/` were never updated past
-  v30, so both can still strip a format-16 planner through sync exactly as the
-  Start Menu copy did. The APK needs `JAVA_HOME` set from
+  sideloaded APK and the WebAssembly app at `/app/` are both **v30.8.1**,
+  deployed 31 Aug (`/app/` Last-Modified re-read 11 Sep; this absorbed B2,
+  which still claimed v30.4), so both can still strip a format-16 planner
+  through sync exactly as the Start Menu copy did. The APK needs `JAVA_HOME` set from
   `%APPDATA%\QtProject\QtCreator.ini` and its stamp checked with `aapt2 dump
   badging` before signing; `/app/` is release step 7 and nothing hard-fails on
   it.

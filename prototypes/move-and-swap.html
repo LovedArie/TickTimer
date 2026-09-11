@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TickTimer — Move &amp; swap prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F1F4F0; --surface:#FFFFFF; --ink:#272C33; --ink-soft:#616974;
+    --line:#E2E6E0; --focus:#2F7E6E; --break:#DD9B4A; --track:#EAEDE8;
+    --urgent:#C05B5B;
+    --font-display:'Nunito', system-ui, sans-serif;
+    --font-body:'Inter', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);
+       line-height:1.5;-webkit-font-smoothing:antialiased;font-size:14px;}
+  h1,h2,h3{font-family:var(--font-display);margin:0;font-weight:700;letter-spacing:-0.01em;}
+
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:12px 24px;background:var(--surface);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:30;flex-wrap:wrap;}
+  .brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}
+  .brand h1{font-size:19px;} .brand .tag{color:var(--ink-soft);font-size:12.5px;}
+  .protopill{background:rgba(224,164,74,0.16);border:1px solid rgba(224,164,74,0.5);
+    color:#8a5a12;border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:600;}
+  .topacts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .tbtn{border:1px solid var(--line);background:var(--surface);border-radius:9px;
+    padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;
+    font-family:var(--font-body);}
+  .tbtn:hover{border-color:var(--focus);color:var(--focus);}
+  .tbtn:disabled{opacity:.45;cursor:default;border-color:var(--line);color:var(--ink-soft);}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface);}
+  .seg button{border:none;background:none;padding:6px 14px;font-size:12.5px;font-weight:600;
+    font-family:var(--font-body);color:var(--ink-soft);cursor:pointer;}
+  .seg button+button{border-left:1px solid var(--line);}
+  .seg button.on{background:var(--focus);color:#fff;}
+  .seg.small button{padding:4px 10px;font-size:11.5px;}
+
+  .shell{max-width:1240px;margin:0 auto;padding:18px 24px 70px;}
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:20px;align-items:start;}
+  @media(max-width:960px){.layout{grid-template-columns:1fr;}}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;}
+  aside .panel+.panel{margin-top:14px;}
+  .panel h2{font-size:15px;margin-bottom:6px;}
+  .panel .sub{color:var(--ink-soft);font-size:12.5px;}
+  ol.try{margin:6px 0 0;padding-left:20px;font-size:12.5px;}
+  ol.try li{margin-bottom:6px;}
+  ul.q{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-soft);}
+  ul.q li{margin-bottom:5px;}
+
+  .daybar{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .daybar .date{font-family:var(--font-display);font-weight:700;font-size:17px;min-width:190px;text-align:center;}
+  .navbtn{border:1px solid var(--line);background:var(--surface);border-radius:8px;width:32px;height:32px;
+    cursor:pointer;color:var(--ink-soft);font-size:13px;}
+  .navbtn:hover{border-color:var(--focus);color:var(--focus);}
+  .nowchip{margin-left:auto;font-size:11.5px;color:var(--urgent);font-weight:600;}
+  .hint{color:var(--ink-soft);font-size:12.5px;margin-bottom:10px;}
+
+  .moving-banner{background:rgba(47,126,110,0.10);border:1px solid rgba(47,126,110,0.35);
+    color:#245f53;border-radius:11px;padding:10px 12px;font-size:12.5px;margin-bottom:10px;
+    display:flex;gap:10px;align-items:flex-start;}
+  .moving-banner .txt{flex:1;}
+  .moving-banner .why{color:var(--urgent);font-weight:600;margin-top:4px;}
+  .moving-banner button{border:none;background:var(--focus);color:#fff;border-radius:7px;
+    padding:5px 12px;font-size:12px;cursor:pointer;font-family:var(--font-body);}
+
+  /* ---- calendar ---- */
+  #grid{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;}
+  .cal{display:grid;column-gap:3px;}
+  .corner{}
+  .colhead{text-align:center;font-size:11.5px;font-weight:600;color:var(--ink-soft);padding-bottom:6px;}
+  .colhead.today{color:var(--focus);font-weight:800;border-bottom:2px solid var(--focus);}
+  .axis{position:relative;}
+  .axis .tl{position:absolute;right:6px;font-size:10.5px;color:var(--ink-soft);margin-top:-8px;}
+  .col{position:relative;border-left:1px solid var(--line);background-color:#FCFDFC;
+    background-image:linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(#EFF2ED 1px, transparent 1px);
+    background-size:100% calc(var(--slot) * 2), 100% var(--slot);}
+  .col .past{position:absolute;left:0;right:0;top:0;background:rgba(120,128,120,0.07);pointer-events:none;}
+  .col .nowline{position:absolute;left:0;right:0;border-top:2px solid var(--urgent);z-index:6;pointer-events:none;}
+  .col .nowline::before{content:"";position:absolute;left:-4px;top:-5px;width:8px;height:8px;border-radius:50%;background:var(--urgent);}
+  .moving .col{cursor:copy;}
+
+  .blk{position:absolute;border-radius:8px;padding:3px 7px 3px 9px;overflow:hidden;cursor:grab;
+    border-left:4px solid; z-index:3;line-height:1.25;}
+  .desktop .blk{touch-action:none;}
+  .blk .nm{font-family:var(--font-display);font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .blk .sp{font-size:10.5px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .blk .chips{display:flex;gap:3px;flex-wrap:wrap;margin-top:2px;}
+  .chip{font-size:9.5px;font-weight:600;border-radius:4px;padding:0 4px;background:rgba(0,0,0,0.06);color:var(--ink-soft);white-space:nowrap;}
+  .chip.live{background:rgba(192,91,91,0.14);color:var(--urgent);}
+  .chip.moved{background:rgba(221,155,74,0.2);color:#8a5a12;}
+  .week .blk .sp, .week .blk .chips{display:none;}
+  .week .blk .nm{font-size:10.5px;}
+  .blk.ended{opacity:.6;cursor:default;}
+  .blk.dragging{opacity:.35;pointer-events:none;}
+  .blk.picked{outline:2px dashed var(--focus);outline-offset:1px;}
+  .blk.held{transform:scale(.97);transition:transform .15s;}
+  .blk.swaphi{outline:3px solid var(--focus);outline-offset:1px;}
+  .blk.swapbad{outline:3px solid var(--urgent);outline-offset:1px;}
+  .blk.fresh{animation:pop .45s ease;}
+  @keyframes pop{0%{transform:scale(.94);opacity:.3;}100%{transform:scale(1);opacity:1;}}
+
+  #ghost{position:absolute;left:2px;right:2px;border-radius:8px;border:2px dashed var(--focus);
+    background:rgba(47,126,110,0.14);z-index:5;pointer-events:none;font-size:10.5px;color:var(--focus);
+    font-weight:600;padding:2px 6px;overflow:hidden;}
+  #ghost.bad{border-color:var(--urgent);background:rgba(192,91,91,0.12);color:var(--urgent);}
+  #tip{position:fixed;z-index:50;pointer-events:none;background:var(--surface);border:1px solid var(--line);
+    border-radius:9px;padding:6px 9px;font-size:12px;max-width:290px;box-shadow:0 6px 20px rgba(0,0,0,.12);}
+  #tip.bad{color:var(--urgent);border-color:rgba(192,91,91,.45);}
+
+  /* ---- phone frame ---- */
+  .phone{width:380px;max-width:100%;height:660px;border:10px solid #1f2328;border-radius:34px;overflow:hidden;
+    margin:0 auto;background:var(--surface);}
+  .phone .scroller{height:100%;overflow-y:auto;touch-action:pan-y;padding:8px 8px 40px;}
+  .phone .blk{touch-action:pan-y;}
+
+  /* ---- sheet ---- */
+  #sheet{position:fixed;inset:0;background:rgba(20,24,28,0.32);z-index:60;display:flex;align-items:center;justify-content:center;}
+  #sheet.bottom{align-items:flex-end;}
+  .card{background:var(--surface);border-radius:16px;padding:16px;width:340px;max-width:calc(100% - 24px);
+    box-shadow:0 12px 40px rgba(0,0,0,.2);margin-bottom:12px;}
+  .card .ct{font-family:var(--font-display);font-weight:800;font-size:16px;}
+  .card .cs{color:var(--ink-soft);font-size:12.5px;margin-bottom:8px;}
+  .card .note{font-size:12px;color:var(--ink-soft);margin:6px 0;}
+  .card .note.bad{color:var(--urgent);}
+  .card .acts{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+  .card .acts button{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px;
+    font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-body);color:var(--ink);}
+  .card .acts button.primary{background:var(--focus);border-color:var(--focus);color:#fff;}
+  .card .acts button:disabled{opacity:.45;cursor:default;}
+
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:70;background:#272C33;color:#fff;
+    border-radius:10px;padding:9px 14px;font-size:12.5px;max-width:min(560px,calc(100% - 24px));display:none;}
+  #toast.bad{background:var(--urgent);}
+
+  .rule{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:8px;font-size:12.5px;}
+  .rule .rt{font-weight:700;}
+  .rule .rs{color:var(--ink-soft);font-size:12px;}
+  .rule .ra{display:flex;gap:6px;margin-top:6px;}
+  .rule .ra button{font-size:11.5px;padding:3px 9px;}
+  label.bug{display:flex;gap:6px;align-items:flex-start;font-size:12px;color:var(--ink-soft);margin-top:10px;}
+  #log{max-height:280px;overflow-y:auto;font-size:12px;margin-top:4px;}
+  .lg{padding:5px 0;border-bottom:1px solid var(--line);}
+  .lg b{font-weight:700;}
+  .lg.refuse b{color:var(--urgent);}
+  .lg.move b,.lg.swap b{color:var(--focus);}
+  .lg.sync b{color:#8a5a12;}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>TickTimer</h1><span class="tag">Move &amp; swap planned blocks</span>
+    <span class="protopill">prototype for v31.2 · not the app</span>
+  </div>
+  <div class="topacts">
+    <div class="seg" id="viewSeg"><button data-view="day">Day</button><button data-view="week">Week</button></div>
+    <div class="seg" id="devSeg"><button data-dev="desktop">Desktop</button><button data-dev="phone">Phone</button></div>
+    <button class="tbtn" id="undoBtn">Undo</button>
+    <button class="tbtn" id="resetBtn">Reset</button>
+  </div>
+</header>
+
+<div class="shell">
+  <div class="layout">
+    <section class="panel" id="calPanel">
+      <div class="daybar">
+        <button class="navbtn" id="prevBtn" title="Back">&#9664;</button>
+        <div class="date" id="dateLabel"></div>
+        <button class="navbtn" id="nextBtn" title="Forward">&#9654;</button>
+        <button class="tbtn" id="todayBtn">Today</button>
+        <span id="holdWrap" hidden>
+          <span class="sub" style="font-size:11.5px;color:var(--ink-soft)">Hold a block:</span>
+          <span class="seg small" id="holdSeg"><button data-hold="menu">opens a menu</button><button data-hold="pick">picks it up</button></span>
+        </span>
+        <span class="nowchip">Pretend "now" is Fri Sep 11, 9:30 AM</span>
+      </div>
+      <div class="hint" id="hint"></div>
+      <div id="banner"></div>
+      <div id="frame"></div>
+    </section>
+
+    <aside>
+      <section class="panel">
+        <h2>Try this</h2>
+        <ol class="try">
+          <li><b>Swap:</b> drag <i>Plan A</i> (Fri 10 AM) and drop it on <i>Plan B</i> (1 PM). They trade start times; each keeps its length.</li>
+          <li><b>Move to another day:</b> switch to <b>Week</b>, drag <i>Plan A</i> into Saturday morning.</li>
+          <li><b>Full slot:</b> drop anything on Sat 2 PM (three blocks already there).</li>
+          <li><b>The past:</b> try to move <i>Gym</i> (Fri 8 AM), or drop something on Thursday.</li>
+          <li><b>Tracked time:</b> drag <i>Email &amp; admin</i> (25m tracked) to Saturday: refused. Later <i>today</i> works. <i>Standup call</i> is being timed right now, so it can't move at all.</li>
+          <li><b>Recurring:</b> drag Friday's <i>LOG635 - TP</i> to Saturday. Only that one moves, and Friday does not come back. Then press <b>+30 min</b> on the rule: the moved one stays put, next Friday's follows.</li>
+          <li><b>Phone:</b> switch to <b>Phone</b>. Hold a block, then tap where it goes. Try both "Hold a block" settings.</li>
+        </ol>
+      </section>
+      <section class="panel">
+        <h2>Questions while you test</h2>
+        <ul class="q">
+          <li>Phone: should holding a block open a menu, or pick it up straight away?</li>
+          <li>While moving, is one tap on an open slot too easy to hit by accident?</li>
+          <li>When a drop is refused, is the red preview + sentence enough?</li>
+          <li>Anything you expected to be able to move that it refused?</li>
+        </ul>
+      </section>
+      <section class="panel">
+        <h2>Recurring rules</h2>
+        <div class="sub">What the schedule remembers. "Skipped" dates are never re-created.</div>
+        <div id="rules"></div>
+        <label class="bug"><input type="checkbox" id="bugBox"> Show the bug: don't skip the date an occurrence leaves (the rule then re-creates it and you get two)</label>
+      </section>
+      <section class="panel">
+        <h2>What the app did</h2>
+        <div id="log"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div id="tip" hidden></div>
+<div id="toast"></div>
+<div id="sheet" hidden></div>
+
+<script>
+// ============================================================================
+// Throwaway prototype. The RULES below mirror what the C++ will enforce, so a
+// behaviour that feels wrong here is a design problem, not a JS bug to ignore.
+// ============================================================================
+const DAY_START = 7 * 60, DAY_END = 22 * 60, SLOT = 30, CAP = 3;
+const NOW = { date: '2026-09-11', min: 9 * 60 + 30 };
+const AREAS = {
+  school:   { name: 'School',   color: '#4A7CC4' },
+  health:   { name: 'Health',   color: '#3E9B6E' },
+  home:     { name: 'Home',     color: '#D08A3C' },
+  personal: { name: 'Personal', color: '#9A6BC4' },
+};
+
+// ---- dates & labels --------------------------------------------------------
+const DN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad = n => String(n).padStart(2, '0');
+const iso = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const parse = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return iso(d); };
+const weekday = s => parse(s).getDay();
+const mondayOf = s => addDays(s, -((weekday(s) + 6) % 7));
+const shortDay = s => { const d = parse(s); return DN[d.getDay()] + ' ' + MN[d.getMonth()] + ' ' + d.getDate(); };
+const longDay = s => { const d = parse(s); return DL[d.getDay()] + ', ' + MN[d.getMonth()] + ' ' + d.getDate(); };
+function t(min) {
+  const h = Math.floor(min / 60), m = min % 60, hh = h % 12 || 12;
+  return hh + (m ? ':' + pad(m) : '') + (h >= 12 && h < 24 ? ' PM' : ' AM');
+}
+function dur(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return (h ? h + 'h' : '') + (m ? (h ? ' ' : '') + m + 'm' : '') || '0m';
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const len = b => b.end - b.start;
+
+// ---- state -----------------------------------------------------------------
+function initialState() {
+  let n = 0;
+  const id = () => 'b' + (++n);
+  const H = h => h * 60;
+  const rules = [
+    { id: 'r1', title: 'LOG635 - COURS', area: 'school', weekday: 2, start: H(13) + 30, end: H(16) + 30, from: '2026-09-01', skip: [] },
+    { id: 'r2', title: 'LOG635 - TP',    area: 'school', weekday: 5, start: H(16),      end: H(17) + 30, from: '2026-09-01', skip: [] },
+  ];
+  const blocks = [
+    { id: id(), date: '2026-09-08', start: H(13) + 30, end: H(16) + 30, title: 'LOG635 - COURS', area: 'school', rule: 'r1', tracked: 170 },
+    { id: id(), date: '2026-09-09', start: H(10), end: H(12), title: 'Study GTI350', area: 'school', tracked: 95 },
+    { id: id(), date: '2026-09-11', start: H(8),  end: H(9),  title: 'Gym', area: 'health', tracked: 55 },
+    { id: id(), date: '2026-09-11', start: H(9),  end: H(10) + 30, title: 'Email & admin', area: 'personal', tracked: 25 },
+    { id: id(), date: '2026-09-11', start: H(9),  end: H(10), title: 'Standup call', area: 'school', tracked: 10, running: true },
+    { id: id(), date: '2026-09-11', start: H(10), end: H(11), title: 'Plan A: Study GTI350', area: 'school' },
+    { id: id(), date: '2026-09-11', start: H(13), end: H(15), title: 'Plan B: LOG635 report', area: 'school' },
+    { id: id(), date: '2026-09-12', start: H(10), end: H(11), title: 'Groceries', area: 'home' },
+    { id: id(), date: '2026-09-12', start: H(14), end: H(15), title: 'Call mom', area: 'personal' },
+    { id: id(), date: '2026-09-12', start: H(14), end: H(15), title: 'Laundry', area: 'home' },
+    { id: id(), date: '2026-09-12', start: H(14), end: H(15), title: 'Read', area: 'personal' },
+    { id: id(), date: '2026-09-13', start: H(11), end: H(12), title: 'Long walk', area: 'health' },
+  ];
+  return { rules, blocks, nextId: n };
+}
+
+let state = initialState();
+let undoStack = [];
+let view = 'day', device = 'desktop', holdMode = 'menu';
+let curDate = NOW.date;
+let moving = null;          // { id, why }
+let ptr = null;             // the pointer gesture in progress
+let slotPx = 28;
+let freshIds = new Set();
+const logItems = [];
+
+const byId = id => state.blocks.find(b => b.id === id);
+const ruleOf = b => b.rule ? state.rules.find(r => r.id === b.rule) : null;
+const bugMode = () => document.getElementById('bugBox').checked;
+
+function snapshot() {
+  undoStack.push(JSON.stringify(state));
+  if (undoStack.length > 50) undoStack.shift();
+}
+
+// ---- the rules (what AppData will enforce) ----------------------------------
+const isEnded = b => b.date < NOW.date || (b.date === NOW.date && b.end <= NOW.min);
+const startsInPast = (date, start) => date < NOW.date || (date === NOW.date && start < NOW.min);
+
+function peak(blocks, date, start, end) {
+  let p = 0;
+  for (let m = start; m < end; m += SLOT) {
+    let n = 0;
+    for (const b of blocks) if (b.date === date && b.start <= m && b.end > m) n++;
+    p = Math.max(p, n);
+  }
+  return p;
+}
+
+// "Why can this block not go to (date, start)?" Empty = it can.
+// `exclude` and `extra` exist for the swap: both blocks leave their spots,
+// and each must be checked against the OTHER one's new position.
+function whyCannotMove(b, date, start, exclude = [b.id], extra = []) {
+  const end = start + len(b);
+  if (isEnded(b))
+    return `"${b.title}" has already happened. Missed blocks are handled by the catch-up card, not by moving them.`;
+  if (b.running)
+    return `"${b.title}" is being timed right now. Stop the timer first; moving it would leave the tracked time outside the plan.`;
+  if (startsInPast(date, start))
+    return `${shortDay(date)} at ${t(start)} has already passed.`;
+  if (b.tracked > 0 && date !== b.date)
+    return `"${b.title}" already has ${dur(b.tracked || 0)} tracked. That time belongs to ${shortDay(b.date)}, so it can only move within that day.`;
+  if (start < DAY_START || end > DAY_END)
+    return `It would run past the end of the day (${t(DAY_END)} in this prototype).`;
+  if (b.rule && date !== b.date &&
+      state.blocks.some(o => o.rule === b.rule && o.date === date && !exclude.includes(o.id)))
+    return `${shortDay(date)} already has its own "${ruleOf(b).title}". A rule has one occurrence per day.`;
+  const others = state.blocks.filter(o => !exclude.includes(o.id)).concat(extra);
+  if (peak(others, date, start, end) + 1 > CAP)
+    return 'That time is already full. Three blocks at once is the most the day can show.';
+  return '';
+}
+
+function swapTargets(a, b) {
+  const aNew = { ...a, date: b.date, start: b.start, end: b.start + len(a) };
+  const bNew = { ...b, date: a.date, start: a.start, end: a.start + len(b) };
+  return { aNew, bNew };
+}
+
+function whyCannotSwap(a, b) {
+  const { aNew, bNew } = swapTargets(a, b);
+  const ex = [a.id, b.id];
+  let why = whyCannotMove(a, aNew.date, aNew.start, ex, [bNew]);
+  if (why) return `Can't swap. "${a.title}" can't go to ${shortDay(aNew.date)} ${t(aNew.start)}: ${why}`;
+  why = whyCannotMove(b, bNew.date, bNew.start, ex, [aNew]);
+  if (why) return `Can't swap. "${b.title}" can't go to ${shortDay(bNew.date)} ${t(bNew.start)}: ${why}`;
+  return '';
+}
+
+// An occurrence that no longer sits where its rule would put it was moved by
+// hand. That counts as "touched", so a rule edit leaves it alone.
+function displaced(b) {
+  const r = ruleOf(b);
+  return !!r && (weekday(b.date) !== r.weekday || b.start !== r.start || b.end !== r.end);
+}
+const untouched = b => !(b.tracked > 0) && !b.running && !displaced(b);
+
+// The date bookkeeping a moved occurrence needs, applied for every block that
+// changed date: the date it LEFT is skipped (or the rule re-creates it), and a
+// skipped date it ARRIVES on is un-skipped (it has an occurrence again).
+function recordDateChanges(moves) {
+  const notes = [];
+  if (bugMode()) {
+    if (moves.some(m => m.b.rule && m.from !== m.to)) notes.push('bug mode: the date it left was NOT skipped');
+    return notes;
+  }
+  // One rule: for a date the rule produces, "skipped" means "no occurrence
+  // there". Dates the rule never produces (a Saturday for a Friday lab) are
+  // never written into the skip list at all.
+  const ruleProduces = (r, d) => weekday(d) === r.weekday && d >= r.from;
+  const pairs = [];
+  for (const m of moves) {
+    const r = ruleOf(m.b);
+    if (r && m.from !== m.to) pairs.push([r, m.from], [r, m.to]);
+  }
+  for (const [r, d] of pairs) {
+    if (!ruleProduces(r, d)) continue;
+    const has = state.blocks.some(b => b.rule === r.id && b.date === d);
+    const i = r.skip.indexOf(d);
+    if (has && i >= 0) { r.skip.splice(i, 1); notes.push(`un-skipped ${shortDay(d)} on "${r.title}"`); }
+    if (!has && i < 0) { r.skip.push(d); notes.push(`skipped ${shortDay(d)} on "${r.title}"`); }
+  }
+  return notes;
+}
+
+// Materialise every missing occurrence in the next four weeks. Same key the
+// C++ uses: rule + date. Never backfills the past; skips a full slot.
+function syncRules() {
+  const until = addDays(NOW.date, 27);
+  const made = [];
+  for (const r of state.rules) {
+    for (let d = NOW.date; d <= until; d = addDays(d, 1)) {
+      if (weekday(d) !== r.weekday || d < r.from || r.skip.includes(d)) continue;
+      if (state.blocks.some(b => b.rule === r.id && b.date === d)) continue;
+      if (peak(state.blocks, d, r.start, r.end) + 1 > CAP) continue;
+      const b = { id: 'b' + (++state.nextId), date: d, start: r.start, end: r.end, title: r.title, area: r.area, rule: r.id };
+      state.blocks.push(b);
+      made.push(b);
+    }
+  }
+  return made;
+}
+
+// ---- the doors -------------------------------------------------------------
+function doMove(b, date, start) {
+  if (b.date === date && b.start === start) return false;
+  const why = whyCannotMove(b, date, start);
+  if (why) { refuse(why); return false; }
+  snapshot();
+  const from = b.date, was = `${shortDay(b.date)} ${t(b.start)}`, length = len(b);
+  b.date = date; b.start = start; b.end = start + length; // the length is kept
+  return finishMove([{ b, from, to: date }], `"${b.title}" ${was} → ${shortDay(date)} ${t(start)}`, 'move');
+}
+
+function doSwap(a, b) {
+  if (a.id === b.id) return false;
+  const why = whyCannotSwap(a, b);
+  if (why) { refuse(why); return false; }
+  snapshot();
+  const { aNew, bNew } = swapTargets(a, b);
+  const moves = [{ b: a, from: a.date, to: aNew.date }, { b: b, from: b.date, to: bNew.date }];
+  const text = `"${a.title}" → ${shortDay(aNew.date)} ${t(aNew.start)}–${t(aNew.end)}, ` +
+               `"${b.title}" → ${shortDay(bNew.date)} ${t(bNew.start)}–${t(bNew.end)}`;
+  Object.assign(a, { date: aNew.date, start: aNew.start, end: aNew.end });
+  Object.assign(b, { date: bNew.date, start: bNew.start, end: bNew.end });
+  return finishMove(moves, text, 'swap');
+}
+
+function finishMove(moves, text, kind) {
+  const notes = recordDateChanges(moves);
+  const made = syncRules();
+  log(kind, kind === 'swap' ? 'Swapped' : 'Moved', text + (notes.length ? ` (${notes.join('; ')})` : ''));
+  if (made.length) log('sync', 'Rule re-created', made.map(b => `"${b.title}" on ${shortDay(b.date)}`).join(', ') + ' — that is a duplicate');
+  freshIds = new Set(moves.map(m => m.b.id));
+  if (moving) cancelMoving(false);
+  render();
+  toast(kind === 'swap' ? 'Swapped' : 'Moved', false);
+  return true;
+}
+
+function shiftRule(r, delta) {
+  if (r.start + delta < DAY_START || r.end + delta > DAY_END) { refuse('The rule would leave the day.'); return; }
+  snapshot();
+  const future = state.blocks.filter(b => b.rule === r.id && b.date >= NOW.date && !isEnded(b));
+  const withdraw = future.filter(untouched);           // judged against the OLD rule
+  const kept = future.length - withdraw.length;
+  state.blocks = state.blocks.filter(b => !withdraw.includes(b));
+  r.start += delta; r.end += delta;
+  const made = syncRules();
+  log('sync', 'Rule edited', `"${r.title}" now ${t(r.start)}–${t(r.end)}: withdrew ${withdraw.length} untouched, re-made ${made.length}, kept ${kept} that were moved or tracked`);
+  freshIds = new Set(made.map(b => b.id));
+  render();
+}
+
+// ---- rendering -------------------------------------------------------------
+function daysShown() {
+  if (view === 'day') return [curDate];
+  const mon = mondayOf(curDate);
+  return [0, 1, 2, 3, 4, 5, 6].map(i => addDays(mon, i));
+}
+
+function layoutDay(blocks) {
+  const sorted = [...blocks].sort((x, y) => x.start - y.start || x.end - y.end);
+  const res = {};
+  let cluster = [], clusterEnd = -1;
+  const flush = () => {
+    const cols = [];
+    for (const b of cluster) {
+      let c = 0;
+      while (cols[c] !== undefined && cols[c] > b.start) c++;
+      cols[c] = b.end;
+      res[b.id] = { col: c };
+    }
+    for (const b of cluster) res[b.id].cols = cols.length;
+    cluster = [];
+  };
+  for (const b of sorted) {
+    if (cluster.length && b.start >= clusterEnd) { flush(); clusterEnd = -1; }
+    cluster.push(b);
+    clusterEnd = Math.max(clusterEnd, b.end);
+  }
+  if (cluster.length) flush();
+  return res;
+}
+
+const hexA = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
+};
+
+function render() {
+  const days = daysShown();
+  slotPx = device === 'phone' ? 40 : (view === 'week' ? 20 : 28);
+  const height = (DAY_END - DAY_START) / SLOT * slotPx;
+  const y = min => (min - DAY_START) / SLOT * slotPx;
+
+  let html = `<div class="cal ${view}" style="--slot:${slotPx}px;grid-template-columns:${device === 'phone' ? 40 : 52}px repeat(${days.length},minmax(0,1fr))">`;
+  html += '<div class="corner"></div>';
+  for (const d of days)
+    html += `<div class="colhead ${d === NOW.date ? 'today' : ''}">${view === 'week' ? DN[weekday(d)] + ' ' + parse(d).getDate() : shortDay(d)}</div>`;
+  html += `<div class="axis" style="height:${height}px">`;
+  for (let h = DAY_START; h < DAY_END; h += 60)
+    html += `<div class="tl" style="top:${y(h)}px">${t(h).replace(':00', '')}</div>`;
+  html += '</div>';
+
+  for (const d of days) {
+    html += `<div class="col" data-date="${d}" style="height:${height}px">`;
+    if (d < NOW.date) html += `<div class="past" style="height:${height}px"></div>`;
+    else if (d === NOW.date) {
+      html += `<div class="past" style="height:${y(NOW.min)}px"></div>`;
+      html += `<div class="nowline" style="top:${y(NOW.min)}px"></div>`;
+    }
+    const dayBlocks = state.blocks.filter(b => b.date === d);
+    const lay = layoutDay(dayBlocks);
+    for (const b of dayBlocks) {
+      const a = AREAS[b.area], L = lay[b.id];
+      const chips = [];
+      if (b.running) chips.push('<span class="chip live">live</span>');
+      if (b.tracked) chips.push(`<span class="chip">${dur(b.tracked)} tracked</span>`);
+      if (b.rule) chips.push(displaced(b) ? '<span class="chip moved">weekly · moved</span>' : '<span class="chip">weekly</span>');
+      const cls = ['blk', isEnded(b) ? 'ended' : '', moving && moving.id === b.id ? 'picked' : '', freshIds.has(b.id) ? 'fresh' : ''].join(' ');
+      html += `<div class="${cls}" data-id="${b.id}" style="top:${y(b.start) + 1}px;height:${len(b) / SLOT * slotPx - 2}px;` +
+              `left:calc(${L.col / L.cols * 100}% + 2px);width:calc(${100 / L.cols}% - 4px);` +
+              `background:${hexA(a.color, 0.16)};border-left-color:${a.color}">` +
+              `<div class="nm">${esc(b.title)}</div><div class="sp">${t(b.start)} – ${t(b.end)}</div>` +
+              `<div class="chips">${chips.join('')}</div></div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  const frame = document.getElementById('frame');
+  frame.className = device + (moving ? ' moving' : '');
+  frame.innerHTML = device === 'phone'
+    ? `<div class="phone"><div class="scroller"><div id="grid">${html}</div></div></div>`
+    : `<div id="grid">${html}</div>`;
+  freshIds = new Set();
+
+  document.getElementById('dateLabel').textContent = view === 'day'
+    ? longDay(curDate)
+    : `Week of ${shortDay(mondayOf(curDate))}`;
+  document.querySelectorAll('#viewSeg button').forEach(x => x.classList.toggle('on', x.dataset.view === view));
+  document.querySelectorAll('#devSeg button').forEach(x => x.classList.toggle('on', x.dataset.dev === device));
+  document.querySelectorAll('#holdSeg button').forEach(x => x.classList.toggle('on', x.dataset.hold === holdMode));
+  document.getElementById('holdWrap').hidden = device !== 'phone';
+  document.getElementById('undoBtn').disabled = undoStack.length === 0;
+  document.getElementById('hint').textContent = device === 'phone'
+    ? (holdMode === 'menu'
+        ? 'Phone: tap a block to open it. Hold a block (half a second) for Move or swap. Scrolling still works.'
+        : 'Phone: tap a block to open it. Hold a block (half a second) to pick it up, then tap where it goes.')
+    : (view === 'day'
+        ? 'Desktop: drag a block up or down to move it, or drop it on another block to swap. For another day use Week view, or open the block and press "Move or swap…".'
+        : 'Desktop: drag a block to any slot on any day, or drop it on another block to swap.');
+  renderBanner();
+  renderRules();
+  bindGrid();
+  // Keep the phone's scroll position across re-renders; the first view opens at 9 AM.
+  const sc = document.querySelector('.phone .scroller');
+  if (sc) {
+    sc.scrollTop = render.phoneScroll ?? (y(9 * 60) - 20);
+    sc.addEventListener('scroll', () => { render.phoneScroll = sc.scrollTop; });
+  }
+}
+
+function renderBanner() {
+  const el = document.getElementById('banner');
+  if (!moving) { el.innerHTML = ''; return; }
+  const b = byId(moving.id);
+  const tapWord = device === 'phone' ? 'Tap' : 'Click';
+  el.innerHTML = `<div class="moving-banner"><div class="txt">
+      <b>Moving "${esc(b.title)}"</b> (${dur(len(b))}, from ${shortDay(b.date)} ${t(b.start)}).
+      ${tapWord} an open slot to move it there, or ${tapWord.toLowerCase()} another block to swap.
+      Use &#9664; &#9654; to reach another day. ${tapWord} the block itself to stop.
+      ${moving.why ? `<div class="why">${esc(moving.why)}</div>` : ''}</div>
+      <button id="cancelMove">Cancel</button></div>`;
+  document.getElementById('cancelMove').onclick = () => cancelMoving(true);
+}
+
+function renderRules() {
+  const el = document.getElementById('rules');
+  el.innerHTML = state.rules.map(r => `<div class="rule">
+      <div class="rt">${esc(r.title)}</div>
+      <div class="rs">Every ${DL[r.weekday]}, ${t(r.start)} – ${t(r.end)}</div>
+      <div class="rs">Skipped: ${r.skip.length ? r.skip.map(shortDay).join(', ') : 'none'}</div>
+      <div class="ra"><button class="tbtn" data-rule="${r.id}" data-delta="-30">−30 min</button>
+      <button class="tbtn" data-rule="${r.id}" data-delta="30">+30 min</button></div></div>`).join('');
+  el.querySelectorAll('button').forEach(btn => btn.onclick = () =>
+    shiftRule(state.rules.find(r => r.id === btn.dataset.rule), Number(btn.dataset.delta)));
+}
+
+function log(kind, label, text) {
+  logItems.unshift({ kind, label, text });
+  if (logItems.length > 40) logItems.pop();
+  document.getElementById('log').innerHTML = logItems.length
+    ? logItems.map(i => `<div class="lg ${i.kind}"><b>${esc(i.label)}:</b> ${esc(i.text)}</div>`).join('')
+    : '<div class="sub">Nothing yet.</div>';
+}
+
+let toastTimer = null;
+function toast(msg, bad) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = bad ? 'bad' : '';
+  el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.style.display = 'none', bad ? 4500 : 1600);
+}
+
+function refuse(why) {
+  log('refuse', 'Refused', why);
+  toast(why, true);
+  if (moving) { moving.why = why; renderBanner(); }
+}
+
+// ---- previews (desktop drag, and hovering while moving) --------------------
+const ghost = Object.assign(document.createElement('div'), { id: 'ghost' });
+const tip = document.getElementById('tip');
+
+function clearSwapHi() {
+  document.querySelectorAll('.swaphi,.swapbad').forEach(e => e.classList.remove('swaphi', 'swapbad'));
+}
+function hidePreview() { ghost.remove(); tip.hidden = true; clearSwapHi(); }
+function showTip(e, text, bad) {
+  tip.textContent = text;
+  tip.className = bad ? 'bad' : '';
+  tip.hidden = false;
+  const x = Math.min(e.clientX + 16, window.innerWidth - 300);
+  tip.style.left = x + 'px';
+  tip.style.top = (e.clientY + 18) + 'px';
+}
+
+function minutesAt(col, clientY, offset, snap) {
+  const r = col.getBoundingClientRect();
+  let m = DAY_START + (clientY - r.top) / slotPx * SLOT - offset;
+  const k = (m - DAY_START) / SLOT;
+  return DAY_START + (snap === 'round' ? Math.round(k) : Math.floor(k)) * SLOT;
+}
+
+// What would happen if `b` were released at this pointer position?
+function targetAt(e, b, offset, snap) {
+  clearSwapHi();
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  if (!under) return null;
+  const blkEl = under.closest('.blk');
+  if (blkEl && blkEl.dataset.id !== b.id) {
+    const o = byId(blkEl.dataset.id);
+    const why = whyCannotSwap(b, o);
+    blkEl.classList.add(why ? 'swapbad' : 'swaphi');
+    ghost.remove();
+    const { aNew, bNew } = swapTargets(b, o);
+    showTip(e, why || `Swap: "${b.title}" → ${shortDay(aNew.date)} ${t(aNew.start)}, "${o.title}" → ${shortDay(bNew.date)} ${t(bNew.start)}`, !!why);
+    return { kind: 'swap', o, why };
+  }
+  const col = under.closest('.col');
+  if (!col) { hidePreview(); return null; }
+  let m = minutesAt(col, e.clientY, offset, snap);
+  m = Math.max(DAY_START, Math.min(DAY_END - len(b), m));
+  const date = col.dataset.date;
+  const same = date === b.date && m === b.start;
+  const why = same ? '' : whyCannotMove(b, date, m);
+  ghost.className = why ? 'bad' : '';
+  ghost.style.top = ((m - DAY_START) / SLOT * slotPx + 1) + 'px';
+  ghost.style.height = (len(b) / SLOT * slotPx - 2) + 'px';
+  ghost.textContent = `${t(m)} – ${t(m + len(b))}`;
+  col.appendChild(ghost);
+  showTip(e, same ? 'Drop here to leave it where it is.' : (why || `Move to ${shortDay(date)} ${t(m)} – ${t(m + len(b))}`), !!why);
+  return { kind: 'move', date, start: m, why, same };
+}
+
+// ---- gestures --------------------------------------------------------------
+function bindGrid() {
+  const grid = document.getElementById('grid');
+  grid.addEventListener('pointerdown', onPointerDown);
+  grid.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    const el = e.target.closest('.blk');
+    if (el && device === 'desktop' && !moving) openActions(byId(el.dataset.id));
+  });
+  grid.addEventListener('pointermove', e => {
+    if (ptr || !moving || device !== 'desktop' || e.pointerType !== 'mouse') return;
+    targetAt(e, byId(moving.id), 0, 'floor');
+  });
+  grid.addEventListener('pointerleave', () => { if (!ptr) hidePreview(); });
+}
+
+function onPointerDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const el = e.target.closest('.blk');
+  const col = e.target.closest('.col');
+  if (!el && !col) return;
+  ptr = { sx: e.clientX, sy: e.clientY, el, moved: false, held: false, timer: null, drag: null };
+
+  if (device === 'phone') {
+    if (el && !moving) {
+      ptr.timer = setTimeout(() => {
+        if (!ptr) return;
+        ptr.held = true;
+        el.classList.add('held');
+        if (navigator.vibrate) navigator.vibrate(15);
+        const b = byId(el.dataset.id);
+        if (holdMode === 'pick') startMoving(b); else openActions(b);
+      }, 450);
+    }
+    return;
+  }
+  if (el && !moving) {
+    const b = byId(el.dataset.id);
+    const r = el.closest('.col').getBoundingClientRect();
+    ptr.drag = { b, offset: DAY_START + (e.clientY - r.top) / slotPx * SLOT - b.start, active: false };
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+  }
+}
+
+window.addEventListener('pointermove', e => {
+  if (!ptr) return;
+  const dist = Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy);
+  if (device === 'phone') {
+    if (dist > 8) { ptr.moved = true; clearTimeout(ptr.timer); }
+    return;
+  }
+  if (ptr.drag) {
+    if (!ptr.drag.active) {
+      if (dist < 5) return;
+      if (isEnded(ptr.drag.b)) { ptr.moved = true; }
+      ptr.drag.active = true;
+      ptr.moved = true;
+      ptr.el.classList.add('dragging');
+    }
+    ptr.drag.target = targetAt(e, ptr.drag.b, ptr.drag.offset, 'round');
+  } else if (dist > 5) {
+    ptr.moved = true;
+  }
+});
+
+window.addEventListener('pointerup', e => {
+  if (!ptr) return;
+  const p = ptr;
+  ptr = null;
+  clearTimeout(p.timer);
+  if (p.drag && p.drag.active) {
+    const tgt = targetAt(e, p.drag.b, p.drag.offset, 'round');
+    hidePreview();
+    p.el.classList.remove('dragging');
+    if (!tgt || (tgt.kind === 'move' && tgt.same)) return;
+    if (tgt.kind === 'swap') doSwap(p.drag.b, tgt.o);
+    else doMove(p.drag.b, tgt.date, tgt.start);
+    return;
+  }
+  if (p.el) p.el.classList.remove('held');
+  if (p.moved || p.held) return;
+  onTap(e, p.el);
+});
+
+window.addEventListener('pointercancel', () => {
+  if (!ptr) return;
+  clearTimeout(ptr.timer);
+  if (ptr.el) ptr.el.classList.remove('held', 'dragging');
+  hidePreview();
+  ptr = null;
+});
+
+function onTap(e, el) {
+  if (moving) {
+    const b = byId(moving.id);
+    if (el) {
+      const o = byId(el.dataset.id);
+      if (o.id === b.id) { cancelMoving(true); return; }
+      doSwap(b, o);
+      return;
+    }
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const col = under && under.closest('.col');
+    if (!col) return;
+    const m = Math.max(DAY_START, Math.min(DAY_END - len(b), minutesAt(col, e.clientY, 0, 'floor')));
+    if (col.dataset.date === b.date && m === b.start) return;
+    doMove(b, col.dataset.date, m);
+    return;
+  }
+  if (el) openDetails(byId(el.dataset.id));
+}
+
+// ---- moving mode -----------------------------------------------------------
+function startMoving(b) {
+  closeSheet();
+  if (isEnded(b)) { refuse(whyCannotMove(b, b.date, b.start)); return; }
+  moving = { id: b.id, why: '' };
+  log('move', 'Picked up', `"${b.title}"`);
+  render();
+}
+function cancelMoving(rerender) {
+  moving = null;
+  hidePreview();
+  if (rerender) render();
+}
+
+// ---- sheets ----------------------------------------------------------------
+function blockSummary(b) {
+  const r = ruleOf(b);
+  let notes = '';
+  if (r) notes += `<div class="note">Part of the weekly rule "${esc(r.title)}". Moving or swapping it changes only this one.</div>`;
+  if (b.tracked || b.running) notes += `<div class="note">${dur(b.tracked || 0)} tracked${b.running ? ', running now' : ''}. It can move within ${shortDay(b.date)} only.</div>`;
+  if (isEnded(b)) notes += `<div class="note bad">This block has passed. In the app, the catch-up card is where it gets rescheduled.</div>`;
+  return `<div class="ct">${esc(b.title)}</div>
+    <div class="cs">${longDay(b.date)} · ${t(b.start)} – ${t(b.end)} (${dur(len(b))}) · ${AREAS[b.area].name}</div>${notes}`;
+}
+
+function openSheet(inner) {
+  const sh = document.getElementById('sheet');
+  sh.className = device === 'phone' ? 'bottom' : '';
+  sh.innerHTML = `<div class="card">${inner}</div>`;
+  sh.hidden = false;
+  sh.onclick = ev => { if (ev.target === sh) closeSheet(); };
+  return sh;
+}
+function closeSheet() {
+  const sh = document.getElementById('sheet');
+  sh.hidden = true;
+  sh.innerHTML = '';
+  document.querySelectorAll('.held').forEach(x => x.classList.remove('held'));
+}
+
+function openDetails(b) {
+  const sh = openSheet(`${blockSummary(b)}
+    <div class="note">This stands in for the block window (EventDialog).</div>
+    <div class="acts">
+      <button class="primary" id="actMove" ${isEnded(b) ? 'disabled' : ''}>Move or swap…</button>
+      <button id="actClose">Close</button>
+    </div>
+    ${device === 'desktop' ? '<div class="note">On the desktop you can also just drag the block.</div>' : ''}`);
+  sh.querySelector('#actMove').onclick = () => startMoving(b);
+  sh.querySelector('#actClose').onclick = closeSheet;
+}
+
+function openActions(b) {
+  const sh = openSheet(`${blockSummary(b)}
+    <div class="acts">
+      <button class="primary" id="actMove" ${isEnded(b) ? 'disabled' : ''}>Move or swap…</button>
+      <button id="actOpen">Open</button>
+      <button id="actClose">Cancel</button>
+    </div>`);
+  sh.querySelector('#actMove').onclick = () => startMoving(b);
+  sh.querySelector('#actOpen').onclick = () => openDetails(b);
+  sh.querySelector('#actClose').onclick = closeSheet;
+}
+
+// ---- chrome ----------------------------------------------------------------
+document.getElementById('viewSeg').onclick = e => {
+  if (!e.target.dataset.view) return;
+  view = e.target.dataset.view;
+  render();
+};
+document.getElementById('devSeg').onclick = e => {
+  if (!e.target.dataset.dev) return;
+  device = e.target.dataset.dev;
+  cancelMoving(false);
+  render();
+};
+document.getElementById('holdSeg').onclick = e => {
+  if (!e.target.dataset.hold) return;
+  holdMode = e.target.dataset.hold;
+  render();
+};
+document.getElementById('prevBtn').onclick = () => { curDate = addDays(curDate, view === 'week' ? -7 : -1); render(); };
+document.getElementById('nextBtn').onclick = () => { curDate = addDays(curDate, view === 'week' ? 7 : 1); render(); };
+document.getElementById('todayBtn').onclick = () => { curDate = NOW.date; render(); };
+document.getElementById('undoBtn').onclick = () => {
+  if (!undoStack.length) return;
+  state = JSON.parse(undoStack.pop());
+  cancelMoving(false);
+  log('sync', 'Undone', 'back to the previous state');
+  render();
+};
+document.getElementById('resetBtn').onclick = () => {
+  state = initialState();
+  undoStack = [];
+  logItems.length = 0;
+  cancelMoving(false);
+  const made = syncRules();
+  log('sync', 'Start', `the rules made ${made.length} upcoming occurrences`);
+  render();
+};
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!document.getElementById('sheet').hidden) closeSheet();
+  else if (moving) cancelMoving(true);
+});
+
+document.getElementById('resetBtn').onclick();
+</script>
+</body>
+</html>
