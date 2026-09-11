@@ -95,6 +95,8 @@ set(DOMAIN_SOURCES
     include/Merge.h
     # v31.3 - concurrency and column packing, pure and domain-only
     include/DayLayout.h
+    # 31.2.0 - moving and swapping planned blocks, pure and domain-only
+    include/BlockMove.h
     include/Segment.h
     include/SpecialDay.h
     include/Task.h

@@ -2,6 +2,7 @@
 
 #include "Recurrence.h" // recur::occurrences -- the pure brain this drives
 #include "DayLayout.h" // daylay:: -- concurrency, and the refusal sentence
+#include "BlockMove.h" // blockmove:: -- can a block go there (31.2.0)
 
 #include "Ids.h"
 
@@ -987,7 +988,10 @@ bool AppData::removeEvent(const QString& id)
 
     if (!scheduleId.isEmpty()) {
         Batch batch(*this); // the skip and the removal are one user action
-        skipOccurrence(scheduleId, occurrenceDate);
+        // Reconciled rather than skipped outright (31.2.0): a block that had
+        // been moved to a day its rule never makes leaves nothing to skip
+        // there, and a stray skip would later hide a real occurrence.
+        reconcileOccurrenceSkips({{scheduleId, occurrenceDate}});
     }
 
     notifyChanged();
@@ -1551,6 +1555,13 @@ bool AppData::updateSchedule(const Schedule& in, QDate today)
     // as it is. "The time you already spent belongs to the day you spent
     // it" -- the same sentence rescheduleBlock lives by.
     Batch batch(*this); // withdraw + regenerate must look like one change
+    // A COPY of the rule as it was, taken before the overwrite below. Which
+    // occurrences are untouched is judged against the OLD rule - judged
+    // against the new one, every occurrence of a time-edited rule would look
+    // moved by hand and nothing would be re-made (move-and-swap §M.5). A
+    // copy, not a pointer: `existing` points at the very object being
+    // overwritten.
+    const Schedule before = *existing;
     const QString id = existing->id;
     const QStringList keptSkips = existing->skipDates;
     *existing = in;
@@ -1558,18 +1569,22 @@ bool AppData::updateSchedule(const Schedule& in, QDate today)
     existing->title     = existing->title.trimmed();
     existing->skipDates = keptSkips; // a time change is not an un-delete
 
-    dropUntouchedFutureOccurrences(id, today);
+    dropUntouchedFutureOccurrences(before, today);
     syncSchedules(today);
     return true;
 }
 
 bool AppData::removeSchedule(const QString& id, QDate today)
 {
-    if (!scheduleById(id))
+    const Schedule* rule = scheduleById(id);
+    if (!rule)
         return false;
 
     Batch batch(*this);
-    dropUntouchedFutureOccurrences(id, today);
+    // A copy, not the pointer: the erase below would leave `rule` dangling.
+    // The rule as it stands is the one its occurrences are judged against.
+    const Schedule before = *rule;
+    dropUntouchedFutureOccurrences(before, today);
     // The survivors are DOWNGRADED, not deleted: a past lecture you actually
     // sat through is history, and history does not evaporate because you
     // removed the rule that predicted it. Third time this codebase reaches
@@ -1618,31 +1633,194 @@ bool AppData::adoptEventIntoSchedule(const QString& eventId,
 // "Untouched" is the whole safety property of a schedule edit, so it is one
 // named predicate rather than a condition spelled out at three call sites.
 // A block is untouched when nothing has happened TO it: no tracked time, no
-// catch-up verdict, and it is not the block currently being timed.
-bool AppData::occurrenceIsUntouched(const Event& e) const
+// catch-up verdict, it is not the block currently being timed - and, since
+// 31.2.0, nobody has moved it away from where its rule puts it. A move is
+// something happening to a block as surely as a timer is (move-and-swap §M.5).
+bool AppData::occurrenceIsUntouched(const Event& e,
+                                    const Schedule& ruleAsItWas) const
 {
     if (!e.segments.isEmpty())
         return false;
     if (e.outcome != BlockOutcome::Unset)
         return false;
-    return !(m_running && m_running->eventId == e.id);
+    if (m_running && m_running->eventId == e.id)
+        return false;
+    return !blockmove::isDisplaced(e, ruleAsItWas);
 }
 
-int AppData::dropUntouchedFutureOccurrences(const QString& scheduleId,
+int AppData::dropUntouchedFutureOccurrences(const Schedule& ruleAsItWas,
                                             QDate from)
 {
     const int before = m_events.size();
     m_events.erase(
         std::remove_if(m_events.begin(), m_events.end(),
                        [&](const Event& e) {
-                           return e.scheduleId == scheduleId && e.date >= from
-                                  && occurrenceIsUntouched(e);
+                           return e.scheduleId == ruleAsItWas.id
+                                  && e.date >= from
+                                  && occurrenceIsUntouched(e, ruleAsItWas);
                        }),
         m_events.end());
     const int removed = before - m_events.size();
     if (removed > 0)
         notifyChanged();
     return removed;
+}
+
+// ---- moving and swapping planned blocks (31.2.0) ---------------------------
+
+QString AppData::whyCannotPlace(const Event& e, QDate date, int startMin,
+                                const QDateTime& now,
+                                const QVector<Event>& moved) const
+{
+    const bool beingTimed = m_running && m_running->eventId == e.id;
+
+    // "Its rule already has a block on that day" - except that a block which
+    // is itself LEAVING that day (a swap partner) is no longer there.
+    bool ruleAlreadyThere = false;
+    if (!e.scheduleId.isEmpty() && date != e.date) {
+        for (const Event& other : m_events) {
+            if (other.scheduleId != e.scheduleId || other.date != date)
+                continue;
+            bool leaving = false;
+            for (const Event& m : moved)
+                if (m.id == other.id && m.date != date)
+                    leaving = true;
+            if (!leaving) {
+                ruleAlreadyThere = true;
+                break;
+            }
+        }
+    }
+
+    const QString why = blockmove::problemWithMove(e, date, startMin, now,
+                                                   beingTimed, ruleAlreadyThere);
+    if (!why.isEmpty())
+        return why;
+
+    // Room, on the day as it WOULD be. dayWith() hands problemWith pointers
+    // into m_events and into `moved`. Nothing mutates m_events inside this
+    // const function and `moved` belongs to the caller, so every pointer
+    // outlives the one call that reads it.
+    const int endMin = startMin + (e.plannedEndMinutes - e.plannedStartMinutes);
+    return daylay::problemWith(blockmove::dayWith(eventsOn(date), moved, date),
+                               startMin, endMin, e.id);
+}
+
+QString AppData::whyCannotMove(const QString& id, QDate date, int startMin,
+                               const QDateTime& now) const
+{
+    const Event* e = eventById(id);
+    if (!e)
+        return tr("That block no longer exists.");
+
+    Event moved = *e; // the block as it would be - a copy, e is untouched
+    moved.date                = date;
+    moved.plannedEndMinutes   = startMin
+                              + (e->plannedEndMinutes - e->plannedStartMinutes);
+    moved.plannedStartMinutes = startMin;
+    return whyCannotPlace(*e, date, startMin, now, {moved});
+}
+
+bool AppData::moveEventTo(const QString& id, QDate date, int startMin,
+                          const QDateTime& now)
+{
+    if (!whyCannotMove(id, date, startMin, now).isEmpty())
+        return false; // decline, don't force - the same contract as addEvent
+
+    Event* e = mutableEventById(id);
+    const RuleDate left{e->scheduleId, e->date};
+    const int length = e->plannedEndMinutes - e->plannedStartMinutes;
+
+    Batch batch(*this); // the move and its skip bookkeeping are one change
+    // In place (§M.1): the tracked Segments, the note and the id all stay.
+    e->date                = date;
+    e->plannedStartMinutes = startMin;
+    e->plannedEndMinutes   = startMin + length;
+    notifyChanged();
+    reconcileOccurrenceSkips({left, {left.scheduleId, date}});
+    return true;
+}
+
+QString AppData::whyCannotSwap(const QString& idA, const QString& idB,
+                               const QDateTime& now) const
+{
+    const Event* a = eventById(idA);
+    const Event* b = eventById(idB);
+    if (!a || !b)
+        return tr("That block no longer exists.");
+    if (a->id == b->id)
+        return tr("A block cannot swap with itself.");
+
+    // Both moved copies, applied TOGETHER: each side is checked against the
+    // other's new place, not its old one (§M.3).
+    const QVector<Event> moved = blockmove::swapped(*a, *b);
+    QString why = whyCannotPlace(*a, moved[0].date,
+                                 moved[0].plannedStartMinutes, now, moved);
+    if (!why.isEmpty())
+        return tr("\"%1\" cannot take that place: %2").arg(eventLabel(*a), why);
+    why = whyCannotPlace(*b, moved[1].date, moved[1].plannedStartMinutes, now,
+                         moved);
+    if (!why.isEmpty())
+        return tr("\"%1\" cannot take that place: %2").arg(eventLabel(*b), why);
+    return {};
+}
+
+bool AppData::swapEvents(const QString& idA, const QString& idB,
+                         const QDateTime& now)
+{
+    if (!whyCannotSwap(idA, idB, now).isEmpty())
+        return false;
+
+    // Copies FIRST, writes second: once A has moved, reading "where B should
+    // go" off the live data would read A's new position, not its old one.
+    const QVector<Event> moved =
+        blockmove::swapped(*eventById(idA), *eventById(idB));
+
+    QVector<RuleDate> touched;
+    Batch batch(*this); // both blocks and both rules' skips: one change
+    for (const Event& m : moved) {
+        Event* e = mutableEventById(m.id);
+        touched.append({e->scheduleId, e->date}); // the day it leaves
+        touched.append({e->scheduleId, m.date});  // the day it arrives on
+        e->date                = m.date;
+        e->plannedStartMinutes = m.plannedStartMinutes;
+        e->plannedEndMinutes   = m.plannedEndMinutes;
+    }
+    notifyChanged();
+    reconcileOccurrenceSkips(touched);
+    return true;
+}
+
+void AppData::reconcileOccurrenceSkips(const QVector<RuleDate>& touched)
+{
+    // One rule (§M.4): for a date the rule produces, "skipped" means "has no
+    // occurrence there". Applied to every date a block left or arrived on,
+    // it covers moving away, moving again, coming home and deleting, with no
+    // case analysis at the call sites.
+    for (const RuleDate& t : touched) {
+        if (t.scheduleId.isEmpty())
+            continue; // a block no rule made has nothing to reconcile
+        Schedule* s = findById(m_schedules, t.scheduleId);
+        if (!s || !blockmove::ruleProduces(*s, t.date))
+            continue; // never write down a date the rule does not make
+
+        bool hasOccurrence = false;
+        for (const Event& e : m_events) {
+            if (e.scheduleId == t.scheduleId && e.date == t.date) {
+                hasOccurrence = true;
+                break;
+            }
+        }
+
+        const QString iso = t.date.toString(Qt::ISODate);
+        if (hasOccurrence) {
+            if (s->skipDates.removeAll(iso) > 0)
+                notifyChanged();
+        } else if (!s->skipDates.contains(iso)) {
+            s->skipDates.append(iso);
+            notifyChanged();
+        }
+    }
 }
 
 int AppData::syncSchedules(QDate today, int horizonDays)

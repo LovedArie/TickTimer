@@ -35,6 +35,7 @@
 #include "MissedBlocks.h"
 #include "Affordability.h"
 #include "DayLayout.h" // v31.3 -- concurrency and column packing
+#include "BlockMove.h" // 31.2.0 -- moving and swapping planned blocks
 #include "NudgePhrasing.h"
 #include "CheckIn.h"
 #include "LlmProvider.h"
@@ -187,9 +188,11 @@ private slots:
         QCOMPARE(e->plannedEndMinutes - e->plannedStartMinutes, 60);
         QCOMPARE(e->segments.size(), 1); // the tracked FACT travelled along
 
-        // v31.3: landing ON another block is allowed now - stacking by drag
-        // is the manual route to it. What is still refused is landing on a
-        // slot already FULL, so the blocker here is a full stack of three.
+        // v31.3: landing ON another block is allowed now. (A drag released
+        // over a block swaps the two since 31.2.0 - move-and-swap §M.6 - so
+        // stacking by hand is a move into space that overlaps a neighbour.)
+        // What is still refused is landing on a slot already FULL, so the
+        // blocker here is a full stack of three.
         QVERIFY(!data.addEvent(day, 660, 690, act).isEmpty());
         QVERIFY(!data.addEvent(day, 660, 690, act).isEmpty());
         QVERIFY(!data.addEvent(day, 660, 690, act).isEmpty());
@@ -1786,6 +1789,396 @@ private slots:
         QVERIFY(data.eventById(first)->scheduleId.isEmpty());
         for (const Event& e : data.events())
             QVERIFY(e.scheduleId.isEmpty());
+    }
+
+    // ---- moving and swapping planned blocks (31.2.0) -----------------------
+    // move-and-swap addendum. "now" is always handed in, so every verdict
+    // about the past is pinned to one fixed moment - Wed Jul 1 2026, 9:30 -
+    // rather than to whenever the suite happens to run.
+
+    void blockMoveBrainAnswersInTheAddendumsOrder()
+    {
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        Event e;
+        e.id                  = QStringLiteral("e");
+        e.date                = QDate(2026, 7, 2);
+        e.plannedStartMinutes = 600;
+        e.plannedEndMinutes   = 660;
+
+        const auto why = [&now](const Event& ev, QDate d, int start,
+                                bool timed = false, bool ruleThere = false) {
+            return blockmove::problemWithMove(ev, d, start, now, timed, ruleThere);
+        };
+        QVERIFY(why(e, QDate(2026, 7, 3), 600).isEmpty());
+        QVERIFY(!why(e, QDate(2026, 7, 2), 600).isEmpty()); // already there
+        QVERIFY(!why(e, QDate(2026, 7, 1), 540).isEmpty()); // 9:00 today has passed
+        QVERIFY(why(e, QDate(2026, 7, 1), 570).isEmpty());  // 9:30 has not
+        QVERIFY(!why(e, QDate(2026, 7, 3), 600, /*timed=*/true).isEmpty());
+        QVERIFY(!why(e, QDate(2026, 7, 3), 600, false, /*ruleThere=*/true).isEmpty());
+
+        // Order: a block that is over says THAT, even if it is also timed.
+        Event over = e;
+        over.date = QDate(2026, 6, 30);
+        QCOMPARE(why(over, QDate(2026, 7, 3), 600, true),
+                 why(over, QDate(2026, 7, 3), 600, false));
+
+        // Tracked time may move within its own day, never to another.
+        Event tracked = e;
+        tracked.segments.append(makeSegment(SegmentKind::Focus, kT0, 10));
+        QVERIFY(!why(tracked, QDate(2026, 7, 3), 600).isEmpty());
+        QVERIFY(why(tracked, QDate(2026, 7, 2), 720).isEmpty());
+
+        // A deleted date is still a date the rule produces; a moved
+        // occurrence is displaced by another day OR other times.
+        Schedule rule;
+        rule.startDate    = QDate(2026, 7, 7); // a Tuesday
+        rule.startMinutes = 600;
+        rule.endMinutes   = 720;
+        rule.repeat       = Task::Repeat::Weekly;
+        QVERIFY(blockmove::ruleProduces(rule, QDate(2026, 7, 14)));
+        QVERIFY(!blockmove::ruleProduces(rule, QDate(2026, 7, 15)));
+        rule.skipDates << QStringLiteral("2026-07-14");
+        QVERIFY(blockmove::ruleProduces(rule, QDate(2026, 7, 14)));
+
+        Event occ;
+        occ.date                = QDate(2026, 7, 21);
+        occ.plannedStartMinutes = 600;
+        occ.plannedEndMinutes   = 720;
+        QVERIFY(!blockmove::isDisplaced(occ, rule));
+        Event later = occ;
+        later.plannedStartMinutes = 630;
+        later.plannedEndMinutes   = 750;
+        QVERIFY(blockmove::isDisplaced(later, rule));
+        Event otherDay = occ;
+        otherDay.date = QDate(2026, 7, 22);
+        QVERIFY(blockmove::isDisplaced(otherDay, rule));
+
+        // swapped() trades starts and keeps lengths; dayWith() takes the
+        // originals out and puts the copies in where they land.
+        const QDate d(2026, 7, 2);
+        Event a, b, x;
+        a.id = QStringLiteral("a"); a.date = d; a.plannedStartMinutes = 600; a.plannedEndMinutes = 630;
+        b.id = QStringLiteral("b"); b.date = d; b.plannedStartMinutes = 630; b.plannedEndMinutes = 720;
+        x.id = QStringLiteral("x"); x.date = d; x.plannedStartMinutes = 630; x.plannedEndMinutes = 660;
+        const QVector<Event> moved = blockmove::swapped(a, b);
+        QCOMPARE(moved[0].plannedStartMinutes, 630);
+        QCOMPARE(moved[0].plannedEndMinutes, 660);
+        QCOMPARE(moved[1].plannedStartMinutes, 600);
+        QCOMPARE(moved[1].plannedEndMinutes, 690);
+        const QVector<const Event*> today = {&a, &b, &x};
+        const QVector<const Event*> after = blockmove::dayWith(today, moved, d);
+        QCOMPARE(after.size(), 3); // x, plus both moved copies
+        QVERIFY(!after.contains(&a));
+        QVERIFY(!after.contains(&b));
+    }
+
+    void movingABlockToAnotherDayKeepsItsIdLengthAndIdentity()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        const QString ev = data.addEvent(QDate(2026, 7, 2), 600, 660, act, "Plan A");
+        QVERIFY(data.setEventNote(ev, "chapter 4"));
+
+        QSignalSpy spy(&data, &AppData::changed);
+        QVERIFY(data.whyCannotMove(ev, QDate(2026, 7, 3), 840, now).isEmpty());
+        QVERIFY(data.moveEventTo(ev, QDate(2026, 7, 3), 840, now));
+        QCOMPARE(spy.count(), 1); // one edit, one changed()
+
+        // The SAME id: moved in place, not re-created beside a "Moved" husk.
+        const Event* e = data.eventById(ev);
+        QVERIFY(e);
+        QCOMPARE(e->date, QDate(2026, 7, 3));
+        QCOMPARE(e->plannedStartMinutes, 840);
+        QCOMPARE(e->plannedEndMinutes, 900); // the hour is kept
+        QCOMPARE(e->activityId, act);
+        QCOMPARE(e->title, QStringLiteral("Plan A"));
+        QCOMPARE(e->note, QStringLiteral("chapter 4"));
+        QVERIFY(e->outcome == BlockOutcome::Unset);
+        QCOMPARE(data.events().size(), 1);
+    }
+
+    void aBlockThatIsOverDecidedOrBeingTimedDoesNotMove()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+
+        const QString over    = data.addEvent(QDate(2026, 7, 1), 480, 540, act); // 8-9
+        const QString decided = data.addEvent(QDate(2026, 7, 2), 600, 660, act);
+        QVERIFY(data.resolveBlock(decided, BlockOutcome::Dropped));
+        const QString timed   = data.addEvent(QDate(2026, 7, 1), 540, 600, act); // 9-10
+        RunningState running;
+        running.eventId  = timed;
+        running.start    = now.addSecs(-600);
+        running.lastSeen = now;
+        data.setRunning(running);
+        const QString plain = data.addEvent(QDate(2026, 7, 2), 720, 780, act);
+
+        QSignalSpy spy(&data, &AppData::changed);
+        QVERIFY(!data.whyCannotMove(over, QDate(2026, 7, 2), 900, now).isEmpty());
+        QVERIFY(!data.moveEventTo(over, QDate(2026, 7, 2), 900, now));
+        QVERIFY(!data.moveEventTo(decided, QDate(2026, 7, 3), 600, now));
+        QVERIFY(!data.moveEventTo(timed, QDate(2026, 7, 1), 900, now));
+        QVERIFY(!data.moveEventTo(plain, QDate(2026, 7, 1), 540, now)); // passed
+        QVERIFY(!data.moveEventTo(plain, QDate(2026, 6, 30), 720, now));
+        QVERIFY(!data.moveEventTo(QStringLiteral("nope"), QDate(2026, 7, 2), 600, now));
+        QVERIFY(!data.whyCannotMove(QStringLiteral("nope"), QDate(2026, 7, 2), 600, now).isEmpty());
+        QCOMPARE(spy.count(), 0); // a refusal changes nothing
+        QCOMPARE(data.eventById(plain)->plannedStartMinutes, 720);
+    }
+
+    void trackedTimeKeepsABlockOnItsOwnDay()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        const QString ev = data.addEvent(QDate(2026, 7, 1), 540, 660, act); // 9-11
+        QVERIFY(data.appendSegment(
+            ev, makeSegment(SegmentKind::Focus, QDateTime(QDate(2026, 7, 1), QTime(9, 0)), 20)));
+
+        // The twenty minutes happened on Jul 1 and stay filed there.
+        QVERIFY(!data.moveEventTo(ev, QDate(2026, 7, 2), 540, now));
+        QVERIFY(data.moveEventTo(ev, QDate(2026, 7, 1), 780, now)); // later today is fine
+        QCOMPARE(data.eventById(ev)->segments.size(), 1);
+    }
+
+    void aMoveIntoAFullSlotQuotesTheDaysOwnSentence()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        const QDate d(2026, 7, 2);
+        for (int i = 0; i < plan::kMaxConcurrentBlocks; ++i)
+            QVERIFY(!data.addEvent(d, 840, 900, act).isEmpty());
+        const QString ev = data.addEvent(d, 600, 660, act);
+
+        // One refusal sentence for "full", whichever door is asked.
+        const QString why = data.whyCannotMove(ev, d, 840, now);
+        QVERIFY(!why.isEmpty());
+        QCOMPARE(why, data.whyNoRoomFor(d, 840, 900));
+        QVERIFY(!data.moveEventTo(ev, d, 840, now));
+    }
+
+    void aMovedOccurrenceSkipsTheDateItLeftAndUnskipsItComingHome()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Lecture", cat);
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate(2026, 7, 7); // Tuesdays
+        s.endDate      = QDate(2026, 7, 28);
+        s.startMinutes = 10 * 60;
+        s.endMinutes   = 12 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        const QString rule = data.addSchedule(s);
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 4); // 7, 14, 21, 28
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        const auto on = [&data](QDate d) {
+            for (const Event& e : data.events())
+                if (e.date == d)
+                    return e.id;
+            return QString();
+        };
+        const QString jul14 = on(QDate(2026, 7, 14));
+
+        QVERIFY(data.moveEventTo(jul14, QDate(2026, 7, 15), 600, now));
+        QCOMPARE(data.scheduleById(rule)->skipDates,
+                 QStringList({QStringLiteral("2026-07-14")}));
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 0); // Tuesday stays empty
+        QCOMPARE(data.events().size(), 4);
+        QCOMPARE(data.eventById(jul14)->scheduleId, rule); // still that lecture
+
+        // Moved again, to another day the rule never makes: Wednesday was
+        // never a skip, so nothing about Wednesday is written down.
+        QVERIFY(data.moveEventTo(jul14, QDate(2026, 7, 16), 600, now));
+        QCOMPARE(data.scheduleById(rule)->skipDates,
+                 QStringList({QStringLiteral("2026-07-14")}));
+
+        // Home again: an ordinary occurrence, and the skip is gone with it.
+        QVERIFY(data.moveEventTo(jul14, QDate(2026, 7, 14), 600, now));
+        QVERIFY(data.scheduleById(rule)->skipDates.isEmpty());
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 0);
+        QCOMPARE(data.events().size(), 4);
+
+        // One rule, one occurrence per day: Tuesday the 14th cannot land on
+        // Tuesday the 21st, which has its own.
+        QVERIFY(!data.whyCannotMove(jul14, QDate(2026, 7, 21), 840, now).isEmpty());
+        QVERIFY(!data.moveEventTo(jul14, QDate(2026, 7, 21), 840, now));
+    }
+
+    void aRuleEditLeavesMovedAndNudgedOccurrencesWhereTheUserPutThem()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Lecture", cat);
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate(2026, 7, 7);
+        s.endDate      = QDate(2026, 7, 28);
+        s.startMinutes = 10 * 60;
+        s.endMinutes   = 12 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        const QString rule = data.addSchedule(s);
+        data.syncSchedules(QDate(2026, 7, 1), 120);
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        const auto on = [&data](QDate d) {
+            for (const Event& e : data.events())
+                if (e.date == d)
+                    return e.id;
+            return QString();
+        };
+        const QString jul14 = on(QDate(2026, 7, 14));
+        const QString jul21 = on(QDate(2026, 7, 21));
+
+        QVERIFY(data.moveEventTo(jul14, QDate(2026, 7, 15), 600, now)); // another day
+        QVERIFY(data.moveEvent(jul21, 11 * 60));                        // a nudge: 11-13
+
+        Schedule edited = *data.scheduleById(rule);
+        edited.startMinutes = 14 * 60; // the whole rule moves to the afternoon
+        edited.endMinutes   = 16 * 60;
+        QVERIFY(data.updateSchedule(edited, QDate(2026, 7, 1)));
+
+        // Both hand-placed occurrences stayed where the user put them...
+        QCOMPARE(data.eventById(jul14)->date, QDate(2026, 7, 15));
+        QCOMPARE(data.eventById(jul14)->plannedStartMinutes, 10 * 60);
+        QCOMPARE(data.eventById(jul21)->plannedStartMinutes, 11 * 60);
+        // ...the untouched ones followed the rule, nothing was doubled, and
+        // the Tuesday the lecture left is still empty.
+        QCOMPARE(data.events().size(), 4);
+        for (const Event& e : data.events()) {
+            QVERIFY(e.date != QDate(2026, 7, 14));
+            if (e.date == QDate(2026, 7, 7) || e.date == QDate(2026, 7, 28))
+                QCOMPARE(e.plannedStartMinutes, 14 * 60);
+        }
+    }
+
+    void deletingAMovedOccurrenceNeverSkipsADateItsRuleNeverMade()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Lecture", cat);
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate(2026, 7, 7);
+        s.endDate      = QDate(2026, 7, 28);
+        s.startMinutes = 10 * 60;
+        s.endMinutes   = 12 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        const QString rule = data.addSchedule(s);
+        data.syncSchedules(QDate(2026, 7, 1), 120);
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        QString jul14;
+        for (const Event& e : data.events())
+            if (e.date == QDate(2026, 7, 14))
+                jul14 = e.id;
+
+        QVERIFY(data.moveEventTo(jul14, QDate(2026, 7, 15), 600, now));
+        QVERIFY(data.removeEvent(jul14));
+        // Tuesday stays skipped; Wednesday - a day the rule never makes - is
+        // not added. A stray Wednesday skip would sit there silently until
+        // the rule's weekdays changed, and then hide a real lecture.
+        QCOMPARE(data.scheduleById(rule)->skipDates,
+                 QStringList({QStringLiteral("2026-07-14")}));
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 0);
+        QCOMPARE(data.events().size(), 3);
+    }
+
+    void aSwapTradesStartTimesAndEachBlockKeepsItsLength()
+    {
+        AppData data;
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        const QString a = data.addAdHocEvent(QDate(2026, 7, 2), 600, 660, "Plan A"); // 10-11
+        const QString b = data.addAdHocEvent(QDate(2026, 7, 2), 780, 900, "Plan B"); // 1-3 PM
+
+        QSignalSpy spy(&data, &AppData::changed);
+        QVERIFY(data.whyCannotSwap(a, b, now).isEmpty());
+        QVERIFY(data.swapEvents(a, b, now));
+        QCOMPARE(spy.count(), 1); // two blocks, one edit
+
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 780); // A at 1 PM, still 1h
+        QCOMPARE(data.eventById(a)->plannedEndMinutes, 840);
+        QCOMPARE(data.eventById(b)->plannedStartMinutes, 600); // B at 10 AM, still 2h
+        QCOMPARE(data.eventById(b)->plannedEndMinutes, 720);
+
+        // Across days, the date travels with the start.
+        const QString c = data.addAdHocEvent(QDate(2026, 7, 3), 540, 570, "Plan C");
+        QVERIFY(data.swapEvents(a, c, now));
+        QCOMPARE(data.eventById(a)->date, QDate(2026, 7, 3));
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 540);
+        QCOMPARE(data.eventById(c)->date, QDate(2026, 7, 2));
+        QCOMPARE(data.eventById(c)->plannedEndMinutes, 810);
+
+        QVERIFY(!data.swapEvents(a, a, now)); // a block does not swap with itself
+    }
+
+    void aSwapChecksEachBlockAgainstTheOthersNewPlace()
+    {
+        AppData data;
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        const QDate d(2026, 7, 2);
+        const QString a = data.addAdHocEvent(d, 600, 630, "A"); // 10:00-10:30
+        const QString b = data.addAdHocEvent(d, 630, 720, "B"); // 10:30-12:00
+        QVERIFY(!data.addAdHocEvent(d, 630, 660, "X").isEmpty());
+        QVERIFY(!data.addAdHocEvent(d, 630, 660, "Y").isEmpty());
+
+        // Swapped, A sits at 10:30 beside X, Y - and B, which now starts at
+        // 10:00 and runs to 11:30. Four at once. Checking A against the day
+        // with both originals merely ignored sees only X and Y, and passes.
+        QSignalSpy spy(&data, &AppData::changed);
+        QVERIFY(!data.whyCannotSwap(a, b, now).isEmpty());
+        QVERIFY(!data.swapEvents(a, b, now));
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 600); // all or nothing
+        QCOMPARE(data.eventById(b)->plannedStartMinutes, 630);
+    }
+
+    void swappingOccurrencesKeepsEachRulesSkipsHonest()
+    {
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Lecture", cat);
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate(2026, 7, 7);
+        s.endDate      = QDate(2026, 7, 28);
+        s.startMinutes = 10 * 60;
+        s.endMinutes   = 12 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        const QString rule = data.addSchedule(s);
+        data.syncSchedules(QDate(2026, 7, 1), 120);
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        const auto on = [&data](QDate d) {
+            for (const Event& e : data.events())
+                if (e.date == d)
+                    return e.id;
+            return QString();
+        };
+        const QString thursday = data.addAdHocEvent(QDate(2026, 7, 16), 780, 840, "Errand");
+
+        // Two occurrences of the SAME rule: the partner is leaving the day,
+        // so "the rule already has one there" does not refuse, and no skip
+        // is left behind on either Tuesday.
+        const QString jul14 = on(QDate(2026, 7, 14));
+        const QString jul21 = on(QDate(2026, 7, 21));
+        QVERIFY(data.swapEvents(jul14, jul21, now));
+        QVERIFY(data.scheduleById(rule)->skipDates.isEmpty());
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 0);
+
+        // An occurrence and an ordinary block: the Tuesday the lecture left
+        // is skipped, so the rule does not put a second block beside the
+        // errand that took its place.
+        const QString jul28 = on(QDate(2026, 7, 28));
+        QVERIFY(data.swapEvents(jul28, thursday, now));
+        QCOMPARE(data.scheduleById(rule)->skipDates,
+                 QStringList({QStringLiteral("2026-07-28")}));
+        QCOMPARE(data.syncSchedules(QDate(2026, 7, 1), 120), 0);
+        QCOMPARE(data.events().size(), 5);
     }
 
     void scheduleBirthRulesRefuseTheStatesThatCannotWork()

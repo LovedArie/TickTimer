@@ -260,7 +260,9 @@ public:
     // a slot holding one block has ROOM, but it has no empty pixels, so
     // inviting a click there would promise a gesture that lands on the
     // existing block instead. Creation-by-clicking-space stays about space;
-    // stacking is done by dragging a block onto another, or by a schedule.
+    // stacking is done by a schedule, or by moving a block into space that
+    // overlaps a neighbour with room. (Dropping a block ONTO another one
+    // swaps them since 31.2.0 - move-and-swap addendum §M.6.)
     //
     // The v31.3 rename of the capacity gate is what surfaced this: four call
     // sites in AgendaWidget turned out to be asking the emptiness question,
@@ -475,6 +477,33 @@ public:
     // NOT lifted here either — this removes the reason §I cited, and opening
     // the verb is a separate act with its own review.
     bool undoReschedule(const QString& id);
+
+    // ---- moving and swapping planned blocks (31.2.0) -----------------------
+    // move-and-swap addendum. A move rewrites the block IN PLACE - same id,
+    // identity and note - and that is the whole difference from
+    // rescheduleBlock above. That door is catch-up's: a missed block is
+    // history worth keeping, so it leaves the original behind. A block moved
+    // before it happens left nothing behind to keep (§M.1).
+    //
+    // Each door comes as a pair, like whyNoRoomFor / hasRoomFor: the `why`
+    // returns the sentence a screen quotes (empty = allowed), and the door
+    // refuses with no change and no changed(). `now` is a parameter because
+    // both decide what "the past" means; callers pass
+    // TrackerService::nowProvider(), so the debug panel's fake clock reaches
+    // them too.
+    //
+    // A moved occurrence of a schedule keeps its scheduleId, and the rule's
+    // skipDates are reconciled so the date it left is not re-made (§M.4).
+    QString whyCannotMove(const QString& id, QDate date, int startMin,
+                          const QDateTime& now) const;
+    bool    moveEventTo(const QString& id, QDate date, int startMin,
+                        const QDateTime& now); // keeps the length
+    // Each block takes the other's date and START time and keeps its own
+    // length (§M.3). All or nothing, and one changed() for both.
+    QString whyCannotSwap(const QString& idA, const QString& idB,
+                          const QDateTime& now) const;
+    bool    swapEvents(const QString& idA, const QString& idB,
+                       const QDateTime& now);
 
     // ---- schedules: recurrence with a future you can see (v31) -----------
     //
@@ -782,15 +811,45 @@ private:
     // drift into two different ideas of a valid rule.
     bool scheduleIsWellFormed(const Schedule& s) const;
     // "Nothing has happened to this block yet": no tracked segments, no
-    // catch-up verdict, not the one being timed. The safety property every
-    // schedule edit rests on, so it is a predicate rather than a condition
-    // retyped at each call site.
-    bool occurrenceIsUntouched(const Event& e) const;
+    // catch-up verdict, not the one being timed, and (31.2.0) not moved away
+    // from where its rule puts it. The safety property every schedule edit
+    // rests on, so it is a predicate rather than a condition retyped at each
+    // call site.
+    //
+    // It takes the rule AS IT WAS. updateSchedule overwrites the rule before
+    // it withdraws, and judged against the NEW rule every occurrence of a
+    // time-edited rule would look moved - so nothing would be re-made
+    // (move-and-swap addendum §M.5).
+    bool occurrenceIsUntouched(const Event& e,
+                               const Schedule& ruleAsItWas) const;
     // Withdraw this rule's future, untouched occurrences so they can be
     // regenerated. Private because it leaves the plan momentarily short of
     // blocks the rule still implies; only a caller that immediately re-syncs
     // (or is deleting the rule) may see that state.
-    int  dropUntouchedFutureOccurrences(const QString& scheduleId, QDate from);
+    int  dropUntouchedFutureOccurrences(const Schedule& ruleAsItWas,
+                                        QDate from);
+
+    // ---- move and swap internals (31.2.0) ---------------------------------
+    // The one judgement behind whyCannotMove and whyCannotSwap: can `e` go to
+    // (date, startMin) on the day as it WOULD be once every block in `moved`
+    // is applied? `moved` holds the moved COPIES, e's own included.
+    QString whyCannotPlace(const Event& e, QDate date, int startMin,
+                           const QDateTime& now,
+                           const QVector<Event>& moved) const;
+
+    // A date one rule's block left or arrived on. A struct rather than a
+    // QPair for the reason PieceCount gives: `.scheduleId` reads as the
+    // domain, `.first` reads as a puzzle.
+    struct RuleDate
+    {
+        QString scheduleId;
+        QDate   date;
+    };
+    // After a move or swap, make "skipped" mean "has no occurrence there" for
+    // each of these dates - for dates the rule produces, and only those
+    // (§M.4). Also what removeEvent now uses, so a moved block that is
+    // deleted never skips a date its rule never made.
+    void reconcileOccurrenceSkips(const QVector<RuleDate>& touched);
 
     int  m_batchDepth = 0; // nested Batches are counted, not forbidden
     bool m_batchDirty = false; // did anything happen while batched?
