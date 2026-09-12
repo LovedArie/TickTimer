@@ -156,6 +156,9 @@ set(UI_SOURCES
     # 31.2.0 - the corner Undo bar, deliberately NOT a NotificationToast
     include/UndoBar.h
     src/UndoBar.cpp
+    # 31.2.0 (B8) - the wheel must not edit a control it merely hovers over
+    include/WheelGuard.h
+    src/WheelGuard.cpp
     include/ProbeOverlay.h
     src/ProbeOverlay.cpp
     # v30.6 — how the app SPEAKS, as an interface plus one implementation

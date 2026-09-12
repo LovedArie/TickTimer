@@ -124,6 +124,13 @@ WeekAgendaView::WeekAgendaView(const AppData* data,
                 this, &WeekAgendaView::finishDrop);
         connect(col, &AgendaWidget::blockDragCancelled,
                 this, [this]() { clearDropPreviews(); });
+
+        // The hold menu and the right-click menu are the page's business, so
+        // a column's report travels straight through, exactly like a click.
+        connect(col, &AgendaWidget::eventHeld,
+                this, &WeekAgendaView::eventHeld);
+        connect(col, &AgendaWidget::eventContextMenuRequested,
+                this, &WeekAgendaView::eventContextMenuRequested);
     }
 
     // When the data changes, the seven-day UNION window may change (a block
@@ -222,6 +229,14 @@ void WeekAgendaView::setBlockDragEnabled(bool on)
 {
     for (auto* col : m_columns)
         col->setBlockDragEnabled(on);
+}
+
+void WeekAgendaView::setTargetPicking(const QString& movingEventId)
+{
+    // Every column, so a tap on any of the seven days puts the block down -
+    // the same fan-out as the display preferences above.
+    for (auto* col : m_columns)
+        col->setTargetPicking(movingEventId);
 }
 
 AgendaWidget* WeekAgendaView::columnAt(const QPoint& globalPos) const

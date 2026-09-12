@@ -70,6 +70,45 @@ the same things in the same order:
 
 ## ── LOGGED ISSUES (TickTimer) ──
 
+### `'void X::someSignal(...)' is private within this context` — at call sites you never touched
+
+**SYMPTOM**
+A build that compiled a minute ago fails at every `connect()` to one signal,
+in files the change did not go near:
+
+```
+src/WeekAgendaView.cpp:114:37: error: 'void AgendaWidget::eventResized(const QString&, int, int)' is private within this context
+src/PlannerPage.cpp:470:38:    error: 'void AgendaWidget::eventResized(...)' is private within this context
+src/CompareDialog.cpp:230:40:  error: 'void AgendaWidget::eventResized(...)' is private within this context
+```
+
+The signal's own declaration is unchanged, and moc reports nothing at all.
+
+**CAUSE**
+An access specifier written INSIDE a `signals:` block ends it. `signals` is
+`public` plus moc bookkeeping, so a `protected:` (or `private:`, or `public:`)
+spliced into the middle closes the signal section, and every declaration below
+it becomes an ordinary member with that access.
+
+In 31.2.0 two new signals were appended to `AgendaWidget.h` and followed by
+new `protected:` and `private:` sections — and `eventResized`, which happened
+to sit last in the block, fell below them. It stopped being a signal, so its
+three `connect()` sites became access violations. The error names the callers,
+never the header that caused it.
+
+**FIX**
+Move the signal declaration back ABOVE the access specifier — or move the new
+sections below every signal. Nothing else changes, and the three call sites
+compile again.
+
+**PREVENT**
+Append a new signal at the END of the existing `signals:` block, above any
+access specifier, and put new protected/private members in their own sections
+AFTER the whole block. When a signal "goes private", read the header downwards
+from `signals:` and find the specifier that closed it early.
+
+---
+
 ### A schedule refuses to save with "Give it something to be called." — but every field IS filled in
 
 **SYMPTOM**

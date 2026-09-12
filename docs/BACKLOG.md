@@ -264,12 +264,13 @@ write when you pick it up — never here.*
 
 *Documentation and process debt. Small, but it is what rots first.*
 
-- **H5** **The phones are still on pre-v31 binaries.** Windows is done — 31.1.0
-  is installed, running, and its registry entry agrees with its exes. The
-  sideloaded APK and the WebAssembly app at `/app/` are both **v30.8.1**,
-  deployed 31 Aug (`/app/` Last-Modified re-read 11 Sep; this absorbed B2,
-  which still claimed v30.4), so both can still strip a format-16 planner
-  through sync exactly as the Start Menu copy did. The APK needs `JAVA_HOME` set from
+- **H5** **The phone and the web app are both behind the format floor.**
+  Windows is done. **Measured 12 Sep, on the phone itself:** the Galaxy S21
+  runs **31.0.0** (versionCode 310000, installed 4 Sep) — not v30.8.1 as this
+  line claimed, but still older than 31.1.0, which is where the floor shipped,
+  so it can strip a format-16 planner through sync exactly as the Start Menu
+  copy did. `/app/` is the one on **v30.8.1** (deployed 31 Aug, Last-Modified
+  re-read 11 Sep; this absorbed B2, which claimed v30.4). The APK needs `JAVA_HOME` set from
   `%APPDATA%\QtProject\QtCreator.ini` and its stamp checked with `aapt2 dump
   badging` before signing; `/app/` is release step 7 and nothing hard-fails on
   it.

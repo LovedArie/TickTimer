@@ -170,3 +170,81 @@ thing as an anonymous namespace (and why the anonymous namespace is
 preferred), and what `inline` does *not* promise — in particular that each TU
 must see a byte-identical definition, which is why editing a header requires
 rebuilding every file that includes it.
+
+---
+
+## Event filters, and why an *ignored* event keeps travelling
+
+Came up in 31.2.0 (B8): a mouse wheel over a hovered dropdown was editing
+data, and the fix had to cover 37 controls in nine files plus every control
+written after it — so it could not be a line in 37 constructors.
+
+An **event filter** is an object that gets shown another object's events
+*before* that object sees them. `target->installEventFilter(spy)` makes `spy`
+see `target`'s events; `qApp->installEventFilter(spy)` makes it see
+*everything*, because every event in a widget program is delivered through
+`QApplication::notify`. `WheelGuard` and `installCompactDialogFitter` both take
+that second form, and the reason is the same: the alternative is remembering,
+in every future constructor, to opt in.
+
+`bool eventFilter(QObject* watched, QEvent* event)` answers one question:
+**has this event been dealt with?** Return `true` and the target never sees it.
+Return `false` and delivery continues as normal.
+
+The subtle half is `accept()` / `ignore()`, which is a *different* flag from
+that return value, and the wheel guard needs both:
+
+- `event->ignore()` marks the event as "not handled here".
+- Returning `true` stops it reaching the control.
+
+Together they mean "this control does not take this wheel event" — and because
+the event is ignored rather than consumed, `QApplication::notify` offers it to
+the parent, then that parent's parent, until something accepts it. The
+enclosing scroll area does, so the page scrolls. Had the guard returned `true`
+while leaving the event *accepted*, the wheel would have vanished instead:
+the combo would be safe and the page would be frozen under your hand.
+
+One more piece of the same fix is worth keeping: `QComboBox` has focus policy
+`Qt::WheelFocus`, and Qt gives focus to such a widget *before* the event
+reaches any filter — so a `hasFocus()` test alone would always answer "yes" and
+guard nothing. The guard therefore downgrades that policy to `StrongFocus` on
+`QEvent::Polish`, the moment a widget is built and about to be shown. A check
+is only as good as what it can still see.
+
+Worth working through next: the whole delivery path
+(`QCoreApplication::sendEvent` → `notify` → filters → `event()` → handler),
+where `QGestureManager` hooks into it (the trap that makes a touch drag
+impossible inside a scrolling page), and why a *spontaneous* event — one from
+the window system, as `QTest::wheelEvent` produces — propagates while a
+hand-made one sent straight to a widget does not.
+
+---
+
+## Nested event loops: `menu.exec()`, `dialog.exec()`, and decisions that wait
+
+Also 31.2.0, and the reason two features are written as "ask, then act after"
+rather than as connected lambdas.
+
+`QApplication::exec()` is *the* event loop: take an event, deliver it, repeat.
+`QMenu::exec()` and `QDialog::exec()` start **another one, inside the first**.
+Your call does not return until the menu closes or the dialog is dismissed —
+while the app stays alive, because that inner loop keeps delivering events.
+
+So code written after `exec()` runs *later*, when the thing has closed, and
+that is exactly what the block menu wants: it asks which action was chosen,
+`exec()` returns the answer, and only then does the page start moving mode. The
+same shape in `onEventClicked`: the dialog is shown, and a `MoveOrSwap` result
+is acted on after it is gone. Starting a mode that claims the next tap from
+*inside* a loop that is still eating taps would be a mode nobody could use.
+
+The trap the project already paid for lives one step further in:
+`deleteLater()` queues a deletion that only the loop level which posted it
+processes, so a widget discarded before a nested `exec()` survives the whole
+dialog — still parented, still painting, in the corner
+(`ActivityDetailDialog::rebuildScheduleRows`). `hide()` before `deleteLater()`
+is the cure.
+
+Worth working through next: `QEventLoop` used directly (the pattern behind
+`QSignalSpy::wait`), what "re-entrancy" costs a class whose method can be
+re-entered through a nested loop, and why Qt's own docs recommend `open()`
+with a signal over `exec()` for new code.

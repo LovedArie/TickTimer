@@ -204,6 +204,14 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
   it re-proves: reuse a codepoint the app already draws (▼ U+25BC, ×
   U+00D7, ≡ U+2261 are proven) rather than the nicest-looking one.
 - Never name an identifier `slots`, `signals`, or `emit`.
+- **An access specifier inside `signals:` silently ENDS the signals.** Adding
+  `protected:` above an existing signal turned `eventResized` into a private
+  member and broke its three `connect()` sites with "is private within this
+  context" — while the signal's own line was untouched. moc says nothing,
+  because a declaration outside a `signals:` block simply is not a signal. A
+  new signal goes at the END of the block, above any access specifier; new
+  protected/private members go in their own sections after it
+  (`AgendaWidget.h`, 31.2.0).
 - **Never name a namespace after a POSIX function.** `namespace sync`
   built on Windows for a year and failed the first Android compile:
   bionic's `<unistd.h>` declares `void sync(void)` at global scope, so

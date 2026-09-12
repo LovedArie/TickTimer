@@ -529,6 +529,16 @@ void AgendaWidget::paintEvent(QPaintEvent*)
         p.drawRoundedRect(rect, kRadius + 1, kRadius + 1);
         p.restore();
 
+        // The block being MOVED (31.2.0, §M.8) is outlined, so "what would a
+        // tap put down?" is answered on the timeline itself and not only in
+        // the banner above it.
+        if (!m_pickingForId.isEmpty() && e->id == m_pickingForId) {
+            p.setPen(QPen(theme::focus(), 2, Qt::DashLine));
+            p.setBrush(Qt::NoBrush);
+            p.drawRoundedRect(rect.adjusted(1, 1, -1, -1), kRadius + 1,
+                              kRadius + 1);
+        }
+
         // Committed totals + the live, still-running seconds if this very
         // block is being tracked right now.
         stats::Totals t = stats::eventTotals(*e);
@@ -912,7 +922,8 @@ void AgendaWidget::mousePressEvent(QMouseEvent* event)
         // dialog's nudge buttons.
         for (const Event* e : m_data->eventsOn(m_date)) {
             if (eventRect(*e).contains(event->pos())) {
-                m_pendingEventId = e->id; // decided on release
+                m_pendingEventId = e->id; // a tap, decided on release...
+                armLongPress();           // ...or a HOLD: the block's menu
                 return;
             }
         }
@@ -925,24 +936,16 @@ void AgendaWidget::mousePressEvent(QMouseEvent* event)
             return;
         m_pendingSlot = touchedSlot;
         m_pressWasArmed = (wasArmed == touchedSlot);
-        if (!m_longPress) {
-            m_longPress = new QTimer(this);
-            m_longPress->setSingleShot(true);
-            // 450ms: long enough that a scroll has begun moving by then,
-            // short enough not to feel like a hang. Qt's own tap-and-hold is
-            // 700ms, which for a gesture people repeat all day reads as slow.
-            m_longPress->setInterval(450);
-            connect(m_longPress, &QTimer::timeout, this, [this]() {
-                const int slot = m_pendingSlot;
-                cancelPendingTouch();
-                disarm(); // a hold must not leave an armed slot behind
-                if (slot >= 0)
-                    emit emptySlotClicked(slot);
-            });
-        }
-        m_longPress->start();
+        armLongPress();
         return;
     }
+
+    // Only the LEFT button acts (31.2.0). A right press is the beginning of a
+    // context menu, which contextMenuEvent now answers with the block's menu;
+    // before this line it ALSO opened the block, and on an edge it started a
+    // resize that the matching release then committed.
+    if (event->button() != Qt::LeftButton)
+        return;
 
     // An edge grab starts a RESIZE and pre-empts everything else — it must win
     // over "open the event", since the edge sits inside the event's rect.
@@ -1116,6 +1119,58 @@ void AgendaWidget::disarm()
     update();
 }
 
+void AgendaWidget::armLongPress()
+{
+    if (!m_longPress) {
+        m_longPress = new QTimer(this);
+        m_longPress->setSingleShot(true);
+        // 450ms: long enough that a scroll has begun moving by then, short
+        // enough not to feel like a hang. Qt's own tap-and-hold is 700ms,
+        // which for a gesture people repeat all day reads as slow.
+        m_longPress->setInterval(450);
+        connect(m_longPress, &QTimer::timeout, this, [this]() {
+            // WHAT was pending decides what the hold meant: a block asks for
+            // its menu (31.2.0), a free slot plans. cancelPendingTouch()
+            // clears both, which is also what makes the release that follows
+            // do nothing - the hold has already answered for this press.
+            const int     slot    = m_pendingSlot;
+            const QString eventId = m_pendingEventId;
+            const QPoint  where   = mapToGlobal(m_touchPressPos);
+            cancelPendingTouch();
+            disarm(); // a hold must not leave an armed slot behind
+            if (!eventId.isEmpty())
+                emit eventHeld(eventId, where);
+            else if (slot >= 0)
+                emit emptySlotClicked(slot);
+        });
+    }
+    m_longPress->start();
+}
+
+void AgendaWidget::setTargetPicking(const QString& movingEventId)
+{
+    if (m_pickingForId == movingEventId)
+        return;
+    m_pickingForId = movingEventId;
+    disarm(); // a slot armed before the move means nothing now
+    update(); // the outline appears, or goes
+}
+
+void AgendaWidget::contextMenuEvent(QContextMenuEvent* event)
+{
+    // A right-click on a block asks the page for the block's menu - the
+    // desktop's door to where a phone's hold goes. Anywhere else, Qt's
+    // default, which is nothing.
+    for (const Event* e : m_data->eventsOn(m_date)) {
+        if (eventRect(*e).contains(event->pos())) {
+            emit eventContextMenuRequested(e->id, event->globalPos());
+            event->accept();
+            return;
+        }
+    }
+    QWidget::contextMenuEvent(event);
+}
+
 bool AgendaWidget::event(QEvent* e)
 {
     // QScroller announces "I have taken this gesture over to pan" by taking
@@ -1152,6 +1207,15 @@ void AgendaWidget::mouseReleaseEvent(QMouseEvent* event)
         const int slot = m_pendingSlot;
         const bool secondTap = m_pressWasArmed;
         cancelPendingTouch();
+        // While a block is being moved (31.2.0, §M.8) one stationary tap is
+        // the whole gesture: the block is already chosen, so there is nothing
+        // for an arming tap to disambiguate - and asking twice to put down
+        // something you are already holding reads as the app not noticing.
+        if (!m_pickingForId.isEmpty()) {
+            disarm();
+            emit emptySlotClicked(slot);
+            return;
+        }
         if (secondTap) {
             disarm();
             emit emptySlotClicked(slot);

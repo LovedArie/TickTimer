@@ -35,7 +35,8 @@
 #include "AgendaWidget.h"
 #include "DayLayout.h" // v31.3 -- the column packing the agenda honours
 #include "Theme.h"     // 31.2.0 -- the now-line's colour, pinned by pixel
-#include "UndoBar.h"   // 31.2.0 -- the corner Undo after a drag
+#include "UndoBar.h"    // 31.2.0 -- the corner Undo after a drag
+#include "WheelGuard.h" // 31.2.0 (B8) -- the wheel guard under test
 #include "TaskDetailDialog.h" // v28.5 — the piece-panel navigation tests
 #include "TaskDetailPanel.h"  // v28.6 — the docked panel tests
 #include "TaskDetailForm.h"   // v28.6.2 — the background-fill pin
@@ -104,7 +105,8 @@
 #include <QToolButton>
 #include <QDialogButtonBox>
 #include <QScrollArea>
-#include <QScrollBar> // the sideways-overflow gate asks its range
+#include <QScrollBar>  // the sideways-overflow gate asks its range
+#include <QVBoxLayout> // 31.2.0 (B8) -- the wheel tests build their own hosts
 #include <QStackedWidget>
 #include <QFontDatabase>
 #include <QScreen>
@@ -1710,6 +1712,362 @@ private slots:
         second->close();
         QApplication::processEvents(QEventLoop::AllEvents, 100);
         QVERIFY(!second);
+    }
+
+    // ---- B8 (31.2.0): the wheel does not edit what it merely hovers over ----
+    // Every one of these turns the wheel through the WINDOW (QTest::wheelEvent),
+    // because only a real, spontaneous event propagates from a control to the
+    // page behind it - which is the half of this feature that keeps scrolling
+    // working. A hand-made event sent straight to a widget would prove nothing.
+
+    void theWheelOverAComboScrollsThePageAndLeavesTheValueAlone()
+    {
+        QObject owner; // the guard lives exactly as long as this
+        wheelguard::install(&owner);
+
+        QScrollArea area;
+        auto* content = new QWidget;
+        auto* column  = new QVBoxLayout(content);
+        // Something else to hold focus, FIRST in the focus chain. A shown
+        // window gives focus to the first widget in that chain, so without
+        // this the combo would already be focused and "it has focus after a
+        // wheel" would prove nothing about the wheel.
+        auto* holder = new QLineEdit(content);
+        column->addWidget(holder);
+        auto* combo = new QComboBox(content);
+        combo->addItems({QStringLiteral("one"), QStringLiteral("two"),
+                         QStringLiteral("three")});
+        column->addWidget(combo);
+        auto* filler = new QLabel(QStringLiteral("tall"), content);
+        filler->setMinimumHeight(3000); // so the page has somewhere to scroll
+        column->addWidget(filler);
+        area.setWidget(content);
+        area.resize(400, 300);
+        area.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&area));
+        // On the offscreen platform setFocus() does nothing until the window
+        // is active (READING_GUIDE §4), so this pair is not ceremony.
+        area.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&area));
+        holder->setFocus();
+        QVERIFY(holder->hasFocus());
+
+        const auto wheelOver = [](QWidget* w) {
+            QWidget* top = w->window();
+            QTest::wheelEvent(top->windowHandle(),
+                              w->mapTo(top, QPoint(w->width() / 2, w->height() / 2)),
+                              QPoint(0, -120));
+        };
+
+        // Polish took WheelFocus away, which is what makes a focus test mean
+        // anything at all: Qt grants WheelFocus BEFORE any filter sees it.
+        QVERIFY((combo->focusPolicy() & Qt::WheelFocus) != Qt::WheelFocus);
+        QCOMPARE(combo->currentIndex(), 0);
+        QCOMPARE(area.verticalScrollBar()->value(), 0);
+
+        wheelOver(combo);
+        QCOMPARE(combo->currentIndex(), 0);                // value untouched
+        QVERIFY(area.verticalScrollBar()->value() > 0);     // the page scrolled
+        QVERIFY(holder->hasFocus());                        // focus did not move
+    }
+
+    void aFocusedSpinBoxTakesTheWheelAndAnUnfocusedOneDoesNot()
+    {
+        QObject owner;
+        wheelguard::install(&owner);
+
+        QWidget host;
+        auto* column = new QVBoxLayout(&host);
+        auto* spin   = new QSpinBox(&host);
+        spin->setRange(0, 100);
+        spin->setValue(5);
+        auto* elsewhere = new QLineEdit(&host); // something else to hold focus
+        column->addWidget(spin);
+        column->addWidget(elsewhere);
+        host.resize(300, 140);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        host.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&host));
+
+        const auto wheelOver = [](QWidget* w) {
+            QWidget* top = w->window();
+            QTest::wheelEvent(top->windowHandle(),
+                              w->mapTo(top, QPoint(w->width() / 2, w->height() / 2)),
+                              QPoint(0, -120));
+        };
+
+        elsewhere->setFocus();
+        wheelOver(spin);
+        QCOMPARE(spin->value(), 5); // hovered but not focused: no change
+
+        spin->setFocus();
+        QVERIFY(spin->hasFocus());
+        wheelOver(spin);
+        QCOMPARE(spin->value(), 4); // clicked into: the wheel is a fine nudge
+    }
+
+    void scrollingOverTheRepeatsComboKeepsTheSchedule()
+    {
+        QObject owner;
+        wheelguard::install(&owner);
+
+        AppData data;
+        const QString cat = data.addCategory("School", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Lecture", cat);
+        Schedule s;
+        s.activityId   = act;
+        s.startDate    = QDate(2026, 7, 7);
+        s.startMinutes = 10 * 60;
+        s.endMinutes   = 12 * 60;
+        s.repeat       = Task::Repeat::Weekly;
+        const QString rule = data.addSchedule(s);
+        data.syncSchedules(QDate(2026, 7, 1), 21);
+        QString ev;
+        for (const Event& e : data.events())
+            if (e.date == QDate(2026, 7, 7))
+                ev = e.id;
+        QVERIFY(!ev.isEmpty());
+
+        TrackerService tracker(&data);
+        EventDialog dialog(&data, &tracker, ev);
+        dialog.resize(440, 720);
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+
+        auto* repeat =
+            dialog.findChild<QComboBox*>(QStringLiteral("blockRepeatCombo"));
+        QVERIFY(repeat);
+        QCOMPARE(repeat->currentIndex(), int(Task::Repeat::Weekly));
+
+        // THE BUG: one notch over this combo used to pick "Does not repeat",
+        // which calls removeSchedule() - the rule and its future, gone.
+        QWidget* top = dialog.window();
+        QTest::wheelEvent(top->windowHandle(),
+                          repeat->mapTo(top, QPoint(repeat->width() / 2,
+                                                    repeat->height() / 2)),
+                          QPoint(0, -120));
+
+        QCOMPARE(repeat->currentIndex(), int(Task::Repeat::Weekly));
+        QCOMPARE(data.schedules().size(), 1);
+        QCOMPARE(data.eventById(ev)->scheduleId, rule);
+    }
+
+    void aControlCanOptOutOfTheWheelGuard()
+    {
+        QObject owner;
+        wheelguard::install(&owner);
+
+        QWidget host;
+        auto* column = new QVBoxLayout(&host);
+        auto* combo  = new QComboBox(&host);
+        combo->addItems({QStringLiteral("a"), QStringLiteral("b"),
+                         QStringLiteral("c")});
+        combo->setProperty("wheelGuard", false); // "I mean it"
+        column->addWidget(combo);
+        host.resize(240, 90);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+
+        QWidget* top = host.window();
+        QTest::wheelEvent(top->windowHandle(),
+                          combo->mapTo(top, QPoint(combo->width() / 2,
+                                                   combo->height() / 2)),
+                          QPoint(0, -120));
+        QCOMPARE(combo->currentIndex(), 1); // Qt's own behaviour, on request
+    }
+
+    // ---- 31.2.0 §M.8: a phone cannot drag, so a block is picked UP ----------
+
+    void holdingABlockAsksForItsMenuAndSwallowsTheTap()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        // Qt decides touch-vs-mouse from QMouseEvent::source(), which only IT
+        // can set, so the seam is the only way to exercise the phone's path.
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+
+        const QPoint onBlock(300, AgendaWidget::kTopPad
+                                      + 8 * AgendaWidget::slotHeight() + 20);
+        QSignalSpy held(&agenda, &AgendaWidget::eventHeld);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+
+        QTest::mousePress(&agenda, Qt::LeftButton, {}, onBlock);
+        QTRY_COMPARE(held.count(), 1); // the 450ms hold fired
+        QCOMPARE(held.first().at(0).toString(), ev);
+        QTest::mouseRelease(&agenda, Qt::LeftButton, {}, onBlock);
+        QCOMPARE(clicked.count(), 0); // the hold already answered for it
+
+        // A finger that MOVES was scrolling: no menu, and no tap either.
+        held.clear();
+        QTest::mousePress(&agenda, Qt::LeftButton, {}, onBlock);
+        QTest::mouseMove(&agenda, onBlock + QPoint(0, 40));
+        QTest::qWait(600);
+        QCOMPARE(held.count(), 0);
+        QTest::mouseRelease(&agenda, Qt::LeftButton, {}, onBlock + QPoint(0, 40));
+        QCOMPARE(clicked.count(), 0);
+    }
+
+    void whileMovingABlockOneTapPutsItDown()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+        QSignalSpy tapped(&agenda, &AgendaWidget::emptySlotClicked);
+
+        const auto tapAt = [&agenda](const QPoint& p) {
+            QTest::mousePress(&agenda, Qt::LeftButton, {}, p);
+            QTest::mouseRelease(&agenda, Qt::LeftButton, {}, p);
+        };
+        const auto yAt = [](int minutes) {
+            return AgendaWidget::kTopPad
+                   + (minutes - plan::kDayStartMinutes) / plan::kSlotMinutes
+                         * AgendaWidget::slotHeight();
+        };
+
+        // Ordinarily a first tap only ARMS a free slot.
+        tapAt(QPoint(300, yAt(15 * 60) + 10));
+        QCOMPARE(tapped.count(), 0);
+
+        // Holding a block changes that: one tap on a DIFFERENT slot places it.
+        agenda.setTargetPicking(ev);
+        tapAt(QPoint(300, yAt(17 * 60) + 10));
+        QCOMPARE(tapped.count(), 1);
+    }
+
+    void rightClickingABlockAsksForItsMenuInsteadOfOpeningIt()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker); // a mouse: no touch seam
+        agenda.setDate(day);
+        agenda.resize(600, agenda.minimumHeight());
+
+        const QPoint onBlock(300, AgendaWidget::kTopPad
+                                      + 8 * AgendaWidget::slotHeight() + 20);
+        QSignalSpy menuAsked(&agenda, &AgendaWidget::eventContextMenuRequested);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+
+        QContextMenuEvent ctx(QContextMenuEvent::Mouse, onBlock,
+                              agenda.mapToGlobal(onBlock));
+        QCoreApplication::sendEvent(&agenda, &ctx);
+        QCOMPARE(menuAsked.count(), 1);
+        QCOMPARE(menuAsked.first().at(0).toString(), ev);
+
+        // A right PRESS no longer opens the block (it used to do both).
+        QTest::mousePress(&agenda, Qt::RightButton, {}, onBlock);
+        QTest::mouseRelease(&agenda, Qt::RightButton, {}, onBlock);
+        QCOMPARE(clicked.count(), 0);
+        // The left button still opens it.
+        QTest::mouseClick(&agenda, Qt::LeftButton, {}, onBlock);
+        QCOMPARE(clicked.count(), 1);
+    }
+
+    void movingModePlacesOnATapSwapsOnABlockAndKeepsItsModeOnARefusal()
+    {
+        AppData data;
+        TrackerService tracker(&data);
+        const QDate today    = QDate::currentDate();
+        const QDate tomorrow = today.addDays(1);
+        tracker.nowProvider = [] {
+            return QDateTime(QDate::currentDate(), QTime(12, 0));
+        };
+        const QString a = data.addAdHocEvent(tomorrow, 10 * 60, 11 * 60, "Plan A");
+        const QString b = data.addAdHocEvent(tomorrow, 13 * 60, 15 * 60, "Plan B");
+        PlannerPage page(&data, &tracker);
+        // Shown, because a child widget reports isVisible() as false while its
+        // window is hidden - so "the banner is up" can only be asked of a page
+        // that is itself on screen.
+        page.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&page));
+
+        auto* banner = page.findChild<QFrame*>(QStringLiteral("movingBanner"));
+        QVERIFY(banner);
+        QVERIFY(!banner->isVisible());
+
+        int offers = 0;
+        QObject::connect(&page, &PlannerPage::undoBarRequested, &page,
+                         [&offers](const QString&, const UndoAction&) { ++offers; });
+
+        // Picked up, then one tap on 4 PM tomorrow (domain slot 20).
+        QVERIFY(QMetaObject::invokeMethod(&page, "startMoving", Q_ARG(QString, a)));
+        QVERIFY(banner->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(&page, "planAt",
+                                          Q_ARG(QDate, tomorrow), Q_ARG(int, 20)));
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 16 * 60);
+        QVERIFY(!banner->isVisible()); // put down: the mode is over
+        QCOMPARE(offers, 1);           // and undoable, exactly like a drag
+
+        // Picked up again, then a tap on another block: they trade places.
+        QVERIFY(QMetaObject::invokeMethod(&page, "startMoving", Q_ARG(QString, a)));
+        QVERIFY(QMetaObject::invokeMethod(&page, "onEventClicked", Q_ARG(QString, b)));
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 13 * 60);
+        QCOMPARE(data.eventById(b)->plannedStartMinutes, 16 * 60);
+        QVERIFY(!banner->isVisible());
+        QCOMPARE(offers, 2);
+
+        // A refused tap - 8 AM today has passed - keeps the block, keeps the
+        // mode, and says why rather than silently doing nothing.
+        QVERIFY(QMetaObject::invokeMethod(&page, "startMoving", Q_ARG(QString, a)));
+        QVERIFY(QMetaObject::invokeMethod(&page, "planAt",
+                                          Q_ARG(QDate, today), Q_ARG(int, 4)));
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 13 * 60);
+        QVERIFY(banner->isVisible());
+        auto* label = banner->findChild<QLabel*>();
+        QVERIFY(label && label->text().contains(QStringLiteral("over")));
+        QCOMPARE(offers, 2); // nothing happened, so nothing to undo
+
+        // Tapping the block in hand means "never mind".
+        QVERIFY(QMetaObject::invokeMethod(&page, "onEventClicked", Q_ARG(QString, a)));
+        QVERIFY(!banner->isVisible());
+    }
+
+    void theBlockDialogOffersMoveOnlyWhenAPageCanHonourIt()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QString ev =
+            data.addEvent(QDate(2026, 7, 2), 10 * 60, 11 * 60, act);
+        TrackerService tracker(&data);
+        EventDialog dialog(&data, &tracker, ev);
+
+        auto* move =
+            dialog.findChild<QPushButton*>(QStringLiteral("moveOrSwapBtn"));
+        QVERIFY(move);
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+        // Hidden by default: CompareDialog hosts this dialog too, and has no
+        // moving mode to honour the button with.
+        QVERIFY(!move->isVisible());
+
+        dialog.setOffersMove(true);
+        QVERIFY(move->isVisible());
+        move->click();
+        // The dialog decides nothing itself; it reports, and the page acts
+        // after exec() returns.
+        QCOMPARE(dialog.result(), int(EventDialog::MoveOrSwap));
     }
 
     void eventDialogRepeatComboAppliesOnChange()

@@ -169,6 +169,14 @@ public:
     // and its container resolves the drop.
     void setResolvesOwnDrops(bool own) { m_resolvesOwnDrops = own; }
 
+    // ---- picking a target while a block is being moved (31.2.0, §M.8) -------
+    // On a phone a block is picked UP from its hold menu rather than dragged,
+    // so the next tap has to mean something at once: while picking, one
+    // stationary tap on a free slot reports it, where the ordinary touch rule
+    // is tap-to-arm and tap-again-to-plan. The block being moved is outlined,
+    // so it is obvious what a tap would place. An empty id = not picking.
+    void setTargetPicking(const QString& movingEventId);
+
 signals:
     void emptySlotClicked(int slotIndex);      // "plan something at 9:00"
     void eventClicked(const QString& eventId); // "open this block"
@@ -182,11 +190,34 @@ signals:
     void blockDragFinished(const QString& eventId, const QPoint& globalPos,
                            int grabOffsetPx);
     void blockDragCancelled(const QString& eventId);
+    // A block HELD on a touchscreen (450ms, stationary), and the same block
+    // RIGHT-CLICKED with a mouse. Two gestures, one menu, opened by the page:
+    // a phone has no right button, and a desktop has no hold.
+    void eventHeld(const QString& eventId, const QPoint& globalPos);
+    void eventContextMenuRequested(const QString& eventId,
+                                   const QPoint& globalPos);
     // "the user dragged an edge — please set this span". The widget only
     // REPORTS; the page routes it to AppData::resizeEvent, which enforces the
     // rules and can refuse. (m_data is const here — the widget couldn't mutate
     // even if it wanted to.)
+    //
+    // LAST in this block, and the reason is worth keeping: an access
+    // specifier written inside `signals:` ENDS the signals. 31.2.0 briefly
+    // put `protected:` above this line, which turned this signal into a
+    // private member and broke its three call sites at once. A new signal
+    // goes ABOVE here, never below.
     void eventResized(const QString& eventId, int newStartMin, int newEndMin);
+
+protected:
+    void contextMenuEvent(QContextMenuEvent* event) override;
+
+private:
+    QString m_pickingForId; // while moving: the block a tap would place
+    // Create-once hold timer, armed by a press on a free slot OR on a block.
+    // What the hold MEANS is decided when it fires, from which of the two is
+    // pending - one threshold for the whole widget, so the two gestures
+    // cannot drift apart.
+    void armLongPress();
 
 protected:
     // `override` (C++11) makes the compiler VERIFY we are really overriding

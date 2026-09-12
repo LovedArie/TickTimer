@@ -280,6 +280,13 @@ calendar yet.'"
 
 - Never name identifiers `slots`, `signals`, or `emit` — they're Qt macros
   (`Widgets.h` has the war story).
+- An **access specifier written inside `signals:` ends the signals block.**
+  `protected:` spliced above an existing signal made `eventResized` an
+  ordinary private member, and its three `connect()` sites failed with "is
+  private within this context" while the signal's own line was untouched. moc
+  is silent, because a declaration outside the block is not a signal at all.
+  New signals go at the END of the block, above any access specifier
+  (`AgendaWidget.h`, 31.2.0; full entry in `TROUBLESHOOTING.md`).
 - Never name a **namespace** after a POSIX function either — bionic declares
   `void sync(void)` in `<unistd.h>`, so `namespace sync` built on Windows for
   a year and failed the first Android compile. It is `syncplan` now

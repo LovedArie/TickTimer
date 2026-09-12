@@ -392,6 +392,17 @@ EventDialog::EventDialog(AppData* data, TrackerService* tracker,
     layout->addLayout(m_segList);
     layout->addLayout(addSegRow);
     layout->addWidget(m_note);
+    // "Move or swap…" (31.2.0, §M.8): the mouse user's alternative to a drag
+    // when the destination is a day this view is not showing - and the ONLY
+    // door on a phone, where a drag inside a scrolling page receives no moves
+    // at all. It only reports; the page runs moving mode after exec().
+    m_moveOrSwapBtn = new QPushButton(tr("Move or swap…"), this);
+    m_moveOrSwapBtn->setObjectName(QStringLiteral("moveOrSwapBtn"));
+    m_moveOrSwapBtn->setCursor(Qt::PointingHandCursor);
+    m_moveOrSwapBtn->hide(); // until a page says it can honour it
+    connect(m_moveOrSwapBtn, &QPushButton::clicked, this,
+            [this]() { done(MoveOrSwap); });
+    layout->addWidget(m_moveOrSwapBtn, 0, Qt::AlignLeft);
     layout->addWidget(deleteBtn, 0, Qt::AlignLeft);
 
     auto* scroll = new QScrollArea(this);
@@ -640,6 +651,11 @@ void EventDialog::refresh()
         m_renderedSegments = e->segments.size();
         rebuildSegmentList();
     }
+}
+
+void EventDialog::setOffersMove(bool on)
+{
+    m_moveOrSwapBtn->setVisible(on);
 }
 
 void EventDialog::moveBySlots(int deltaSlots)

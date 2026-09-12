@@ -120,7 +120,7 @@ The whole reason a manual pass exists — no test can answer these.
 
 ---
 
-# Part 2 — This release *(v31 — schedules, overlaps, archiving, ordering)*
+# Part 2 — This release *(31.2.0 — move & swap, the now-line, the Undo bar, the wheel guard; and the v31 arcs it shipped on: schedules, overlaps, archiving, ordering)*
 
 *Four addenda shipped in this arc and none of them has had a real-data pass.
 Rewrite this whole part for the next release.*
@@ -186,6 +186,84 @@ reach.
       is state, not a query — a stale one sends every drop to the last spot.
 
 ---
+
+## 5. Move and swap a block, the now-line, the Undo bar, the wheel guard *(31.2.0 — `design-addendum-move-and-swap.md`)*
+
+*The automated suites cover the rules and the signals. What they cannot cover
+is a finger on glass and a wheel under a hand, so those are the steps here.*
+
+**Desktop — the drag**
+
+- [ ] Day view: drag a block to a free slot. It lands where you dropped it,
+      keeping its length, and the block does not jump its top edge to the
+      pointer.
+- [ ] Week view: drag a block onto another day. It lands on the day under the
+      pointer, not on the day it started from.
+- [ ] Drop a block ON another block: they trade start times, each keeping its
+      own length.
+- [ ] A click that does not move still OPENS the block.
+- [ ] Refusals show a red outline and a sentence under the pointer, and nothing
+      moves: into the past; onto a slot that already holds three; a block that
+      has tracked time; a block being timed right now.
+
+**Desktop — a block whose time has passed (§M.11)**
+
+- [ ] Drag it to a later free time. A copy lands there, and the ORIGINAL stays
+      at its old time, faded, with "moved" on its time line.
+- [ ] The catch-up card still knows it was missed — it is not silently tidied
+      away.
+- [ ] The old time's alarm does NOT chime; the new one does.
+
+**Undo (§M.12)**
+
+- [ ] After every move, swap and reschedule, a dark bar appears in the
+      bottom-right of the TickTimer WINDOW (not the screen's corner, and not
+      the reminders' white card).
+- [ ] Undo puts it back. Resize the window: the bar stays in the corner.
+- [ ] Left alone it fades after about ten seconds.
+- [ ] Two drags in a row: the first bar's Undo does nothing, the second works.
+- [ ] An undo that can no longer happen says why in the same bar.
+
+**The red now-line (F19)**
+
+- [ ] Today shows a red line at the current time, in day AND week view; other
+      days show none.
+- [ ] `Ctrl+Shift+D` → move the fake clock: the line moves with it.
+
+**The wheel guard (B8)**
+
+- [ ] Open a repeating block. Hover the **Repeats** dropdown WITHOUT clicking
+      and scroll: the dropdown does not change, the recurrence survives, and
+      the dialog scrolls instead. *This is the bug that lost five schedules.*
+- [ ] Click the dropdown OPEN and scroll inside the list: still works.
+- [ ] Settings, Activity editor, task details: hover dropdowns, number boxes
+      and time boxes and scroll. The page scrolls; no value changes.
+- [ ] Click INTO a time or number box, then scroll over it: it nudges the
+      value, because you asked for it by clicking in.
+
+**The phone — with a real finger (§M.8)**
+
+*`adb` gestures are not evidence here: a synthesized swipe is not a thumb.
+Every line below is a hand on the device.*
+
+- [ ] Hold a block (about half a second): the **Open / Move or swap…** menu
+      appears. A hold that MOVES scrolls the day instead, and opens nothing.
+- [ ] Tap a block: it opens, as before.
+- [ ] **Move or swap…**: the banner appears and the block is outlined.
+- [ ] ONE tap on a free slot puts it there (not two, as planning needs).
+- [ ] One tap on another block swaps them; a tap on the outlined block cancels.
+- [ ] Use ‹ › while holding a block: it can land on another day.
+- [ ] The Undo bar appears inside the app, clear of the capture **+** button
+      and the bottom bar, and Undo works.
+- [ ] A refused target keeps the block in hand and explains in the banner.
+
+**Recurrence, overnight**
+
+- [ ] Move ONE occurrence of a weekly rule to another day. Next morning (or
+      with the debug panel's clock), the date it left is still empty — the rule
+      has not re-made it — and the moved one is still where you put it.
+- [ ] Edit the rule's time afterwards: the moved occurrence stays put; the
+      untouched ones follow the rule.
 
 ## Known and expected — not bugs
 

@@ -11,6 +11,7 @@
 #include "LoginDialog.h"
 #include "ResponsiveWatcher.h"
 #include "SessionStore.h"
+#include "WheelGuard.h"
 #include "MainWindow.h"
 
 #include <QMessageBox>
@@ -69,6 +70,12 @@ int main(int argc, char* argv[])
     // the screen on a compact device and maps Android's Back key to reject().
     // Installed before the login dialog, which is the first one shown.
     responsive::installCompactDialogFitter(&app);
+
+    // B8 (31.2.0): a control that mutates data must not act on a wheel event
+    // it merely happens to sit under. One filter covers every combo, spin box
+    // and date/time edit in the app - including the ones written next year.
+    // See WheelGuard.h for the schedule this bug destroyed in the field.
+    wheelguard::install(&app);
 
     // TICKTIMER_PROBE (or `?probe` in the URL on the web build): draw the
     // screen readings on top of the app. Nothing is constructed unless the

@@ -204,11 +204,46 @@ with its sentence, and the same mode is reachable on the desktop from a
 right-click and from a button in the block dialog.
 
 *Why not drag:* inside a `QScroller` page a drag receives its press and its
-release and nothing in between (`ReorderListView.h`). *Why not
-`contextMenuEvent`:* Android does not reliably synthesise it from a long press
-— recorded against a real device in `ReorderListView.cpp`. *Why a menu rather
-than picking the block up at once:* delete-one-occurrence (F6) joins it next
-iteration. The prototype offers both; the owner confirms on a device.
+release and nothing in between (`ReorderListView.h`).
+
+*Why a menu rather than picking the block up at once:* the owner's call
+(2026-09-11), after trying both in the prototype — delete-one-occurrence (F6)
+joins the same menu next iteration, and a hold that acted immediately would
+leave nowhere for it to go.
+
+*Two gestures, one menu, and where each comes from.* The phone's hold reuses
+the widget's existing 450 ms timer: a press on a block arms the same timer a
+press on a free slot does, and what the hold MEANT is read off which of the
+two was pending when it fires — one threshold for the whole widget, so the
+gestures cannot drift apart. The desktop's right-click goes through
+`contextMenuEvent`, which is reliable with a mouse; Android is the platform
+that does not dependably synthesise it from a long press (recorded against a
+real device in `ReorderListView.cpp`), which is why the phone gets the timer
+and not that event. `mousePressEvent` is now filtered to the LEFT button:
+before, a right press also opened the block, and a right press on an edge
+started a resize that its release committed.
+
+*Putting it down.* While a block is in hand, `AgendaWidget::setTargetPicking`
+makes one stationary tap on a free slot report at once, where the ordinary
+touch rule is tap-to-arm then tap-again — there is nothing left to
+disambiguate once the block is chosen, and asking twice reads as the app not
+noticing. The block in hand is outlined on the timeline, so the banner is not
+the only thing that knows. A tap on another block swaps; a tap on the block
+itself cancels; a refusal keeps the mode and shows the domain's sentence in
+the banner.
+
+*The block dialog's door.* `EventDialog` gains a "Move or swap…" button that
+does nothing but `done(EventDialog::MoveOrSwap)` — a third result code beside
+Accepted and Rejected. The page starts moving mode only after `exec()`
+returns, because a dialog's nested event loop is no place to start a mode that
+claims the next tap. The button is hidden unless a page calls
+`setOffersMove(true)`: `CompareDialog` hosts this dialog too and has no moving
+mode to honour it with. On the desktop it is also the only way to reach a day
+the current view is not showing.
+
+*And it is undoable for free:* both paths end in the same
+`onEventMoveRequested` / `onEventSwapRequested` slots the drag uses, so a
+tap-placed block offers the same Undo (§M.12) as a dragged one.
 
 ---
 

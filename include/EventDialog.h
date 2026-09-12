@@ -36,6 +36,18 @@ public:
     EventDialog(AppData* data, TrackerService* tracker,
                 const QString& eventId, QWidget* parent = nullptr);
 
+    // A third way for exec() to come back (31.2.0, §M.8): "I want to put this
+    // block somewhere else." The dialog does not move anything itself - moving
+    // mode belongs to the page, which cannot act while a modal dialog is up,
+    // so the answer travels out as a result code and the page acts after
+    // exec() returns. Accepted is 1, so this is 2.
+    enum Result { MoveOrSwap = QDialog::Accepted + 1 };
+
+    // Show the "Move or swap…" button. OFF by default: CompareDialog hosts
+    // this dialog too, and there is no moving mode there - a button that did
+    // nothing would be worse than no button.
+    void setOffersMove(bool on);
+
 private slots:
     void refresh();       // re-read the event and repaint everything
     void moveBySlots(int deltaSlots);
@@ -80,6 +92,7 @@ private:
     QPushButton* m_breakBtn = nullptr;
     QPushButton* m_distractedBtn = nullptr;
     QPushButton* m_stopBtn  = nullptr;
+    QPushButton* m_moveOrSwapBtn = nullptr; // hidden unless a page offers it
     QVector<QPushButton*> m_moveButtons; // ▲1h ▲30m 30m▼ 1h▼
     bool m_updatingUi = false; // guards against signal feedback loops
 };

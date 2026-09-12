@@ -213,6 +213,30 @@ private:
     // Ask for the corner "... · Undo" bar describing m_dragUndo.
     void offerUndo(const QString& what);
 
+    // ---- moving mode (31.2.0, move-and-swap §M.8) ---------------------------
+    // A phone cannot drag: inside a scrolling page a drag receives its press
+    // and its release and nothing in between. So a block is PICKED UP - hold
+    // it, choose "Move or swap…" - and put down with one tap. The desktop
+    // reaches the same mode by right-clicking a block or from the block's own
+    // dialog, which is also how a block reaches a day this view is not
+    // showing. Derived on every refresh, like placing mode: the id is the
+    // only state.
+    QString m_movingEventId; // empty = not moving
+    QString m_movingWhy;     // the last refusal, shown in the banner
+    QFrame* m_movingBanner = nullptr;
+    QLabel* m_movingLabel  = nullptr;
+    void refreshMoving(); // the banner, and which agendas take a tap as a drop
+    // One menu for two gestures - Open, and Move or swap.
+    void showBlockMenu(const QString& eventId, const QPoint& globalPos);
+
+private slots:
+    // Pick a block up. A slot, so the hold menu, the right-click menu, the
+    // block dialog's button and a test all reach it exactly the same way -
+    // and none of them has to be a QMenu for a test to drive it.
+    void startMoving(const QString& eventId);
+
+private:
+
 signals:
     // "Say this in the window's corner, with an Undo when `onUndo` is set"
     // (31.2.0, §M.12). MainWindow owns the bar; the page only asks. It is
@@ -221,6 +245,11 @@ signals:
 
 private slots:
     // Take back the last drag, if its block is still where the drag left it.
-    // A slot, so the toast's button and a test reach the very same code.
+    // A slot, so the bar's button and a test reach the very same code.
     void undoLastDrag();
+    // A block held on a phone, or right-clicked on a desktop. Two gestures,
+    // one menu - so the two platforms cannot drift apart.
+    void onEventHeld(const QString& eventId, const QPoint& globalPos);
+    void onEventContextMenu(const QString& eventId, const QPoint& globalPos);
+    void cancelMoving();
 };

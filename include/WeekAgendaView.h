@@ -44,9 +44,17 @@ signals:
     // columns report the pointer, the view resolves the drop.
     void eventMoveRequested(const QString& eventId, QDate date, int startMin);
     void eventSwapRequested(const QString& eventId, const QString& otherId);
+    // Held on a phone, right-clicked on a desktop: passed straight through,
+    // like eventClicked - the id is all the page needs (31.2.0, §M.8).
+    void eventHeld(const QString& eventId, const QPoint& globalPos);
+    void eventContextMenuRequested(const QString& eventId,
+                                   const QPoint& globalPos);
 
 public:
     void setBlockDragEnabled(bool on); // fans out to all seven columns
+    // While a block is being moved, every column takes a single tap as "put
+    // it here" - so a week view can place a block on any of its seven days.
+    void setTargetPicking(const QString& movingEventId);
 
 private:
     void relabelHeaders();

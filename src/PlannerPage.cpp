@@ -24,7 +24,8 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QPointer> // the undo toast's callback must not outlive the page
+#include <QMenu>    // the block's menu: Open / Move or swap (31.2.0)
+#include <QPointer> // the undo bar's callback must not outlive the page
 #include <QPushButton>
 #include <QCheckBox>
 #include <QScrollArea>
@@ -268,6 +269,33 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     }
     m_placingBanner->hide();
     agendaLayout->addWidget(m_placingBanner);
+
+    // ---- the moving banner (31.2.0, §M.8) ---------------------------------
+    // Its OWN banner rather than the placing one, which carries a day strip
+    // built for finding time for a task: a block being moved has nothing to
+    // say about deadlines, and sharing the widget would mean one of the two
+    // features always showing something the other did not mean. Same slot in
+    // the layout, same "hidden until it has something to say" rule.
+    m_movingBanner = new QFrame(agendaPanel);
+    m_movingBanner->setObjectName("movingBanner");
+    m_movingBanner->setStyleSheet(QStringLiteral(
+        "#movingBanner { background: rgba(47,126,110,0.08); "
+        "border: 1px solid rgba(47,126,110,0.35); border-radius: 10px; }"));
+    {
+        auto* row = new QHBoxLayout(m_movingBanner);
+        row->setContentsMargins(10, 8, 10, 8);
+        row->setSpacing(8);
+        m_movingLabel = new QLabel(m_movingBanner);
+        m_movingLabel->setWordWrap(true);
+        row->addWidget(m_movingLabel, 1);
+        auto* cancel = new QPushButton(tr("Cancel"), m_movingBanner);
+        cancel->setObjectName("moveCancel");
+        connect(cancel, &QPushButton::clicked,
+                this, &PlannerPage::cancelMoving);
+        row->addWidget(cancel);
+    }
+    m_movingBanner->hide();
+    agendaLayout->addWidget(m_movingBanner);
     agendaLayout->addWidget(m_duePanel);
     // ---- the strip that SHRINKS the day --------------------------------------
     // Deliberately a layout child in the banner slot beside m_placingBanner
@@ -446,6 +474,19 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
             this, &PlannerPage::onEventMoveRequested);
     connect(m_agenda, &AgendaWidget::eventSwapRequested,
             this, &PlannerPage::onEventSwapRequested);
+
+    // The block's menu, from either gesture and from either view (31.2.0,
+    // §M.8): a hold on a touchscreen, a right-click with a mouse. Wired here
+    // for both agendas at once - the week view is already built above - so the
+    // two views cannot end up offering different menus.
+    connect(m_agenda, &AgendaWidget::eventHeld,
+            this, &PlannerPage::onEventHeld);
+    connect(m_agenda, &AgendaWidget::eventContextMenuRequested,
+            this, &PlannerPage::onEventContextMenu);
+    connect(m_weekAgenda, &WeekAgendaView::eventHeld,
+            this, &PlannerPage::onEventHeld);
+    connect(m_weekAgenda, &WeekAgendaView::eventContextMenuRequested,
+            this, &PlannerPage::onEventContextMenu);
 
     connect(m_data, &AppData::changed, this, &PlannerPage::refresh);
 
@@ -688,6 +729,27 @@ void PlannerPage::onEmptySlotClicked(int slotIndex)
 
 void PlannerPage::planAt(QDate date, int slotIndex)
 {
+    // Moving mode first (31.2.0, §M.8): this tap is putting a block DOWN, not
+    // planning a new one. It intercepts one step ahead of placing because a
+    // block already in hand outranks a task being placed - and startMoving()
+    // cancels placing anyway, so the two can never both be live.
+    if (!m_movingEventId.isEmpty()) {
+        const int startMin =
+            plan::kDayStartMinutes + slotIndex * plan::kSlotMinutes;
+        const QString why =
+            m_data->whyCannotMove(m_movingEventId, date, startMin,
+                                  m_tracker->nowProvider());
+        if (!why.isEmpty()) {
+            m_movingWhy = why; // stay in the mode, and say why in the banner
+            refreshMoving();
+            return;
+        }
+        const QString id = m_movingEventId;
+        cancelMoving();                           // it is down; mode over
+        onEventMoveRequested(id, date, startMin); // ...and undoable, as a drag
+        return;
+    }
+
     // Placement interception (needs-a-block part 3). Because THIS is the
     // single planning step both the day agenda and every week column route
     // through, one interception makes "Find time" work from both views —
@@ -751,10 +813,35 @@ void PlannerPage::planAt(QDate date, int slotIndex)
 
 void PlannerPage::onEventClicked(const QString& eventId)
 {
+    // Moving mode (31.2.0, §M.8): a tap on ANOTHER block means "trade places
+    // with that one", and a tap on the block in hand means "never mind".
+    if (!m_movingEventId.isEmpty()) {
+        const QString moving = m_movingEventId;
+        if (moving == eventId) {
+            cancelMoving();
+            return;
+        }
+        const QString why = m_data->whyCannotSwap(moving, eventId,
+                                                 m_tracker->nowProvider());
+        if (!why.isEmpty()) {
+            m_movingWhy = why; // stay in the mode, and say why in the banner
+            refreshMoving();
+            return;
+        }
+        cancelMoving();
+        onEventSwapRequested(moving, eventId); // undoable, exactly as a drag
+        return;
+    }
+
     EventDialog dialog(m_data, m_tracker, eventId, this);
-    dialog.exec();
-    // Nothing to do afterwards: every change the dialog made already went
-    // through AppData/TrackerService and reached us via changed().
+    dialog.setOffersMove(true); // this page HAS a moving mode to offer
+    const int answer = dialog.exec();
+    // Acted on AFTER exec() returns: a dialog's own nested event loop is no
+    // place to start a mode that claims the next tap (CLAUDE.md's nested-loop
+    // trap). Every other change the dialog made already went through
+    // AppData/TrackerService and reached us via changed().
+    if (answer == EventDialog::MoveOrSwap)
+        startMoving(eventId);
 }
 
 void PlannerPage::onEventResized(const QString& id, int startMin, int endMin)
@@ -896,6 +983,94 @@ void PlannerPage::undoLastDrag()
                               UndoAction()); // said, with nothing to undo
 }
 
+// ---- moving mode (31.2.0, §M.8) ---------------------------------------------
+
+void PlannerPage::onEventHeld(const QString& eventId, const QPoint& globalPos)
+{
+    showBlockMenu(eventId, globalPos);
+}
+
+void PlannerPage::onEventContextMenu(const QString& eventId,
+                                     const QPoint& globalPos)
+{
+    showBlockMenu(eventId, globalPos);
+}
+
+void PlannerPage::showBlockMenu(const QString& eventId,
+                                const QPoint& globalPos)
+{
+    if (!m_data->eventById(eventId))
+        return;
+    QMenu menu(this);
+    QAction* open = menu.addAction(tr("Open"));
+    QAction* move = menu.addAction(tr("Move or swap…"));
+    // exec() runs a NESTED event loop, so nothing is decided until it
+    // returns: the trap CLAUDE.md records is acting inside that loop, which
+    // is why this asks first and acts after, rather than connecting two
+    // lambdas that would fire while the menu is still up.
+    QAction* chosen = menu.exec(globalPos);
+    if (chosen == open)
+        onEventClicked(eventId);
+    else if (chosen == move)
+        startMoving(eventId);
+}
+
+void PlannerPage::startMoving(const QString& eventId)
+{
+    if (!m_data->eventById(eventId))
+        return;
+    cancelPlacing(); // two modes that both claim the next tap cannot coexist
+    m_movingEventId = eventId;
+    m_movingWhy.clear();
+    refreshMoving();
+}
+
+void PlannerPage::cancelMoving()
+{
+    if (m_movingEventId.isEmpty())
+        return;
+    m_movingEventId.clear();
+    m_movingWhy.clear();
+    refreshMoving();
+}
+
+void PlannerPage::refreshMoving()
+{
+    const Event* moving = m_movingEventId.isEmpty()
+                              ? nullptr
+                              : m_data->eventById(m_movingEventId);
+    if (!moving) { // not moving, or the block vanished under us (a sync pull)
+        m_movingEventId.clear();
+        m_movingWhy.clear();
+        m_movingBanner->hide();
+        m_agenda->setTargetPicking(QString());
+        if (m_weekAgenda)
+            m_weekAgenda->setTargetPicking(QString());
+        return;
+    }
+
+    m_movingBanner->show();
+    m_movingLabel->setText(
+        tr("Moving <b>%1</b> (%2, from %3 %4). Tap a free slot to put it "
+           "there, or another block to swap places. Use ‹ › for another "
+           "day.%5")
+            .arg(m_data->eventLabel(*moving).toHtmlEscaped(),
+                 durationLabel((moving->plannedEndMinutes
+                                - moving->plannedStartMinutes)
+                               / plan::kSlotMinutes),
+                 moving->date.toString(QStringLiteral("ddd d MMM")),
+                 timeLabel(moving->plannedStartMinutes),
+                 m_movingWhy.isEmpty()
+                     ? QString()
+                     : tr(" <b>%1</b>").arg(m_movingWhy.toHtmlEscaped())));
+
+    // Both views: a block picked up on the day view can be put down on any
+    // day of the week view, and the other way round.
+    m_agenda->setTargetPicking(m_movingEventId);
+    if (m_weekAgenda)
+        m_weekAgenda->setTargetPicking(m_movingEventId);
+}
+
 void PlannerPage::refresh()
 {
     m_agenda->update();
@@ -903,6 +1078,9 @@ void PlannerPage::refresh()
     if (m_weekCard) // the SAME derived list, second surface (part 3)
         m_weekCard->refresh(QDateTime::currentDateTime());
     refreshPlacing(); // banner + day strip + highlights, all derived
+    refreshMoving();  // the moving banner and the outline, likewise derived -
+                      // so a block deleted or pulled in by sync while it was
+                      // being moved ends the mode instead of stranding it
     rebuildDueStrip(); // a task's date/title/done may have changed
     refreshAttentionStrip(); // derived from the glance, after IT refreshed
     // Week/month pages listen to AppData::changed themselves.
