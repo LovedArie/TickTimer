@@ -494,6 +494,11 @@ public:
     //
     // A moved occurrence of a schedule keeps its scheduleId, and the rule's
     // skipDates are reconciled so the date it left is not re-made (§M.4).
+    //
+    // A block whose time has PASSED is not moved in place: it was missed, so
+    // moveEventTo reschedules it through rescheduleBlock and the original
+    // stays behind, marked Moved, as the record (§M.11, owner decision). A
+    // missed block cannot swap - trading places would move the original.
     QString whyCannotMove(const QString& id, QDate date, int startMin,
                           const QDateTime& now) const;
     bool    moveEventTo(const QString& id, QDate date, int startMin,

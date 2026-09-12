@@ -10,6 +10,8 @@
 #include <QGridLayout>
 #include <QLabel>
 #include <QPainter>
+#include <QScrollArea> // previewDrop keeps the pointer's hour in view
+#include <QToolTip>    // the drop's sentence, under the pointer
 
 namespace
 {
@@ -111,6 +113,17 @@ WeekAgendaView::WeekAgendaView(const AppData* data,
                 this, &WeekAgendaView::eventClicked); // id is enough, pass it on
         connect(col, &AgendaWidget::eventResized,
                 this, &WeekAgendaView::eventResized); // resize a block in any day
+
+        // A drag begun in this column may end in any of the seven, so the
+        // column reports the pointer and this view - the only one that can
+        // see every column - resolves the drop (31.2.0).
+        col->setResolvesOwnDrops(false);
+        connect(col, &AgendaWidget::blockDragMoved,
+                this, &WeekAgendaView::previewDrop);
+        connect(col, &AgendaWidget::blockDragFinished,
+                this, &WeekAgendaView::finishDrop);
+        connect(col, &AgendaWidget::blockDragCancelled,
+                this, [this]() { clearDropPreviews(); });
     }
 
     // When the data changes, the seven-day UNION window may change (a block
@@ -201,4 +214,86 @@ void WeekAgendaView::setShowTaskDescriptions(bool show)
 {
     for (auto* col : m_columns)
         col->setShowTaskDescriptions(show);
+}
+
+// ---- moving a block across the week (31.2.0) --------------------------------
+
+void WeekAgendaView::setBlockDragEnabled(bool on)
+{
+    for (auto* col : m_columns)
+        col->setBlockDragEnabled(on);
+}
+
+AgendaWidget* WeekAgendaView::columnAt(const QPoint& globalPos) const
+{
+    for (auto* col : m_columns) {
+        const QPoint local = col->mapFromGlobal(globalPos);
+        // `<= width()`, not `<`: the grid's 1px spacing sits just right of a
+        // column, and a pointer exactly on that seam still means a day.
+        if (local.x() >= 0 && local.x() <= col->width())
+            return col;
+    }
+    return nullptr;
+}
+
+void WeekAgendaView::previewDrop(const QString& eventId,
+                                 const QPoint& globalPos, int grabOffsetPx)
+{
+    AgendaWidget* target = columnAt(globalPos);
+    for (auto* col : m_columns)
+        if (col != target)
+            col->clearDropPreview(); // one preview on the week, never two
+    if (!target) {
+        QToolTip::hideText();
+        return;
+    }
+
+    // Every column shares one window and one row height (applyWindow), so
+    // the grab offset measured in the source column means the same thing in
+    // the target column - that shared grid is what makes this hand-off legal.
+    const AgendaWidget::DropTarget t = target->dropTargetAt(
+        target->mapFromGlobal(globalPos), eventId, grabOffsetPx);
+    target->setDropPreview(t);
+    const QString sentence = target->describeDrop(t);
+    if (sentence.isEmpty())
+        QToolTip::hideText();
+    else
+        QToolTip::showText(globalPos, sentence, target);
+
+    // The week sits in a scroll area; keep the pointer's hour on screen.
+    for (QWidget* w = parentWidget(); w; w = w->parentWidget()) {
+        auto* area = qobject_cast<QScrollArea*>(w);
+        if (!area)
+            continue;
+        if (QWidget* content = area->widget()) {
+            const QPoint p = content->mapFromGlobal(globalPos);
+            area->ensureVisible(p.x(), p.y(), 0, AgendaWidget::slotHeight());
+        }
+        break;
+    }
+}
+
+void WeekAgendaView::finishDrop(const QString& eventId,
+                                const QPoint& globalPos, int grabOffsetPx)
+{
+    clearDropPreviews();
+    QToolTip::hideText();
+    AgendaWidget* target = columnAt(globalPos);
+    if (!target)
+        return; // released outside the week: nothing moves
+
+    const AgendaWidget::DropTarget t = target->dropTargetAt(
+        target->mapFromGlobal(globalPos), eventId, grabOffsetPx);
+    if (t.unchanged || !t.why.isEmpty())
+        return; // put back where it was, or refused - the preview said why
+    if (!t.swapWithId.isEmpty())
+        emit eventSwapRequested(eventId, t.swapWithId);
+    else if (t.startMin >= 0)
+        emit eventMoveRequested(eventId, t.date, t.startMin);
+}
+
+void WeekAgendaView::clearDropPreviews()
+{
+    for (auto* col : m_columns)
+        col->clearDropPreview();
 }

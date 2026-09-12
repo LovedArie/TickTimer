@@ -50,19 +50,27 @@ check (`daylay::problemWith`) runs on the day as it would be.
 1. **Already decided in catch-up** (`outcome` set). The verdict is about that
    slot; moving the block would leave a verdict describing a time it no longer
    occupies.
-2. **Already over** (`missed::hasEnded`). A past block is catch-up's business
-   (§M.1).
-3. **Being timed right now.** `TrackerService` stops the timer the moment its
+2. **Being timed right now.** `TrackerService` stops the timer the moment its
    block stops being live, so the move would silently end a session and leave
    a segment outside the plan.
-4. **The target has already started.** You cannot plan a time that has passed.
-5. **Tracked time, and a different day.** "The time you already spent belongs
-   to the day you spent it" — `rescheduleBlock`'s sentence, and it applies here
-   unchanged. The same block may still move *within* its day, which is what
-   the dialog's nudge buttons have always allowed.
-6. **Its rule already has an occurrence on that day** (§M.4) — ignoring a swap
+3. **The target is already completely over.** You cannot plan a time that has
+   passed. *Corrected after the owner's first try on the desktop:* this used
+   to refuse any target that had merely **started**, so a block you were in
+   the middle of, dragged away by accident, could not be put back. The rule
+   now mirrors the source's — a block that has *ended* is in the past, and so
+   is a target that would already have ended.
+4. **Any tracked time at all.** *Owner decision, 2026-09-11, after trying
+   it:* a block with tracked time does not move, not even within its own day.
+   The minutes happened in that slot, and a plan that slides away from them
+   makes plan-versus-actual compare the wrong things. The first cut followed
+   `rescheduleBlock`'s sentence — "the time you already spent belongs to the
+   day you spent it" — and allowed a same-day move, as the dialog's nudge
+   buttons still do (§M.10); the owner drew the line tighter. For a block whose
+   time has passed, the catch-up card is where what is left of it gets
+   rescheduled.
+5. **Its rule already has an occurrence on that day** (§M.4) — ignoring a swap
    partner that is leaving.
-7. **It is already there.**
+6. **It is already there.**
 
 *Why a sentence and not a bool:* the same reason `recur::problemWith` and
 `daylay::problemWith` return one. Whoever refuses should explain, and one
@@ -225,3 +233,77 @@ question rather than a silent merge. That is the merge doing its job.
   refusals. Routing them through `moveEventTo` would need a clock the dialog
   does not have, and nudging within a day was never the dangerous case.
 - The drag autoscrolls only while the mouse moves.
+
+---
+
+## §M.11 A block whose time has passed is RESCHEDULED, not moved
+
+*Choice (owner, 2026-09-11, after the first try on the desktop):* dragging a
+block that has already ended, and holds no tracked time, to a time that is not
+yet over reschedules it through `rescheduleBlock` — catch-up's own door. The
+original stays at its time, marked Moved and drawn faded; the replacement
+lands where it was dropped. The first cut refused such a drag outright, and
+"when the hours pass, I can't change" was the first thing the owner hit.
+
+*Why the record is kept:* this is a plan-versus-actual app, and "planned at 8,
+did not happen, moved to 3" is exactly the fact the catch-up card, the reviews
+and the assistant's briefing read. A plain move would make the calendar forget
+the miss. §M.1 still holds for a block that has not happened yet — nothing is
+lost by moving that one in place — so one door chooses between the two from
+the data (`blockmove::movesAsReschedule`) rather than from a flag the caller
+passes, which is the shape §M.1 rejected.
+
+*What it does not do:* a missed block cannot swap (trading places would move
+the original and erase the miss); a passed block with tracked time is still
+refused (the catch-up card reschedules what is left of it); nothing is
+rescheduled INTO the past. The room check counts the original as a neighbour,
+because it stays.
+
+*Alternative rejected:* moving a passed block in place, into the past or the
+future. It was offered to the owner side by side with this one; it is simpler,
+and it loses the miss.
+
+*The drawing half:* the agenda had never looked at a block's outcome, so a
+Moved original painted exactly like a live block, and the day would have shown
+the same block twice. It is faded now.
+
+---
+
+## §M.12 Every drag can be undone, from a toast
+
+*Choice (owner, 2026-09-11):* after a move, swap or reschedule, a dark bar in
+the bottom-right corner of the TickTimer window says what changed, offers
+**Undo**, and fades after ten seconds (`UndoBar`). It floats over the page
+rather than taking space — "I don't want it on the calendar as it takes up
+space". The request came from a real accident: a passed block dropped onto
+the wrong slot.
+
+*The first cut was the reminder toast, and it was wrong.* `NotificationToast`
+already had an action button, so the Undo went through `Notifier` like every
+other notification. The owner rejected it on sight: it was the reminders'
+white card, in the TOP-right corner of the SCREEN. A notification is news
+arriving from elsewhere; an Undo is the far end of something you did a second
+ago, in this window — and two meanings with one look is how a person stops
+reading either. Moving it into the window also closed a gap the toast had:
+`AndroidNotifier` posts a title and a body only, so on a phone there was no
+button at all.
+
+*How it undoes:* each drag's own inverse, through the same guarded doors. A
+move is moved back, a swap is swapped again, and a reschedule is taken back by
+`undoReschedule`, catch-up's inverse since v29.2. No back door skips the
+rules, so an undo can be refused (the original slot has gone past, the
+replacement already holds tracked time), and the bar then says why.
+
+*What is remembered, and where:* the page keeps the last drag (`DragUndo`).
+It is page memory, never saved or synced — the line `ChatPage` already draws
+with `m_undoableMoveId`. Only the LATEST drag can be undone, and only while its
+block is still where the drag left it: undoing a block that something else
+has moved since would be a new move, not an undo.
+
+*Who owns the bar:* MainWindow, as it owns the capture button in the same
+corner — on a phone the bar sits above that button. The page emits
+`undoBarRequested` and opens nothing of its own.
+
+*Alternatives rejected:* the reminder toast (above); a bar inside the calendar
+layout (the owner's call, for space); and a general Ctrl+Z history over every
+edit — a far larger feature than "I dropped that in the wrong place".

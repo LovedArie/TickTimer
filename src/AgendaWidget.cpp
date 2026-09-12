@@ -10,6 +10,8 @@
 #include <QTimer>
 #include <QApplication>
 #include <QPainter>
+#include <QScrollArea> // autoScrollTo: the page that holds this widget
+#include <QToolTip>    // the drag's sentence, under the pointer
 #include <QTextLayout>
 #include <QTextOption>
 
@@ -190,6 +192,21 @@ AgendaWidget::AgendaWidget(const AppData* data, const TrackerService* tracker,
         connect(m_tracker, &TrackerService::stateChanged,
                 this, qOverload<>(&QWidget::update));
     }
+
+    // THE NOW-LINE (31.2.0, F19) moves once a minute on a 30px slot, so a
+    // repaint every 30 seconds is always within half a pixel of the truth.
+    // Only today's agenda has a line to move, so other days skip the repaint.
+    // Hidden widgets ignore update() anyway, so the seven week columns cost
+    // nothing while the day view is on screen.
+    m_nowTimer = new QTimer(this);
+    m_nowTimer->setInterval(30 * 1000);
+    connect(m_nowTimer, &QTimer::timeout, this, [this]() {
+        const QDateTime now = m_tracker ? m_tracker->nowProvider()
+                                        : QDateTime::currentDateTime();
+        if (m_date == now.date())
+            update();
+    });
+    m_nowTimer->start();
 }
 
 void AgendaWidget::setDate(QDate date)
@@ -471,6 +488,14 @@ void AgendaWidget::paintEvent(QPaintEvent*)
         const Category* category =
             m_data->categoryById(m_data->eventCategoryId(*e));
         const QColor color = category ? category->color : theme::inkSoft();
+        // A block being carried (31.2.0) stays faded where it was, so the
+        // dashed preview reads as "it will go there" and not as a second block.
+        // A block that was MOVED away - rescheduled, this original kept as
+        // the record (move-and-swap §M.11) - is faded too, or the day would
+        // show the same block twice at full strength.
+        const bool carried   = m_dragging && e->id == m_dragEventId;
+        const bool movedAway = e->outcome == BlockOutcome::Moved;
+        p.setOpacity(carried ? 0.35 : movedAway ? 0.45 : 1.0);
         // While dragging an edge, THIS block is drawn at its live preview span
         // (the fixed edge stays, the grabbed edge follows the mouse) so resize
         // feedback is immediate — paint still only READS state, never writes.
@@ -619,6 +644,9 @@ void AgendaWidget::paintEvent(QPaintEvent*)
             if (sched->repeat != Task::Repeat::None)
                 timeLine += QStringLiteral(" · %1")
                                 .arg(repeatLabel(sched->repeat));
+        // A faded block says why in words, not only in opacity (§M.11).
+        if (e->outcome == BlockOutcome::Moved)
+            timeLine += QStringLiteral(" · %1").arg(tr("moved"));
         p.setFont(small);
         p.setPen(theme::inkSoft());
         const QFontMetrics smallFm(small);
@@ -741,6 +769,69 @@ void AgendaWidget::paintEvent(QPaintEvent*)
             p.drawRoundedRect(QRect(bar.left() + fw, bar.top(), bw, bar.height()), 2, 2);
             p.setBrush(theme::danger()); // distraction, in the danger hue
             p.drawRoundedRect(QRect(bar.left() + fw + bw, bar.top(), dw, bar.height()), 2, 2);
+        }
+    }
+
+    p.setOpacity(1.0); // the carried block's fade stops with the blocks
+
+    // 4a) THE NOW-LINE (31.2.0, F19): a red rule across today at this minute,
+    //     over the blocks, so a block you are inside shows where in it you
+    //     are. The clock is the tracker's, so the debug panel's fake clock
+    //     moves it too. fillRect rather than a pen: a 2px rectangle lands on
+    //     whole pixels, where an antialiased pen would smear across three.
+    {
+        const QDateTime now = m_tracker ? m_tracker->nowProvider()
+                                        : QDateTime::currentDateTime();
+        const int nowMin = now.time().hour() * 60 + now.time().minute();
+        const auto window = shownWindow();
+        if (m_date == now.date() && nowMin >= window.first
+            && nowMin < window.second) {
+            // The same conversion slotTop() makes, at minute resolution.
+            const int y = kTopPad
+                        + (nowMin - window.first) * slotHeight()
+                              / plan::kSlotMinutes;
+            p.fillRect(QRect(m_gutter, y - 1, width() - m_gutter, 2),
+                       theme::danger());
+            p.setPen(Qt::NoPen);
+            p.setBrush(theme::danger());
+            p.drawEllipse(QPoint(m_gutter + 3, y), 4, 4);
+        }
+    }
+
+    // 4b) THE DROP PREVIEW (31.2.0): where a carried block would land, or the
+    //     block it would trade places with. Green when the domain allows it,
+    //     red when it refuses - and the refusal's sentence is the tooltip
+    //     under the pointer, so the colour never has to be decoded alone.
+    if (!m_dropPreview.eventId.isEmpty()) {
+        const bool   refused = !m_dropPreview.why.isEmpty();
+        const QColor ink     = refused ? theme::danger() : theme::focus();
+        if (const Event* other = m_data->eventById(m_dropPreview.swapWithId)) {
+            p.setPen(QPen(ink, 2.5));
+            p.setBrush(Qt::NoBrush);
+            p.drawRoundedRect(eventRect(*other).adjusted(-2, -2, 2, 2),
+                              kRadius + 2, kRadius + 2);
+        } else if (const Event* dragged =
+                       m_data->eventById(m_dropPreview.eventId);
+                   dragged && m_dropPreview.startMin >= 0
+                   && !m_dropPreview.unchanged) {
+            const int end = m_dropPreview.startMin
+                          + (dragged->plannedEndMinutes
+                             - dragged->plannedStartMinutes);
+            const QRect r = spanRect(m_dropPreview.startMin, end);
+            QColor fill = ink;
+            fill.setAlphaF(0.12f);
+            p.setPen(QPen(ink, 1.5, Qt::DashLine));
+            p.setBrush(fill);
+            p.drawRoundedRect(r, kRadius + 1, kRadius + 1);
+            if (r.height() >= 16) {
+                p.setFont(small);
+                p.setPen(ink);
+                p.drawText(r.adjusted(10, 0, -6, 0),
+                           Qt::AlignLeft | Qt::AlignVCenter,
+                           QStringLiteral("%1 – %2")
+                               .arg(timeLabel(m_dropPreview.startMin),
+                                    timeLabel(end)));
+            }
         }
     }
 
@@ -873,6 +964,17 @@ void AgendaWidget::mousePressEvent(QMouseEvent* event)
     // exactly as they win visually.
     for (const Event* e : m_data->eventsOn(m_date)) {
         if (eventRect(*e).contains(event->pos())) {
+            // With dragging on, a left press on a body is not yet a click
+            // (31.2.0): it opens on RELEASE if the mouse stayed put, and
+            // becomes a drag if it moved. With it off - the Compare dialog -
+            // it opens on press, as it always has.
+            if (m_blockDragEnabled && event->button() == Qt::LeftButton) {
+                m_dragEventId  = e->id;
+                m_dragPressPos = event->pos();
+                m_dragGrabPx   = event->pos().y() - eventRect(*e).top();
+                m_dragging     = false;
+                return;
+            }
             emit eventClicked(e->id);
             return;
         }
@@ -894,6 +996,37 @@ void AgendaWidget::mouseMoveEvent(QMouseEvent* event)
                >= QApplication::startDragDistance()) {
         cancelPendingTouch();
         disarm(); // a scroll means the finger was never aiming at that slot
+    }
+
+    // ---- 0) A block being carried (31.2.0) ---------------------------------
+    // Pressed on a body: nothing happens until the mouse has moved as far as
+    // the platform says a drag must, so a slightly shaky click still opens
+    // the block instead of nudging it.
+    if (!m_dragEventId.isEmpty()) {
+        if (!m_dragging) {
+            if ((event->pos() - m_dragPressPos).manhattanLength()
+                < QApplication::startDragDistance())
+                return;
+            m_dragging  = true;
+            m_hoverSlot = -1; // no "+ plan" invitation under a carried block
+            setCursor(Qt::ClosedHandCursor);
+        }
+        const QPoint global = event->globalPosition().toPoint();
+        if (!m_resolvesOwnDrops) {
+            emit blockDragMoved(m_dragEventId, global, m_dragGrabPx);
+            update(); // the carried block still dims in its own column
+            return;
+        }
+        const DropTarget t =
+            dropTargetAt(event->pos(), m_dragEventId, m_dragGrabPx);
+        setDropPreview(t);
+        const QString sentence = describeDrop(t);
+        if (sentence.isEmpty())
+            QToolTip::hideText();
+        else
+            QToolTip::showText(global, sentence, this);
+        autoScrollTo(event->pos());
+        return;
     }
 
     // ---- 1) A resize drag in progress: update the clamped preview span -----
@@ -992,6 +1125,7 @@ bool AgendaWidget::event(QEvent* e)
     if (e->type() == QEvent::UngrabMouse) {
         cancelPendingTouch();
         disarm();
+        cancelBlockDrag(); // a carried block whose grab was taken: not dropped
     }
 
     return QWidget::event(e);
@@ -1028,6 +1162,39 @@ void AgendaWidget::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
 
+    // ---- a carried block, put down (31.2.0) --------------------------------
+    if (!m_dragEventId.isEmpty()) {
+        const QString id          = m_dragEventId;
+        const bool    wasDragging = m_dragging;
+        const int     grabPx      = m_dragGrabPx;
+        m_dragEventId.clear();
+        m_dragging = false;
+        if (!wasDragging) {
+            emit eventClicked(id); // the mouse stayed put: it was a click
+            return;
+        }
+        setCursor(Qt::PointingHandCursor);
+        QToolTip::hideText();
+        if (!m_resolvesOwnDrops) {
+            emit blockDragFinished(id, event->globalPosition().toPoint(),
+                                   grabPx);
+            update();
+            return;
+        }
+        // Asked again at the release point rather than trusting the last
+        // preview: the last move event is not always where the button came up.
+        const DropTarget t = dropTargetAt(event->pos(), id, grabPx);
+        clearDropPreview();
+        update();
+        if (t.unchanged || !t.why.isEmpty())
+            return; // put back, or refused - the tooltip already said why
+        if (!t.swapWithId.isEmpty())
+            emit eventSwapRequested(id, t.swapWithId);
+        else if (t.startMin >= 0)
+            emit eventMoveRequested(id, m_date, t.startMin);
+        return;
+    }
+
     if (!m_resizing)
         return;
     m_resizing = false;
@@ -1050,5 +1217,125 @@ void AgendaWidget::leaveEvent(QEvent*)
     if (m_hoverSlot != -1) {
         m_hoverSlot = -1;
         update();
+    }
+}
+
+// ---- moving a block by dragging it (31.2.0, move-and-swap addendum) ---------
+
+void AgendaWidget::setBlockDragEnabled(bool on)
+{
+    if (m_blockDragEnabled == on)
+        return;
+    m_blockDragEnabled = on;
+    if (!on)
+        cancelBlockDrag();
+}
+
+AgendaWidget::DropTarget AgendaWidget::dropTargetAt(const QPoint& pos,
+                                                    const QString& eventId,
+                                                    int grabOffsetPx) const
+{
+    DropTarget t;
+    t.eventId = eventId;
+    t.date    = m_date;
+    const Event* dragged = m_data->eventById(eventId);
+    if (!dragged)
+        return t; // gone mid-drag (a sync pull landed): nothing to drop
+
+    // The clock the doors will be asked with, so the preview and the door
+    // cannot disagree about what has already passed - and the debug panel's
+    // fake clock reaches both.
+    const QDateTime now = m_tracker ? m_tracker->nowProvider()
+                                    : QDateTime::currentDateTime();
+
+    // Over ANOTHER block: a swap (§M.6). The same rectangles clicks are
+    // tested against, so the block that lights up is the one a click there
+    // would open.
+    for (const Event* e : m_data->eventsOn(m_date)) {
+        if (e->id != eventId && eventRect(*e).contains(pos)) {
+            t.swapWithId = e->id;
+            t.why        = m_data->whyCannotSwap(eventId, e->id, now);
+            return t;
+        }
+    }
+
+    // Over space, or over its own old place: a move. minutesAtY snaps to the
+    // nearest slot line; subtracting where the block was grabbed keeps it
+    // under the pointer instead of jumping its top edge there.
+    const int length =
+        dragged->plannedEndMinutes - dragged->plannedStartMinutes;
+    const int start = qBound(plan::kDayStartMinutes,
+                             minutesAtY(pos.y() - grabOffsetPx),
+                             plan::kDayEndMinutes - length);
+    t.startMin  = start;
+    t.unchanged = (m_date == dragged->date
+                   && start == dragged->plannedStartMinutes);
+    if (!t.unchanged)
+        t.why = m_data->whyCannotMove(eventId, m_date, start, now);
+    return t;
+}
+
+QString AgendaWidget::describeDrop(const DropTarget& t) const
+{
+    if (!t.why.isEmpty())
+        return t.why; // the domain's own sentence, word for word
+    if (t.unchanged)
+        return {};
+    if (const Event* other = m_data->eventById(t.swapWithId))
+        return tr("Swap with \"%1\"").arg(m_data->eventLabel(*other));
+    const Event* dragged = m_data->eventById(t.eventId);
+    if (!dragged || t.startMin < 0)
+        return {};
+    const int end = t.startMin
+                  + (dragged->plannedEndMinutes - dragged->plannedStartMinutes);
+    return tr("Move to %1, %2 – %3")
+        .arg(t.date.toString(QStringLiteral("ddd d MMM")),
+             timeLabel(t.startMin), timeLabel(end));
+}
+
+void AgendaWidget::setDropPreview(const DropTarget& target)
+{
+    m_dropPreview = target;
+    update(); // input writes state + update(); paint only reads it
+}
+
+void AgendaWidget::clearDropPreview()
+{
+    if (m_dropPreview.eventId.isEmpty())
+        return;
+    m_dropPreview = DropTarget();
+    update();
+}
+
+void AgendaWidget::cancelBlockDrag()
+{
+    const QString id          = m_dragEventId;
+    const bool    wasDragging = m_dragging;
+    m_dragEventId.clear();
+    m_dragging = false;
+    clearDropPreview();
+    if (!wasDragging)
+        return;
+    QToolTip::hideText();
+    setCursor(Qt::ArrowCursor);
+    if (!m_resolvesOwnDrops)
+        emit blockDragCancelled(id);
+    update(); // the dimmed block comes back to full strength
+}
+
+void AgendaWidget::autoScrollTo(const QPoint& pos)
+{
+    // Walk up to the page's scroll area rather than being handed one: the day
+    // view and the Compare dialog each wrap this widget their own way, and a
+    // widget that finds its container needs no page to remember to tell it.
+    for (QWidget* w = parentWidget(); w; w = w->parentWidget()) {
+        auto* area = qobject_cast<QScrollArea*>(w);
+        if (!area)
+            continue;
+        if (QWidget* content = area->widget()) {
+            const QPoint p = mapTo(content, pos);
+            area->ensureVisible(p.x(), p.y(), 0, slotHeight());
+        }
+        return;
     }
 }

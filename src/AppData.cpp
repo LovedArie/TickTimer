@@ -1701,9 +1701,15 @@ QString AppData::whyCannotPlace(const Event& e, QDate date, int startMin,
     // into m_events and into `moved`. Nothing mutates m_events inside this
     // const function and `moved` belongs to the caller, so every pointer
     // outlives the one call that reads it.
+    //
+    // A block that is RESCHEDULED stays where it was, so its copy carries no
+    // id (whyCannotMove clears it): dayWith then takes nothing out, and
+    // problemWith counts the original like any other neighbour (§M.11).
+    const QString self =
+        blockmove::movesAsReschedule(e, now) ? QString() : e.id;
     const int endMin = startMin + (e.plannedEndMinutes - e.plannedStartMinutes);
     return daylay::problemWith(blockmove::dayWith(eventsOn(date), moved, date),
-                               startMin, endMin, e.id);
+                               startMin, endMin, self);
 }
 
 QString AppData::whyCannotMove(const QString& id, QDate date, int startMin,
@@ -1714,6 +1720,8 @@ QString AppData::whyCannotMove(const QString& id, QDate date, int startMin,
         return tr("That block no longer exists.");
 
     Event moved = *e; // the block as it would be - a copy, e is untouched
+    if (blockmove::movesAsReschedule(*e, now))
+        moved.id.clear(); // a replacement, not the original (§M.11)
     moved.date                = date;
     moved.plannedEndMinutes   = startMin
                               + (e->plannedEndMinutes - e->plannedStartMinutes);
@@ -1727,9 +1735,20 @@ bool AppData::moveEventTo(const QString& id, QDate date, int startMin,
     if (!whyCannotMove(id, date, startMin, now).isEmpty())
         return false; // decline, don't force - the same contract as addEvent
 
+    const Event* current = eventById(id);
+    const int length =
+        current->plannedEndMinutes - current->plannedStartMinutes;
+
+    // A block whose time has passed was MISSED, and a miss is a fact the
+    // catch-up card and the reviews keep (§M.11, owner decision). So it is
+    // not moved: it is rescheduled through catch-up's own door, and the
+    // original stays behind, marked Moved, pointing at its replacement.
+    if (blockmove::movesAsReschedule(*current, now))
+        return !rescheduleBlock(id, date, startMin, startMin + length)
+                    .isEmpty();
+
     Event* e = mutableEventById(id);
     const RuleDate left{e->scheduleId, e->date};
-    const int length = e->plannedEndMinutes - e->plannedStartMinutes;
 
     Batch batch(*this); // the move and its skip bookkeeping are one change
     // In place (§M.1): the tracked Segments, the note and the id all stay.
@@ -1750,6 +1769,13 @@ QString AppData::whyCannotSwap(const QString& idA, const QString& idB,
         return tr("That block no longer exists.");
     if (a->id == b->id)
         return tr("A block cannot swap with itself.");
+    // A missed block keeps its record by being rescheduled into free time
+    // (§M.11). Trading places would move the original and erase the miss.
+    for (const Event* x : {a, b})
+        if (x->outcome == BlockOutcome::Unset
+            && blockmove::movesAsReschedule(*x, now))
+            return tr("\"%1\" has already happened. Drag it to a free time "
+                      "to reschedule it.").arg(eventLabel(*x));
 
     // Both moved copies, applied TOGETHER: each side is checked against the
     // other's new place, not its old one (§M.3).

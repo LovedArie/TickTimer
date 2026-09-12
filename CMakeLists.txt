@@ -153,6 +153,9 @@ set(UI_SOURCES
     src/PomodoroMiniWindow.cpp
     include/NotificationToast.h
     src/NotificationToast.cpp
+    # 31.2.0 - the corner Undo bar, deliberately NOT a NotificationToast
+    include/UndoBar.h
+    src/UndoBar.cpp
     include/ProbeOverlay.h
     src/ProbeOverlay.cpp
     # v30.6 — how the app SPEAKS, as an interface plus one implementation

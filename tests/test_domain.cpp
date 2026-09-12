@@ -1811,22 +1811,40 @@ private slots:
         };
         QVERIFY(why(e, QDate(2026, 7, 3), 600).isEmpty());
         QVERIFY(!why(e, QDate(2026, 7, 2), 600).isEmpty()); // already there
-        QVERIFY(!why(e, QDate(2026, 7, 1), 540).isEmpty()); // 9:00 today has passed
-        QVERIFY(why(e, QDate(2026, 7, 1), 570).isEmpty());  // 9:30 has not
+        // The target is refused only when it would be completely OVER - the
+        // mirror of "a block that has ended". At 9:30, 8-9 is over and 9-10
+        // is not, which is what lets a block you are in the middle of go back.
+        QVERIFY(!why(e, QDate(2026, 7, 1), 480).isEmpty());
+        QVERIFY(why(e, QDate(2026, 7, 1), 540).isEmpty());
         QVERIFY(!why(e, QDate(2026, 7, 3), 600, /*timed=*/true).isEmpty());
         QVERIFY(!why(e, QDate(2026, 7, 3), 600, false, /*ruleThere=*/true).isEmpty());
 
-        // Order: a block that is over says THAT, even if it is also timed.
+        // Order: a block settled in catch-up says THAT, even if also timed.
+        Event settled = e;
+        settled.outcome = BlockOutcome::Done;
+        QCOMPARE(why(settled, QDate(2026, 7, 3), 600, true),
+                 why(settled, QDate(2026, 7, 3), 600, false));
+
+        // A block whose time has passed may go to a time that has not - the
+        // door reschedules it (§M.11) - unless it holds tracked time. Its
+        // rule's one-per-day limit does not bind a replacement.
         Event over = e;
         over.date = QDate(2026, 6, 30);
-        QCOMPARE(why(over, QDate(2026, 7, 3), 600, true),
-                 why(over, QDate(2026, 7, 3), 600, false));
+        QVERIFY(blockmove::movesAsReschedule(over, now));
+        QVERIFY(!blockmove::movesAsReschedule(e, now));
+        QVERIFY(why(over, QDate(2026, 7, 3), 600).isEmpty());
+        QVERIFY(why(over, QDate(2026, 7, 3), 600, false, /*ruleThere=*/true).isEmpty());
+        QVERIFY(!why(over, QDate(2026, 6, 30), 720).isEmpty()); // still the past
+        Event overTracked = over;
+        overTracked.segments.append(makeSegment(SegmentKind::Focus, kT0, 10));
+        QVERIFY(!why(overTracked, QDate(2026, 7, 3), 600).isEmpty());
 
-        // Tracked time may move within its own day, never to another.
+        // Tracked time pins a block: not to another day, not within its own
+        // (owner decision after trying it - §M.2 item 4).
         Event tracked = e;
         tracked.segments.append(makeSegment(SegmentKind::Focus, kT0, 10));
         QVERIFY(!why(tracked, QDate(2026, 7, 3), 600).isEmpty());
-        QVERIFY(why(tracked, QDate(2026, 7, 2), 720).isEmpty());
+        QVERIFY(!why(tracked, QDate(2026, 7, 2), 720).isEmpty());
 
         // A deleted date is still a date the rule produces; a moved
         // occurrence is displaced by another day OR other times.
@@ -1899,17 +1917,16 @@ private slots:
         QCOMPARE(data.events().size(), 1);
     }
 
-    void aBlockThatIsOverDecidedOrBeingTimedDoesNotMove()
+    void aDecidedOrTimedBlockDoesNotMoveAndNothingLandsInThePast()
     {
         AppData data;
         const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
         const QString act = data.addActivity("Study", cat);
         const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
 
-        const QString over    = data.addEvent(QDate(2026, 7, 1), 480, 540, act); // 8-9
         const QString decided = data.addEvent(QDate(2026, 7, 2), 600, 660, act);
         QVERIFY(data.resolveBlock(decided, BlockOutcome::Dropped));
-        const QString timed   = data.addEvent(QDate(2026, 7, 1), 540, 600, act); // 9-10
+        const QString timed = data.addEvent(QDate(2026, 7, 1), 540, 600, act); // 9-10
         RunningState running;
         running.eventId  = timed;
         running.start    = now.addSecs(-600);
@@ -1918,19 +1935,64 @@ private slots:
         const QString plain = data.addEvent(QDate(2026, 7, 2), 720, 780, act);
 
         QSignalSpy spy(&data, &AppData::changed);
-        QVERIFY(!data.whyCannotMove(over, QDate(2026, 7, 2), 900, now).isEmpty());
-        QVERIFY(!data.moveEventTo(over, QDate(2026, 7, 2), 900, now));
+        QVERIFY(!data.whyCannotMove(decided, QDate(2026, 7, 3), 600, now).isEmpty());
         QVERIFY(!data.moveEventTo(decided, QDate(2026, 7, 3), 600, now));
         QVERIFY(!data.moveEventTo(timed, QDate(2026, 7, 1), 900, now));
-        QVERIFY(!data.moveEventTo(plain, QDate(2026, 7, 1), 540, now)); // passed
+        QVERIFY(!data.moveEventTo(plain, QDate(2026, 7, 1), 480, now)); // 8-9: over
         QVERIFY(!data.moveEventTo(plain, QDate(2026, 6, 30), 720, now));
         QVERIFY(!data.moveEventTo(QStringLiteral("nope"), QDate(2026, 7, 2), 600, now));
         QVERIFY(!data.whyCannotMove(QStringLiteral("nope"), QDate(2026, 7, 2), 600, now).isEmpty());
         QCOMPARE(spy.count(), 0); // a refusal changes nothing
         QCOMPARE(data.eventById(plain)->plannedStartMinutes, 720);
+
+        // ...but 9-10 is not over at 9:30, so a block may still land there -
+        // which is what lets a block dragged away by accident come back.
+        QVERIFY(data.moveEventTo(plain, QDate(2026, 7, 1), 540, now));
     }
 
-    void trackedTimeKeepsABlockOnItsOwnDay()
+    void aMissedBlockDraggedToLaterIsRescheduledAndKeepsItsRecord()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDateTime now(QDate(2026, 7, 1), QTime(9, 30));
+        const QString missed =
+            data.addEvent(QDate(2026, 7, 1), 480, 540, act, "Lab 2"); // 8-9, never started
+        const QString later =
+            data.addEvent(QDate(2026, 7, 1), 780, 840, act); // 1-2 PM
+
+        // Into the past: still refused. Onto another block: a missed block
+        // does not trade places, because that would move the original.
+        QVERIFY(!data.moveEventTo(missed, QDate(2026, 7, 1), 420, now));
+        QVERIFY(!data.whyCannotSwap(missed, later, now).isEmpty());
+        QVERIFY(!data.swapEvents(missed, later, now));
+
+        // To 3 PM: rescheduled, exactly as the catch-up card would do it.
+        QSignalSpy spy(&data, &AppData::changed);
+        QVERIFY(data.whyCannotMove(missed, QDate(2026, 7, 1), 900, now).isEmpty());
+        QVERIFY(data.moveEventTo(missed, QDate(2026, 7, 1), 900, now));
+        QCOMPARE(spy.count(), 1);
+
+        const Event* original = data.eventById(missed);
+        QVERIFY(original);                                 // the record stays,
+        QCOMPARE(original->plannedStartMinutes, 480);      // at its own time,
+        QVERIFY(original->outcome == BlockOutcome::Moved); // marked moved
+        QCOMPARE(original->movedToIds.size(), 1);
+        const Event* replacement = data.eventById(original->movedToIds.first());
+        QVERIFY(replacement);
+        QCOMPARE(replacement->date, QDate(2026, 7, 1));
+        QCOMPARE(replacement->plannedStartMinutes, 900);
+        QCOMPARE(replacement->plannedEndMinutes, 960); // the hour is kept
+        QCOMPARE(replacement->activityId, act);
+        QCOMPARE(replacement->title, QStringLiteral("Lab 2"));
+        QCOMPARE(data.events().size(), 3);
+
+        // And catch-up's own undo takes it back, because it IS catch-up's move.
+        QVERIFY(data.undoReschedule(missed));
+        QCOMPARE(data.events().size(), 2);
+    }
+
+    void aBlockWithTrackedTimeDoesNotMoveAtAll()
     {
         AppData data;
         const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
@@ -1940,9 +2002,12 @@ private slots:
         QVERIFY(data.appendSegment(
             ev, makeSegment(SegmentKind::Focus, QDateTime(QDate(2026, 7, 1), QTime(9, 0)), 20)));
 
-        // The twenty minutes happened on Jul 1 and stay filed there.
+        // Twenty minutes happened in this block's slot, so the block stays
+        // there: not to another day, and not later today either.
         QVERIFY(!data.moveEventTo(ev, QDate(2026, 7, 2), 540, now));
-        QVERIFY(data.moveEventTo(ev, QDate(2026, 7, 1), 780, now)); // later today is fine
+        QVERIFY(!data.whyCannotMove(ev, QDate(2026, 7, 1), 780, now).isEmpty());
+        QVERIFY(!data.moveEventTo(ev, QDate(2026, 7, 1), 780, now));
+        QCOMPARE(data.eventById(ev)->plannedStartMinutes, 540);
         QCOMPARE(data.eventById(ev)->segments.size(), 1);
     }
 

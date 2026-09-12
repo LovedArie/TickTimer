@@ -38,9 +38,27 @@ signals:
     void emptySlotClicked(QDate date, int slotIndex); // "plan on that day"
     void eventClicked(const QString& eventId);         // "open this block"
     void eventResized(const QString& eventId, int newStartMin, int newEndMin);
+    // A block dragged within the week and released over a slot or another
+    // block (31.2.0). The mouse grab stays with the column the press began
+    // in, so only THIS view can tell which column the pointer is over: the
+    // columns report the pointer, the view resolves the drop.
+    void eventMoveRequested(const QString& eventId, QDate date, int startMin);
+    void eventSwapRequested(const QString& eventId, const QString& otherId);
+
+public:
+    void setBlockDragEnabled(bool on); // fans out to all seven columns
 
 private:
     void relabelHeaders();
+    // The column under a global point, or nullptr outside the grid. The 1px
+    // gaps between columns count as the column to their left, so a drop
+    // exactly on a seam still lands somewhere.
+    AgendaWidget* columnAt(const QPoint& globalPos) const;
+    void previewDrop(const QString& eventId, const QPoint& globalPos,
+                     int grabOffsetPx);
+    void finishDrop(const QString& eventId, const QPoint& globalPos,
+                    int grabOffsetPx);
+    void clearDropPreviews();
 
     const AppData*        m_data;
     const TrackerService* m_tracker;

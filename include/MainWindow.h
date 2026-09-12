@@ -247,6 +247,9 @@ private:
     // that shows up later as a crash somewhere else entirely.
     QMetaObject::Connection m_headerActionConn;
     void placeCaptureFab();
+    // The corner "... · Undo" bar after a drag on the calendar (31.2.0). It
+    // places itself; the window only creates it and passes offers along.
+    class UndoBar* m_undoBar = nullptr;
     void updateCaptureFabVisibility();
     // Two independent reasons the + can be absent, tracked separately so
     // neither can clobber the other's decision.

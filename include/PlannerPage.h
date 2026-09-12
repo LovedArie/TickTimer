@@ -18,6 +18,9 @@
 
 #include "Event.h"      // BlockOutcome — the catch-up slots' vocabulary
 #include "Reschedule.h" // reschedule::Option — the accepted proposal
+// UndoAction, a signal argument below. An include rather than a forward
+// declaration because Qt 6's moc needs every signal argument type COMPLETE.
+#include "UndoBar.h"
 
 #include <QDate>
 #include "Responsive.h"
@@ -82,6 +85,12 @@ private slots:
     // enforces the rules and can refuse. The widget already clamped the
     // preview, so this normally succeeds — belt (UI) and suspenders (domain).
     void onEventResized(const QString& id, int startMin, int endMin);
+    // A block dragged to a new place, or onto another block (31.2.0). The
+    // drag's preview already quoted the domain's verdict; these ask the doors
+    // again against the data as it is NOW - a sync may have landed mid-drag -
+    // and a refusal simply changes nothing.
+    void onEventMoveRequested(const QString& id, QDate date, int startMin);
+    void onEventSwapRequested(const QString& id, const QString& otherId);
     // Plan an event on a GIVEN date at a given slot. The single planning
     // step, shared by the day view (m_date) and every week column (its own
     // date) — one rule, two callers, no divergence. Placement mode (part 3)
@@ -181,4 +190,37 @@ private:
     void refreshAttentionStrip();
     WeekReviewPage* m_week        = nullptr;
     MonthReviewPage* m_month      = nullptr;
+
+    // ---- undoing a drag (31.2.0, move-and-swap §M.12) ----------------------
+    // What the last drag did, kept so its toast can take it back. PAGE
+    // memory, not domain data: never saved, never synced - it describes a
+    // gesture, not the planner. ChatPage draws the same line with
+    // m_undoableMoveId.
+    struct DragUndo
+    {
+        enum class Kind { None, Move, Reschedule, Swap };
+        Kind    kind = Kind::None;
+        QString eventId;       // the block dragged (Reschedule: the original)
+        QString otherId;       // Swap: the block it traded places with
+        QDate   fromDate;      // Move: where it came from
+        int     fromStart = 0;
+        QDate   toDate;        // where the drag put it - the undo runs only
+        int     toStart   = 0; //  while the block is still there
+        int     serial    = 0; // which drag; only the latest can be undone
+    };
+    DragUndo m_dragUndo;
+    int      m_dragSerial = 0;
+    // Ask for the corner "... · Undo" bar describing m_dragUndo.
+    void offerUndo(const QString& what);
+
+signals:
+    // "Say this in the window's corner, with an Undo when `onUndo` is set"
+    // (31.2.0, §M.12). MainWindow owns the bar; the page only asks. It is
+    // deliberately NOT the reminder toast - UndoBar.h says why.
+    void undoBarRequested(const QString& text, const UndoAction& onUndo);
+
+private slots:
+    // Take back the last drag, if its block is still where the drag left it.
+    // A slot, so the toast's button and a test reach the very same code.
+    void undoLastDrag();
 };

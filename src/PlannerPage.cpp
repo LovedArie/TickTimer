@@ -24,6 +24,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPointer> // the undo toast's callback must not outlive the page
 #include <QPushButton>
 #include <QCheckBox>
 #include <QScrollArea>
@@ -407,6 +408,13 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
             this, &PlannerPage::onEventClicked);
     connect(m_weekAgenda, &WeekAgendaView::eventResized,
             this, &PlannerPage::onEventResized);
+    // Move and swap by drag (31.2.0): the week view resolves which day a drop
+    // landed on; the page asks the domain.
+    m_weekAgenda->setBlockDragEnabled(true);
+    connect(m_weekAgenda, &WeekAgendaView::eventMoveRequested,
+            this, &PlannerPage::onEventMoveRequested);
+    connect(m_weekAgenda, &WeekAgendaView::eventSwapRequested,
+            this, &PlannerPage::onEventSwapRequested);
 
     // Both views exist now — hand them the loaded preference. The widgets
     // are TOLD; only this page ever touches QSettings for it.
@@ -433,6 +441,11 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
             this, &PlannerPage::onEventClicked);
     connect(m_agenda, &AgendaWidget::eventResized,
             this, &PlannerPage::onEventResized);
+    m_agenda->setBlockDragEnabled(true); // move and swap by drag (31.2.0)
+    connect(m_agenda, &AgendaWidget::eventMoveRequested,
+            this, &PlannerPage::onEventMoveRequested);
+    connect(m_agenda, &AgendaWidget::eventSwapRequested,
+            this, &PlannerPage::onEventSwapRequested);
 
     connect(m_data, &AppData::changed, this, &PlannerPage::refresh);
 
@@ -751,6 +764,136 @@ void PlannerPage::onEventResized(const QString& id, int startMin, int endMin)
     // refuses (returns false) nothing changes and the block simply repaints at
     // its old span on the next changed() — no special-case needed here.
     m_data->resizeEvent(id, startMin, endMin);
+}
+
+void PlannerPage::onEventMoveRequested(const QString& id, QDate date,
+                                       int startMin)
+{
+    const Event* before = m_data->eventById(id);
+    if (!before)
+        return;
+    // COPIES, taken before the door runs. `before` points into AppData's
+    // vector of events, and a reschedule APPENDS a replacement to that
+    // vector - which may move every element to new memory and leave this
+    // pointer aimed at freed bytes. Values cannot dangle.
+    const QDate   fromDate  = before->date;
+    const int     fromStart = before->plannedStartMinutes;
+    const QString label     = m_data->eventLabel(*before);
+
+    // The same clock the drag's preview used, so the two cannot disagree
+    // about what has already passed.
+    if (!m_data->moveEventTo(id, date, startMin, m_tracker->nowProvider()))
+        return;
+
+    DragUndo undo;
+    undo.serial  = ++m_dragSerial;
+    undo.eventId = id;
+    const Event* after = m_data->eventById(id); // looked up AGAIN, see above
+    if (after && after->outcome == BlockOutcome::Moved
+        && !after->movedToIds.isEmpty()) {
+        undo.kind = DragUndo::Kind::Reschedule; // a missed block (§M.11)
+    } else {
+        undo.kind      = DragUndo::Kind::Move;
+        undo.fromDate  = fromDate;
+        undo.fromStart = fromStart;
+        undo.toDate    = date;
+        undo.toStart   = startMin;
+    }
+    m_dragUndo = undo;
+    offerUndo(tr("\"%1\" moved to %2, %3")
+                  .arg(label, date.toString(QStringLiteral("ddd d MMM")),
+                       timeLabel(startMin)));
+}
+
+void PlannerPage::onEventSwapRequested(const QString& id,
+                                       const QString& otherId)
+{
+    const Event* a = m_data->eventById(id);
+    const Event* b = m_data->eventById(otherId);
+    if (!a || !b)
+        return;
+    const QString labelA = m_data->eventLabel(*a);
+    const QString labelB = m_data->eventLabel(*b);
+    const QDate   aLands = b->date;                // where A is about to go,
+    const int     aAt    = b->plannedStartMinutes; // so the undo can check
+
+    if (!m_data->swapEvents(id, otherId, m_tracker->nowProvider()))
+        return;
+
+    DragUndo undo;
+    undo.kind    = DragUndo::Kind::Swap;
+    undo.serial  = ++m_dragSerial;
+    undo.eventId = id;
+    undo.otherId = otherId;
+    undo.toDate  = aLands;
+    undo.toStart = aAt;
+    m_dragUndo = undo;
+    offerUndo(tr("\"%1\" and \"%2\" swapped places").arg(labelA, labelB));
+}
+
+void PlannerPage::offerUndo(const QString& what)
+{
+    // The bar that stores this callback belongs to MainWindow, not to this
+    // page, so it can outlive the page (a test, or a window torn down with
+    // the bar still up). The callback therefore holds a QPointer - which
+    // reads as null once the page is destroyed - never a raw `this`. And
+    // only the LATEST drag can be undone: an older offer's callback does
+    // nothing.
+    const QPointer<PlannerPage> page(this);
+    const int serial = m_dragUndo.serial;
+    emit undoBarRequested(what, [page, serial]() {
+        if (page && page->m_dragUndo.serial == serial)
+            page->undoLastDrag();
+    });
+}
+
+void PlannerPage::undoLastDrag()
+{
+    const DragUndo undo = m_dragUndo;
+    m_dragUndo = DragUndo(); // used once: a second press finds nothing
+    const QDateTime now = m_tracker->nowProvider();
+
+    // Each undo is the drag's own inverse, through the same guarded doors -
+    // no back door skips the rules, so an undo can be refused and says why.
+    // It runs only while the block is still where the drag left it: undoing
+    // a block that something else has moved since would be a new move.
+    QString refusal;
+    switch (undo.kind) {
+    case DragUndo::Kind::None:
+        return;
+    case DragUndo::Kind::Move: {
+        const Event* e = m_data->eventById(undo.eventId);
+        if (!e || e->date != undo.toDate
+            || e->plannedStartMinutes != undo.toStart)
+            return;
+        refusal = m_data->whyCannotMove(undo.eventId, undo.fromDate,
+                                        undo.fromStart, now);
+        if (refusal.isEmpty())
+            m_data->moveEventTo(undo.eventId, undo.fromDate, undo.fromStart,
+                                now);
+        break;
+    }
+    case DragUndo::Kind::Reschedule:
+        // Catch-up's own inverse (v29.2): the replacement goes, the original
+        // is unresolved again. It refuses once the replacement holds time.
+        if (!m_data->undoReschedule(undo.eventId))
+            refusal = tr("The new block already has tracked time.");
+        break;
+    case DragUndo::Kind::Swap: {
+        const Event* e = m_data->eventById(undo.eventId);
+        if (!e || e->date != undo.toDate
+            || e->plannedStartMinutes != undo.toStart)
+            return;
+        refusal = m_data->whyCannotSwap(undo.eventId, undo.otherId, now);
+        if (refusal.isEmpty())
+            m_data->swapEvents(undo.eventId, undo.otherId, now);
+        break;
+    }
+    }
+
+    if (!refusal.isEmpty())
+        emit undoBarRequested(tr("Could not undo: %1").arg(refusal),
+                              UndoAction()); // said, with nothing to undo
 }
 
 void PlannerPage::refresh()

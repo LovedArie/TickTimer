@@ -34,6 +34,8 @@
 #include "ReorderListView.h"      // v31 — the reorder-mode rows
 #include "AgendaWidget.h"
 #include "DayLayout.h" // v31.3 -- the column packing the agenda honours
+#include "Theme.h"     // 31.2.0 -- the now-line's colour, pinned by pixel
+#include "UndoBar.h"   // 31.2.0 -- the corner Undo after a drag
 #include "TaskDetailDialog.h" // v28.5 — the piece-panel navigation tests
 #include "TaskDetailPanel.h"  // v28.6 — the docked panel tests
 #include "TaskDetailForm.h"   // v28.6.2 — the background-fill pin
@@ -1123,6 +1125,356 @@ private slots:
         view.setFirstDayOfWeek(Qt::Sunday);
         QCOMPARE(columns.first()->date(), QDate(2026, 7, 5));
         QCOMPARE(columns.last()->date(), QDate(2026, 7, 11)); // Sat closes it
+    }
+
+    // ---- 31.2.0: moving and swapping blocks by drag (move-and-swap addendum) --
+    // The widgets only REPORT, so these pin what they report. That the domain
+    // then moves the block, or refuses, is test_domain's business.
+
+    void draggingABlockAsksToMoveItKeepingWhereItWasGrabbed()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        tracker.nowProvider = [] {
+            return QDateTime(QDate(2026, 7, 1), QTime(9, 30));
+        };
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setBlockDragEnabled(true);
+        agenda.resize(600, agenda.minimumHeight());
+        agenda.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&agenda));
+
+        const auto yAt = [](int minutes) {
+            return AgendaWidget::kTopPad
+                   + (minutes - plan::kDayStartMinutes) / plan::kSlotMinutes
+                         * AgendaWidget::slotHeight();
+        };
+        QSignalSpy moved(&agenda, &AgendaWidget::eventMoveRequested);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+
+        // Picked up 20px into the block and carried four hours down. The top
+        // edge must land on 2 PM, not the point the pointer happens to be on.
+        const QPoint grab(300, yAt(10 * 60) + 20);
+        const QPoint drop(300, yAt(14 * 60) + 20);
+        QTest::mousePress(&agenda, Qt::LeftButton, {}, grab);
+        QCOMPARE(clicked.count(), 0); // a press on a body is not yet a click
+        QTest::mouseMove(&agenda, drop);
+        QTest::mouseRelease(&agenda, Qt::LeftButton, {}, drop);
+
+        QCOMPARE(moved.count(), 1);
+        QCOMPARE(moved.first().at(0).toString(), ev);
+        QCOMPARE(moved.first().at(1).toDate(), day);
+        QCOMPARE(moved.first().at(2).toInt(), 14 * 60);
+        QCOMPARE(clicked.count(), 0); // a drag is not also a click
+    }
+
+    void aClickOnADraggableBlockStillOpensIt()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setBlockDragEnabled(true);
+        agenda.resize(600, agenda.minimumHeight());
+        agenda.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&agenda));
+
+        const QPoint onBlock(300, AgendaWidget::kTopPad
+                                      + 8 * AgendaWidget::slotHeight() + 20);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+        QSignalSpy moved(&agenda, &AgendaWidget::eventMoveRequested);
+        QTest::mouseClick(&agenda, Qt::LeftButton, {}, onBlock);
+        QCOMPARE(clicked.count(), 1); // opens on release, since nothing moved
+        QCOMPARE(clicked.first().first().toString(), ev);
+        QCOMPARE(moved.count(), 0);
+
+        // With dragging off - the Compare dialog's agenda - a press opens at
+        // once, exactly as it did before 31.2.0.
+        agenda.setBlockDragEnabled(false);
+        QTest::mousePress(&agenda, Qt::LeftButton, {}, onBlock);
+        QCOMPARE(clicked.count(), 2);
+        QTest::mouseRelease(&agenda, Qt::LeftButton, {}, onBlock);
+        QCOMPARE(clicked.count(), 2);
+    }
+
+    void droppingABlockOnAnotherAsksForASwapAndARefusalAsksNothing()
+    {
+        AppData data;
+        const QDate day(2026, 7, 2);
+        const QString a = data.addAdHocEvent(day, 10 * 60, 11 * 60, "Plan A");
+        const QString b = data.addAdHocEvent(day, 13 * 60, 15 * 60, "Plan B");
+
+        TrackerService tracker(&data);
+        tracker.nowProvider = [] {
+            return QDateTime(QDate(2026, 7, 2), QTime(9, 30));
+        };
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setBlockDragEnabled(true);
+        agenda.resize(600, agenda.minimumHeight());
+        agenda.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&agenda));
+
+        const auto yAt = [](int minutes) {
+            return AgendaWidget::kTopPad
+                   + (minutes - plan::kDayStartMinutes) / plan::kSlotMinutes
+                         * AgendaWidget::slotHeight();
+        };
+        QSignalSpy swapped(&agenda, &AgendaWidget::eventSwapRequested);
+        QSignalSpy moved(&agenda, &AgendaWidget::eventMoveRequested);
+
+        // Released over Plan B: trade places (§M.6).
+        const QPoint grab(300, yAt(10 * 60) + 20);
+        const QPoint onB(300, yAt(13 * 60) + 40);
+        QTest::mousePress(&agenda, Qt::LeftButton, {}, grab);
+        QTest::mouseMove(&agenda, onB);
+        QTest::mouseRelease(&agenda, Qt::LeftButton, {}, onB);
+        QCOMPARE(swapped.count(), 1);
+        QCOMPARE(swapped.first().at(0).toString(), a);
+        QCOMPARE(swapped.first().at(1).toString(), b);
+        QCOMPARE(moved.count(), 0);
+
+        // Released at 7 AM, which "now" (9:30) has already passed. The
+        // preview quoted the domain's refusal, so nothing is asked for.
+        const QPoint past(300, yAt(7 * 60) + 20);
+        QTest::mousePress(&agenda, Qt::LeftButton, {}, grab);
+        QTest::mouseMove(&agenda, past);
+        QTest::mouseRelease(&agenda, Qt::LeftButton, {}, past);
+        QCOMPARE(moved.count(), 0);
+        QCOMPARE(swapped.count(), 1);
+    }
+
+    void aBlockDraggedAcrossTheWeekLandsOnTheDayItWasDroppedOn()
+    {
+        AppData data;
+        const QString ev = data.addAdHocEvent(QDate(2026, 7, 7), 10 * 60,
+                                              11 * 60, "Plan A"); // a Tuesday
+        TrackerService tracker(&data);
+        tracker.nowProvider = [] {
+            return QDateTime(QDate(2026, 7, 1), QTime(9, 30));
+        };
+        WeekAgendaView view(&data, &tracker);
+        view.setDate(QDate(2026, 7, 8));
+        view.setBlockDragEnabled(true);
+        view.resize(1000, 1250);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+        AgendaWidget* tuesday  = nullptr;
+        AgendaWidget* thursday = nullptr;
+        for (AgendaWidget* col : view.findChildren<AgendaWidget*>()) {
+            if (col->date() == QDate(2026, 7, 7))
+                tuesday = col;
+            if (col->date() == QDate(2026, 7, 9))
+                thursday = col;
+        }
+        QVERIFY(tuesday && thursday);
+
+        const auto yAt = [](int minutes) {
+            return AgendaWidget::kTopPad
+                   + (minutes - plan::kDayStartMinutes) / plan::kSlotMinutes
+                         * AgendaWidget::slotHeight();
+        };
+        QSignalSpy moved(&view, &WeekAgendaView::eventMoveRequested);
+
+        // The mouse grab stays with Tuesday for the whole drag, so the drop
+        // point arrives in TUESDAY's coordinates even though it lies over
+        // Thursday - which is exactly why the view, not the column, resolves it.
+        const QPoint grab(tuesday->width() / 2, yAt(10 * 60) + 20);
+        const QPoint overThursday = tuesday->mapFromGlobal(thursday->mapToGlobal(
+            QPoint(thursday->width() / 2, yAt(14 * 60) + 20)));
+        QTest::mousePress(tuesday, Qt::LeftButton, {}, grab);
+        QTest::mouseMove(tuesday, overThursday);
+        QTest::mouseRelease(tuesday, Qt::LeftButton, {}, overThursday);
+
+        QCOMPARE(moved.count(), 1);
+        QCOMPARE(moved.first().at(0).toString(), ev);
+        QCOMPARE(moved.first().at(1).toDate(), QDate(2026, 7, 9));
+        QCOMPARE(moved.first().at(2).toInt(), 14 * 60);
+    }
+
+    void thePlannerTurnsDraggingOnAndMovesWhatADropAsksFor()
+    {
+        AppData data;
+        TrackerService tracker(&data);
+        // The planner opens on today, so this one test is anchored to the
+        // real calendar - with "now" pinned to this morning, so tomorrow is
+        // always in the future.
+        const QDate tomorrow = QDate::currentDate().addDays(1);
+        tracker.nowProvider = [] {
+            return QDateTime(QDate::currentDate(), QTime(6, 0));
+        };
+        const QString ev =
+            data.addAdHocEvent(tomorrow, 10 * 60, 11 * 60, "Plan A");
+        PlannerPage page(&data, &tracker);
+
+        // The day view and all seven week columns can drag.
+        const auto agendas = page.findChildren<AgendaWidget*>();
+        QVERIFY(agendas.size() >= 8);
+        for (AgendaWidget* agenda : agendas)
+            QVERIFY(agenda->blockDragEnabled());
+
+        // And a drop reaches the domain door.
+        QVERIFY(QMetaObject::invokeMethod(&page, "onEventMoveRequested",
+                                          Q_ARG(QString, ev),
+                                          Q_ARG(QDate, tomorrow.addDays(1)),
+                                          Q_ARG(int, 14 * 60)));
+        QCOMPARE(data.eventById(ev)->date, tomorrow.addDays(1));
+        QCOMPARE(data.eventById(ev)->plannedStartMinutes, 14 * 60);
+    }
+
+    // F19: the red now-line. Pinned by the colour of the pixel it must land
+    // on - on today's agenda, and on no other day's.
+    void theNowLineIsDrawnAcrossTodayAtTheTrackersMinute()
+    {
+        AppData data;
+        TrackerService tracker(&data);
+        const QDate today(2026, 7, 1);
+        tracker.nowProvider = [today] { return QDateTime(today, QTime(9, 15)); };
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(today);
+        agenda.resize(600, agenda.minimumHeight());
+
+        // 9:15 sits mid-slot, clear of every grid line.
+        const int y = AgendaWidget::kTopPad
+                      + (9 * 60 + 15 - plan::kDayStartMinutes)
+                            * AgendaWidget::slotHeight() / plan::kSlotMinutes;
+        const QImage onToday = agenda.grab().toImage();
+        QCOMPARE(onToday.pixelColor(300, y).rgb(), theme::danger().rgb());
+
+        agenda.setDate(today.addDays(1));
+        const QImage onTomorrow = agenda.grab().toImage();
+        QVERIFY(onTomorrow.pixelColor(300, y).rgb() != theme::danger().rgb());
+    }
+
+    // §M.12: every drag offers an Undo, and Undo puts things back - a move,
+    // a swap, and a missed block's reschedule - but only for the latest drag.
+    void aDragOffersAnUndoThatPutsTheBlocksBack()
+    {
+        AppData data;
+        TrackerService tracker(&data);
+        // The planner opens on today, so this test uses the real calendar,
+        // with "now" pinned to noon.
+        const QDate today    = QDate::currentDate();
+        const QDate tomorrow = today.addDays(1);
+        tracker.nowProvider = [] {
+            return QDateTime(QDate::currentDate(), QTime(12, 0));
+        };
+        const QString a = data.addAdHocEvent(tomorrow, 10 * 60, 11 * 60, "Plan A");
+        const QString b = data.addAdHocEvent(tomorrow, 13 * 60, 15 * 60, "Plan B");
+        const QString missed = data.addAdHocEvent(today, 8 * 60, 9 * 60, "Missed");
+        PlannerPage page(&data, &tracker);
+
+        // The offer carries a std::function, which QSignalSpy cannot store,
+        // so a lambda keeps the last one.
+        struct Offer
+        {
+            QString    text;
+            UndoAction onUndo;
+        };
+        Offer offered;
+        int   offers = 0;
+        QObject::connect(&page, &PlannerPage::undoBarRequested, &page,
+                         [&](const QString& text, const UndoAction& onUndo) {
+                             offered = {text, onUndo};
+                             ++offers;
+                         });
+
+        // A move, undone.
+        QVERIFY(QMetaObject::invokeMethod(&page, "onEventMoveRequested",
+                                          Q_ARG(QString, a), Q_ARG(QDate, tomorrow),
+                                          Q_ARG(int, 16 * 60)));
+        QCOMPARE(offers, 1);
+        QVERIFY(offered.text.contains(QStringLiteral("Plan A")));
+        QVERIFY(bool(offered.onUndo));
+        offered.onUndo();
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 10 * 60);
+        QCOMPARE(offers, 1); // an undo that worked has nothing more to say
+
+        // A swap, undone.
+        QVERIFY(QMetaObject::invokeMethod(&page, "onEventSwapRequested",
+                                          Q_ARG(QString, a), Q_ARG(QString, b)));
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 13 * 60);
+        offered.onUndo();
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 10 * 60);
+        QCOMPARE(data.eventById(b)->plannedStartMinutes, 13 * 60);
+
+        // A missed block, rescheduled and undone: the replacement goes and
+        // the original is unresolved again.
+        const int before = data.events().size();
+        QVERIFY(QMetaObject::invokeMethod(&page, "onEventMoveRequested",
+                                          Q_ARG(QString, missed), Q_ARG(QDate, today),
+                                          Q_ARG(int, 15 * 60)));
+        QCOMPARE(data.events().size(), before + 1);
+        QVERIFY(data.eventById(missed)->outcome == BlockOutcome::Moved);
+        offered.onUndo();
+        QCOMPARE(data.events().size(), before);
+        QVERIFY(data.eventById(missed)->outcome == BlockOutcome::Unset);
+
+        // Only the latest drag can be undone.
+        QVERIFY(QMetaObject::invokeMethod(&page, "onEventMoveRequested",
+                                          Q_ARG(QString, a), Q_ARG(QDate, tomorrow),
+                                          Q_ARG(int, 16 * 60)));
+        const Offer first = offered;
+        QVERIFY(QMetaObject::invokeMethod(&page, "onEventMoveRequested",
+                                          Q_ARG(QString, b), Q_ARG(QDate, tomorrow),
+                                          Q_ARG(int, 17 * 60)));
+        first.onUndo();
+        QCOMPARE(data.eventById(a)->plannedStartMinutes, 16 * 60); // untouched
+        offered.onUndo();
+        QCOMPARE(data.eventById(b)->plannedStartMinutes, 13 * 60);
+    }
+
+    // §M.12, the owner's correction: the Undo is NOT the reminder toast. It
+    // is a bar in the bottom-right corner of the WINDOW it belongs to - so it
+    // is pinned against its host's corner, never the screen's.
+    void theUndoBarSitsInItsWindowsCornerAndUndoesOnce()
+    {
+        QWidget host;
+        host.resize(800, 600);
+        UndoBar bar(&host);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        QVERIFY(!bar.isVisible()); // nothing to say until something happens
+
+        int undone = 0;
+        bar.offer(QStringLiteral("\"Plan A\" moved"), [&undone]() { ++undone; });
+        QVERIFY(bar.isVisible());
+        QCOMPARE(bar.text(), QStringLiteral("\"Plan A\" moved"));
+        // 16px in from the host's right and bottom edges (right() and
+        // bottom() are the last pixel INSIDE the rect, hence the -1).
+        QCOMPARE(bar.geometry().right(), host.width() - 16 - 1);
+        QCOMPARE(bar.geometry().bottom(), host.height() - 16 - 1);
+
+        // The corner follows the window.
+        host.resize(1000, 700);
+        QTRY_COMPARE(bar.geometry().bottom(), 700 - 16 - 1);
+        QCOMPARE(bar.geometry().right(), 1000 - 16 - 1);
+
+        auto* button = bar.findChild<QPushButton*>(QStringLiteral("undoBarButton"));
+        QVERIFY(button);
+        QVERIFY(button->isVisible());
+        button->click();
+        QCOMPARE(undone, 1);        // ran exactly once...
+        QVERIFY(!bar.isVisible());  // ...and the bar closed
+
+        // A message with nothing to undo shows no button, and leaves on its own.
+        bar.offer(QStringLiteral("Could not undo"), UndoAction(), 50);
+        QVERIFY(bar.isVisible());
+        QVERIFY(!button->isVisible());
+        QVERIFY(!bar.offersUndo());
+        QTRY_VERIFY_WITH_TIMEOUT(!bar.isVisible(), 3000);
     }
 
     // v31.3.1 - the mini card remembered WHERE it was and never asked

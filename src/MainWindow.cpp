@@ -6,6 +6,7 @@
 #include "PlannerPage.h"
 #include "TaskDetailPanel.h"
 #include "QuickCaptureOverlay.h"
+#include "UndoBar.h" // 31.2.0 - the corner Undo after a calendar drag
 #include "SpecialDaysPage.h"
 #include "UpcomingPage.h"
 #include "AlarmService.h"
@@ -679,6 +680,21 @@ MainWindow::MainWindow(const QString& username)
         connect(m_activities, &ActivitiesPage::overlayOpenChanged, this,
                 hideFabWhileCovered);
     }
+    // ---- the Undo bar (31.2.0, move-and-swap §M.12) -------------------------
+    // The capture button's construction: a child of `body`, kept out of
+    // bodyLayout, so it floats over the page's bottom-right corner and
+    // reserves nothing - "I don't want it on the calendar as it takes up
+    // space". It moves itself when body resizes. On a phone the capture
+    // button owns that corner, so the bar sits above it. Created before the
+    // detail panel for the z-order reason given above.
+    m_undoBar = new UndoBar(body);
+    if (m_captureFab)
+        m_undoBar->setBottomClearance(m_captureFab->height() + 24);
+    connect(m_planner, &PlannerPage::undoBarRequested, this,
+            [this](const QString& text, const UndoAction& onUndo) {
+                m_undoBar->offer(text, onUndo);
+            });
+
     // v28.6.1 — the task-detail OVERLAY. Deliberately NOT in bodyLayout:
     // the v28.6.0 docked version squeezed the pages and read as part of
     // the Activities panel (owner feedback, first session). As an overlay

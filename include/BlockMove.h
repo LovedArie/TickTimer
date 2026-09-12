@@ -112,6 +112,16 @@ inline QVector<const Event*> dayWith(const QVector<const Event*>& dayEvents,
 //
 // `beingTimed` and `ruleAlreadyThere` are facts only the aggregate root can
 // see (the running state, the other occurrences), handed in as values.
+// Does moving this block RESCHEDULE it instead of moving it in place? Yes
+// once its time has passed (owner decision, §M.11): a missed block is
+// history, so the original stays behind as the record and a replacement
+// lands where it was dropped. This is the one question the doors ask to
+// choose between the two.
+inline bool movesAsReschedule(const Event& e, const QDateTime& now)
+{
+    return missed::hasEnded(e, now);
+}
+
 inline QString problemWithMove(const Event& e, QDate date, int startMin,
                                const QDateTime& now, bool beingTimed,
                                bool ruleAlreadyThere)
@@ -121,20 +131,40 @@ inline QString problemWithMove(const Event& e, QDate date, int startMin,
     if (e.outcome != BlockOutcome::Unset)
         return QObject::tr("This block was already settled in catch-up, so "
                            "it stays where it is.");
-    if (missed::hasEnded(e, now))
-        return QObject::tr("This block has already happened. A missed block "
-                           "is rescheduled from the catch-up card.");
     if (beingTimed)
         return QObject::tr("This block is being timed right now. Stop the "
                            "timer before moving it.");
+
+    // Tracked time pins a block where it is (owner decision, 2026-09-11):
+    // the minutes happened in that slot, and a plan that slides away from
+    // them makes plan-versus-actual compare the wrong things. Asked before
+    // the target, so the sentence names the block rather than the slot.
+    if (!e.segments.isEmpty())
+        return QObject::tr("This block already has tracked time, so it stays "
+                           "where that time happened.");
+
+    // The TARGET is refused only when it would be completely OVER - the
+    // mirror of "a block that has ended". Refusing any start before now made
+    // a block you are in the middle of, dragged away by accident, impossible
+    // to put back (§M.2, corrected after the owner's first try).
     const int nowMin = now.time().hour() * 60 + now.time().minute();
-    if (date < now.date() || (date == now.date() && startMin < nowMin))
-        return QObject::tr("That time has already passed.");
-    if (!e.segments.isEmpty() && date != e.date)
+    const int endMin =
+        startMin + (e.plannedEndMinutes - e.plannedStartMinutes);
+    if (date < now.date() || (date == now.date() && endMin <= nowMin))
+        return QObject::tr("That time is already over.");
+
+    const bool over = movesAsReschedule(e, now);
+    if (over && !e.segments.isEmpty())
+        return QObject::tr("This block has already happened and has tracked "
+                           "time. Reschedule what is left of it from the "
+                           "catch-up card.");
+    if (!over && !e.segments.isEmpty() && date != e.date)
         return QObject::tr("This block already has tracked time, and that "
                            "time belongs to the day it happened. It can only "
                            "move within that day.");
-    if (ruleAlreadyThere)
+    // A rescheduled block's replacement belongs to no rule, so the rule's
+    // one-per-day limit only binds a block that moves in place.
+    if (!over && ruleAlreadyThere)
         return QObject::tr("Its repeating rule already has a block on that "
                            "day, and a rule has one per day.");
     if (date == e.date && startMin == e.plannedStartMinutes)

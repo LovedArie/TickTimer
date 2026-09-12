@@ -57,8 +57,9 @@ lines below.*
 **v31.2 — move and swap planned blocks.** Then test the web app (iOS) and
 Android on that release.
 
-- **F18** · **F12** · **B8** · **H5** (phones and `/app/` to v31.2 as part of
-  the release)
+- **F18** · **F12** · **F19** (the red now-line, added 2026-09-11 after the
+  owner tried the drag) · **B8** · **H5** (phones and `/app/` to v31.2 as part
+  of the release)
 
 *Next iteration, as decided by the owner 2026-09-11:* **F6** with **F8** —
 delete one occurrence, asking the scope question.

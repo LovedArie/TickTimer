@@ -130,9 +130,58 @@ public:
     // widget stays what it has always been: a reporter, not a decider.
     void setHighlightRuns(QVector<QPair<int, int>> runs);
 
+    // ---- moving a block by dragging it (31.2.0, move-and-swap §M.6-§M.7) ---
+    // OFF by default, so an agenda nobody wired (the Compare dialog's) keeps
+    // opening a block on press exactly as it always has. When on, a left
+    // press on a block's BODY is not yet a click: moved past the platform's
+    // drag distance it becomes a drag; released where it was, it opens the
+    // block. Touch presses never reach this path - on a phone, a drag inside
+    // a scrolling page receives no moves at all (§M.8).
+    void setBlockDragEnabled(bool on);
+    bool blockDragEnabled() const { return m_blockDragEnabled; }
+
+    // What releasing a dragged block at a point would ask for. A value, so
+    // the same answer drives the painted preview, the tooltip and the signal
+    // - three consumers that then cannot disagree about where the block goes.
+    struct DropTarget
+    {
+        QString eventId;           // the block being dragged
+        QDate   date;              // this widget's day
+        int     startMin = -1;     // a MOVE: where it would start
+        QString swapWithId;        // a SWAP: the block under the pointer
+        QString why;               // the domain's refusal; empty = allowed
+        bool    unchanged = false; // released where it already is
+    };
+    // `grabOffsetPx` is how far below the block's top edge it was picked up,
+    // so the block does not jump to put its top edge under the pointer.
+    DropTarget dropTargetAt(const QPoint& pos, const QString& eventId,
+                            int grabOffsetPx) const;
+    // The tooltip's sentence: the refusal when there is one, otherwise what
+    // the drop would do.
+    QString describeDrop(const DropTarget& target) const;
+    void setDropPreview(const DropTarget& target);
+    void clearDropPreview();
+
+    // A day view turns its own drag into eventMoveRequested/SwapRequested. A
+    // week column cannot: the mouse grab stays with the column the press
+    // began in, so that column cannot know which OTHER column the pointer is
+    // over. With this off it reports the pointer instead (blockDrag* below)
+    // and its container resolves the drop.
+    void setResolvesOwnDrops(bool own) { m_resolvesOwnDrops = own; }
+
 signals:
     void emptySlotClicked(int slotIndex);      // "plan something at 9:00"
     void eventClicked(const QString& eventId); // "open this block"
+    // "put this block HERE" / "trade places with that one" (31.2.0). Reports
+    // only; the page asks AppData::moveEventTo / swapEvents, which decide.
+    void eventMoveRequested(const QString& eventId, QDate date, int startMin);
+    void eventSwapRequested(const QString& eventId, const QString& otherId);
+    // Only while setResolvesOwnDrops(false): the raw drag, for a container.
+    void blockDragMoved(const QString& eventId, const QPoint& globalPos,
+                        int grabOffsetPx);
+    void blockDragFinished(const QString& eventId, const QPoint& globalPos,
+                           int grabOffsetPx);
+    void blockDragCancelled(const QString& eventId);
     // "the user dragged an edge — please set this span". The widget only
     // REPORTS; the page routes it to AppData::resizeEvent, which enforces the
     // rules and can refuse. (m_data is const here — the widget couldn't mutate
@@ -187,6 +236,9 @@ private:
     void disarm();
 
     class QTimer* m_longPress = nullptr;
+    // Repaints the red now-line (31.2.0, F19). A child QObject: this widget
+    // is its parent, so it is destroyed with the widget and needs no delete.
+    class QTimer* m_nowTimer = nullptr;
     QPoint  m_touchPressPos;
     int     m_pendingSlot = -1;    // empty slot awaiting a long press
     int     m_armedSlot   = -1;    // tapped once; a second tap plans it
@@ -249,4 +301,18 @@ private:
     Edge    m_resizeEdge   = Edge::None;
     int     m_previewStart = 0; // the span shown live during the drag; the
     int     m_previewEnd   = 0; // fixed edge stays put, the grabbed edge moves
+
+    // ---- block-drag state (31.2.0) ------------------------------------------
+    bool       m_blockDragEnabled = false;
+    bool       m_resolvesOwnDrops = true;
+    QString    m_dragEventId;        // pressed on a block's body; empty = none
+    QPoint     m_dragPressPos;
+    int        m_dragGrabPx = 0;     // press y minus the block's top edge
+    bool       m_dragging   = false; // moved past the platform's drag distance
+    DropTarget m_dropPreview;        // what paint draws; empty eventId = none
+    // Forget a drag without dropping it (the grab was taken away, or dragging
+    // was switched off), and tell a container that was following it.
+    void cancelBlockDrag();
+    // Keep the pointer's slot on screen inside whatever page scrolls us.
+    void autoScrollTo(const QPoint& pos);
 };
