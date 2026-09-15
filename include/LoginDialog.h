@@ -28,7 +28,18 @@ class LoginDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit LoginDialog(const QString& serverUrl, QWidget* parent = nullptr);
+    // Whether the person may choose the server. Fixed (31.2.1) hides the
+    // address field and never saves the address: it was not their choice, so
+    // it is not their preference. main() picks Fixed when TICKTIMER_SERVER is
+    // set — which the web build always does, with the page's own origin.
+    //
+    // An enum rather than a bool so the call site reads as a sentence:
+    // LoginDialog(url, ServerField::Fixed), not LoginDialog(url, true).
+    enum class ServerField { Editable, Fixed };
+
+    explicit LoginDialog(const QString& serverUrl,
+                         ServerField serverField = ServerField::Editable,
+                         QWidget* parent = nullptr);
 
     // The name that logged in — main() passes it on so the app can greet the
     // user / scope future synced data to them.
@@ -41,6 +52,7 @@ public:
     // value it read from settings before the dialog ran — the dialog is now
     // the owner of that decision.
     QString serverUrl() const;
+    ServerField serverField() const { return m_serverField; }
 
     // v30.2 — the gate opened WITHOUT the server. The app should run on this
     // machine's local planner and leave sync switched off until the server
@@ -75,6 +87,7 @@ private:
     AuthClient*  m_client;
     bool         m_registerMode = false; // false = login, true = create account
     bool         m_offline      = false; // accepted without a server
+    ServerField  m_serverField  = ServerField::Editable;
     QString      m_user;
     QString      m_token;
     QString      m_deviceToken;

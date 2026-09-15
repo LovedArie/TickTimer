@@ -311,6 +311,18 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
   folder changes only when someone copies it. The app then shows an update
   banner it cannot act on. Redeploy is **release step 7** (`docs/GITHUB.md`);
   unlike the `Version.h`/`.iss` seam, nothing hard-fails on it.
+- **The iPhone keyboard does not shrink the page, and Qt for WebAssembly
+  re-measures only from its OWN resize listeners.** iOS shrinks the visual
+  viewport and draws the keys over the page, so Qt kept its full-height screen
+  and the keyboard covered the fields. `web/index.html` sizes `#screen` to
+  `visualViewport` in a listener added before `qtLoad`, which the DOM runs
+  before Qt's. Qt 6.11 never installs the `ResizeObserver` it defines, so a
+  box resized from anywhere else is invisible to Qt. To test without a phone,
+  override `visualViewport.height` and dispatch a real `resize` event.
+- **Qt for WebAssembly draws a title bar with × on non-frameless windows**,
+  and × on the login gate exits the app. Fitted full-screen dialogs are
+  frameless, set on the `QWindow`: `QWidget::setWindowFlags()` goes through
+  `setParent()` and hides a window that is already shown.
 
 ## Docs worth opening before changing anything
 

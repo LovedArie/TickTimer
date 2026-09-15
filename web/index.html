@@ -60,7 +60,10 @@
                      "Helvetica Neue", Arial, sans-serif;
         color: #272C33;
       }
-      #screen { width: 100%; height: 100%; }
+      /* Fixed, and its height and top are set from script to the VISIBLE
+         area — see "the keyboard" in the script below. 100% is only the
+         first guess, for a browser with no visualViewport. */
+      #screen { position: fixed; left: 0; top: 0; width: 100%; height: 100%; }
 
       #boot {
         display: flex; flex-direction: column;
@@ -186,6 +189,63 @@
         // throws a named error if ENV was not exported — which is what
         // QT_WASM_EXTRA_EXPORTED_METHODS in CMakeLists.txt is for.
         const qtEnvironment = params.has('probe') ? { TICKTIMER_PROBE: '1' } : {};
+
+        // TICKTIMER_SERVER — the server is THIS SITE, always (31.2.1). The
+        // page and the API share one origin by design (design-addendum-
+        // deployment §F), so there is exactly one address that works, and
+        // main() hides the login's address field when it is handed one. The
+        // login screen used to show http://localhost:8080 on a phone, and a
+        // phone user's only move was to type the right answer to a question
+        // with no other answer — under an on-screen keyboard.
+        //
+        // DELIBERATELY NOT settable from the URL, although every other switch
+        // here is. `?server=` would make a link on the real domain that sends
+        // the password somewhere else, with the field that shows where hidden.
+        qtEnvironment.TICKTIMER_SERVER = location.origin;
+
+        // ---- the keyboard -------------------------------------------------
+        //
+        // iOS Safari does not make the page shorter when its keyboard opens.
+        // It shrinks only the VISUAL viewport (what you can see) and leaves
+        // the layout viewport (the page's box) full height, with the keys
+        // drawn over its bottom. Chrome on Android does the same by default.
+        //
+        // Qt sizes its screen from the container element's CSS box
+        // (QWasmScreen::updateQScreenSize, 6.11), and it even listens for
+        // visualViewport resizes — but only to measure that same box again,
+        // which has not changed. So Qt believed the whole screen was still
+        // there and the login's lower fields sat under the keys.
+        //
+        // Sizing the container to the visual viewport is what makes the
+        // measurement true. Qt then shrinks its screen, the full-screen main
+        // window follows it, and the dialog fitter re-fits any open dialog
+        // (ResponsiveWatcher.cpp) — the chain Android's adjustResize drives
+        // natively.
+        //
+        // THIS DEPENDS ON LISTENER ORDER, and that is a guarantee, not luck.
+        // Qt 6.11 does NOT watch the container for size changes (it defines a
+        // ResizeObserver and never installs it); it re-measures only inside
+        // its own window-resize and visualViewport-resize listeners. The DOM
+        // calls a target's listeners in the order they were added, and this
+        // one is added before qtLoad, so the box is already resized when Qt
+        // measures it. Set the height from anywhere Qt is not listening and
+        // Qt never finds out — measured, 2026-09-15: the box shrank, the
+        // dialog did not. If a Qt upgrade moves its listener earlier, this is
+        // the line to revisit.
+        //
+        // `top` follows offsetTop because iOS may ALSO pan the page to show a
+        // focused input; a fixed box that did not follow would slide up and
+        // out of the visible area with it.
+        const viewport = window.visualViewport;
+        const followVisibleArea = () => {
+          screen.style.height = viewport.height + 'px';
+          screen.style.top = viewport.offsetTop + 'px';
+        };
+        if (viewport) {
+          viewport.addEventListener('resize', followVisibleArea);
+          viewport.addEventListener('scroll', followVisibleArea);
+          followVisibleArea();
+        }
 
         const persist = () => {
           if (!mod || !mod.FS || syncing) return;

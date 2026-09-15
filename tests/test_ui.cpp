@@ -110,6 +110,7 @@
 #include <QStackedWidget>
 #include <QFontDatabase>
 #include <QScreen>
+#include <QWindow>   // 31.2.1 -- a fitted dialog's frame is a QWindow flag
 #include <QSettings>
 #include <QToolButton>
 #include <QListWidget>
@@ -2750,6 +2751,47 @@ private slots:
         QSettings().remove("sync/serverUrl"); // leave no trace
     }
 
+    // 31.2.1 — the web build's server is its own origin, so the login shows
+    // no address field. Hidden is only half of it: an address the person did
+    // not choose must not become their saved preference either, or it
+    // outlives whatever launcher passed it.
+    void aFixedServerIsNeitherShownNorSaved()
+    {
+        QCoreApplication::setApplicationName(QStringLiteral("TickTimerTest"));
+        QSettings().remove("sync/serverUrl");
+
+        LoginDialog dialog(QStringLiteral("https://ticktimer.example.com/"),
+                           LoginDialog::ServerField::Fixed);
+
+        for (QLineEdit* e : dialog.findChildren<QLineEdit*>())
+            QVERIFY2(!e->text().startsWith(QStringLiteral("https://"))
+                         || e->isHidden(),
+                     "a fixed server's address field is still on screen");
+        for (QLabel* l : dialog.findChildren<QLabel*>())
+            QVERIFY2(l->text() != QStringLiteral("Server") || l->isHidden(),
+                     "a fixed server's 'Server' label is still on screen");
+
+        // The same normalisation as a typed address: one source, one rule.
+        QCOMPARE(dialog.serverUrl(),
+                 QStringLiteral("https://ticktimer.example.com"));
+        QCOMPARE(dialog.serverField(), LoginDialog::ServerField::Fixed);
+
+        for (QLineEdit* e : dialog.findChildren<QLineEdit*>()) {
+            if (e->placeholderText() == QStringLiteral("Username"))
+                e->setText(QStringLiteral("someone"));
+            if (e->placeholderText() == QStringLiteral("Password"))
+                e->setText(QStringLiteral("pw"));
+        }
+        int clicked = 0;
+        for (QPushButton* b : dialog.findChildren<QPushButton*>())
+            if (b->objectName() == QStringLiteral("primary")) {
+                b->click(); ++clicked;
+            }
+        QCOMPARE(clicked, 1);
+        QVERIFY2(!QSettings().contains("sync/serverUrl"),
+                 "a fixed server was saved as the person's preference");
+    }
+
     void loginDialogOpensInLoginMode()
     {
         // Pins the double-flip bug: the old ctor toggled the mode TWICE
@@ -4486,6 +4528,27 @@ private slots:
         QTest::qWait(1);
         const QRect room = QGuiApplication::primaryScreen()->availableGeometry();
         QCOMPARE(fitted.size(), room.size());
+
+        // 31.2.1 — a dialog that IS the screen has no title bar. On
+        // WebAssembly Qt draws one with a close button, and closing the login
+        // gate ended the app. Asked of the QWindow, because that is where the
+        // fitter sets it (see fitToRoom for why not on the widget).
+        QVERIFY(fitted.windowHandle());
+        QVERIFY2(fitted.windowHandle()->flags().testFlag(Qt::FramelessWindowHint),
+                 "a full-screen dialog on a phone still has a title bar");
+
+        // 31.2.1 — and the fit FOLLOWS the room. The iPhone keyboard shrinks
+        // the screen under a dialog that is already open; fitted once at
+        // show, the login kept its lower half under the keys. The rect rides
+        // on the signal, so the test can hand over a room the offscreen
+        // screen will never report — then give the real one back.
+        QScreen* phone = QGuiApplication::primaryScreen();
+        const QRect withKeyboard(room.x(), room.y(), room.width(),
+                                 room.height() * 2 / 3);
+        emit phone->availableGeometryChanged(withKeyboard);
+        QCOMPARE(fitted.size(), withKeyboard.size());
+        emit phone->availableGeometryChanged(room);
+        QCOMPARE(fitted.size(), room.size());
         fitted.close();
 
         // ...and the OTHER answer, added in v30.7. A dialog that sits over
@@ -4509,6 +4572,60 @@ private slots:
                      && card.size().height() <= room.height(),
                  "a 'card' dialog grew past the screen it was fitted to");
         card.close();
+    }
+
+    // 31.2.1 — the field you tap stays above the keyboard. On a phone a
+    // tapped field deep in a scroll area had nothing moving it into view, and
+    // the keyboard that opened next covered it. Pinned both ways: a desktop
+    // focus change must NOT scroll (a click already lands on something the
+    // person can see), a phone one must.
+    void aFocusedFieldScrollsIntoViewOnlyOnAPhone()
+    {
+        responsive::installCompactFocusKeeper(qApp);
+
+        QScrollArea area;
+        area.setWidgetResizable(true);
+        auto* content = new QWidget;
+        auto* column = new QVBoxLayout(content);
+        auto* filler = new QLabel(QStringLiteral("tall"), content);
+        filler->setMinimumHeight(3000); // the field starts far below the fold
+        column->addWidget(filler);
+        auto* deep = new QLineEdit(content);
+        column->addWidget(deep);
+        auto* top = new QLineEdit(content);
+        column->insertWidget(0, top);
+        area.setWidget(content);
+        area.resize(400, 300);
+        area.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&area));
+        // setFocus() is a no-op on offscreen until the window is active.
+        area.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&area));
+
+        // Desktop: focus moves, the view does not.
+        qunsetenv("TICKTIMER_COMPACT");
+        deep->setFocus();
+        QVERIFY(deep->hasFocus());
+        QTest::qWait(1); // the keeper is queued; give it the turn it would use
+        QCOMPARE(area.verticalScrollBar()->value(), 0);
+
+        // Phone: the same focus change brings the field into view.
+        struct CompactMode {
+            CompactMode() { qputenv("TICKTIMER_COMPACT", "1"); }
+            ~CompactMode() { qunsetenv("TICKTIMER_COMPACT"); }
+        } compactMode;
+        top->setFocus();
+        QTest::qWait(1);
+        QCOMPARE(area.verticalScrollBar()->value(), 0); // already visible
+        deep->setFocus();
+        QTest::qWait(1);
+        QVERIFY2(area.verticalScrollBar()->value() > 0,
+                 "a focused field below the fold was left there on a phone");
+        const QRect seen = area.viewport()->rect();
+        const QRect field(deep->mapTo(area.viewport(), QPoint(0, 0)),
+                          deep->size());
+        QVERIFY2(seen.contains(field),
+                 "the focused field was scrolled toward, but not into, view");
     }
 
     // v30.7 — the ad-hoc path had exactly one door and a phone has no key

@@ -209,7 +209,20 @@ extern const char* const kModeProperty;
 //
 // One property with a closed set of names, not three booleans: at most one
 // answer can be given, so "screen and also none" cannot be written down.
+//
+// THE ROOM CAN CHANGE WHILE A DIALOG IS UP (31.2.1). The fit also re-runs on
+// QScreen::availableGeometryChanged, because the iPhone keyboard shrinks the
+// screen under an open dialog (see web/index.html), and a "screen" dialog is
+// drawn with no title bar, because on WebAssembly that bar carries a close
+// button that ends the login gate.
 void installCompactDialogFitter(QObject* owner);
+
+// On a compact device, keep the focused widget visible inside any QScrollArea
+// that holds it: when it gains focus, and again when the screen's room changes
+// (the keyboard that the same tap opened). Separate from the fitter because it
+// is not about dialogs — a page's form inside a scroll area needs it just as
+// much. Desktop is untouched: nothing happens unless isCompactScreen().
+void installCompactFocusKeeper(QObject* owner);
 
 // PRECONDITION FOR NESTING, recorded now and deliberately not yet exercised:
 // a watcher's dispatch prunes at any descendant that carries kModeProperty,

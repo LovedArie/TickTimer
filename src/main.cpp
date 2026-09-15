@@ -70,6 +70,8 @@ int main(int argc, char* argv[])
     // the screen on a compact device and maps Android's Back key to reject().
     // Installed before the login dialog, which is the first one shown.
     responsive::installCompactDialogFitter(&app);
+    // ...and the field you tapped stays above the keyboard that tap opened.
+    responsive::installCompactFocusKeeper(&app);
 
     // B8 (31.2.0): a control that mutates data must not act on a wheel event
     // it merely happens to sit under. One filter covers every combo, spin box
@@ -94,16 +96,28 @@ int main(int argc, char* argv[])
     // same rule as everything else): localhost by default, editable to a
     // laptop's LAN IP or a future Pi with no recompile. One line, three
     // deployments.
+    //
+    // TICKTIMER_SERVER overrides it and FIXES it (31.2.1): the login screen
+    // shows no address field at all. The web build is the reason. Its page is
+    // served by the same site as the API (design-addendum-deployment §F), so
+    // web/index.html passes location.origin in here and there is exactly one
+    // right answer to "which server?" — asking a phone user to type it was a
+    // question that could only be answered wrong.
+    const QString fixedServer = qEnvironmentVariable("TICKTIMER_SERVER");
     const QString serverUrl =
-        QSettings().value(QStringLiteral("sync/serverUrl"),
-                          QStringLiteral("http://localhost:8080"))
-            .toString();
+        !fixedServer.isEmpty()
+            ? fixedServer
+            : QSettings().value(QStringLiteral("sync/serverUrl"),
+                                QStringLiteral("http://localhost:8080"))
+                  .toString();
 
     // Login is a GATE: show the dialog first, and only build the app if it's
     // accepted. QDialog::exec() blocks in its own event loop until accept()
     // or reject() — the one place blocking is correct, because there's
     // genuinely nothing else for the app to do until someone logs in.
-    LoginDialog login(serverUrl);
+    LoginDialog login(serverUrl, fixedServer.isEmpty()
+                                     ? LoginDialog::ServerField::Editable
+                                     : LoginDialog::ServerField::Fixed);
     if (login.exec() != QDialog::Accepted)
         return 0; // user closed the dialog without logging in — clean exit
 
@@ -138,7 +152,7 @@ int main(int argc, char* argv[])
         // machine's planner and keeps trying to reach the server in the
         // background; the moment it answers, sync switches itself on without
         // anyone being asked to do anything.
-        window.beginOffline(login.serverUrl());
+        window.beginOffline(login.serverUrl(), login.serverField());
     } else {
         window.enableSync(login.serverUrl(), login.authToken());
     }

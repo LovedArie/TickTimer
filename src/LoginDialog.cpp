@@ -9,9 +9,11 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-LoginDialog::LoginDialog(const QString& serverUrl, QWidget* parent)
+LoginDialog::LoginDialog(const QString& serverUrl, ServerField serverField,
+                         QWidget* parent)
     : QDialog(parent)
     , m_client(new AuthClient(serverUrl, this))
+    , m_serverField(serverField)
 {
     setWindowTitle(tr("TickTimer"));
     setModal(true);
@@ -52,6 +54,13 @@ LoginDialog::LoginDialog(const QString& serverUrl, QWidget* parent)
     m_server = new QLineEdit(this);
     m_server->setText(serverUrl.trimmed());
     m_server->setPlaceholderText(QStringLiteral("http://192.168.1.20:8080"));
+    // A fixed server is still HELD by the field, so serverUrl() has one source
+    // either way — only the person stops seeing it. A hidden widget takes no
+    // room in its layout, which is what gives the phone its space back.
+    if (m_serverField == ServerField::Fixed) {
+        serverLabel->hide();
+        m_server->hide();
+    }
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(28, 24, 28, 24);
@@ -91,6 +100,11 @@ LoginDialog::LoginDialog(const QString& serverUrl, QWidget* parent)
     layout->addWidget(serverLabel);
     layout->addWidget(m_server);
     layout->addWidget(m_status);
+    // Pack the form at the top. On a desktop the dialog is its natural size
+    // and this stretch gets nothing. On a phone the dialog is given the whole
+    // screen, and without it the labels soaked up the spare height — the
+    // fields spread down the page, into where the keyboard opens.
+    layout->addStretch();
 
     connect(m_submit,   &QPushButton::clicked, this, &LoginDialog::submit);
     connect(m_toggle,   &QPushButton::clicked, this, &LoginDialog::toggleMode);
@@ -138,7 +152,11 @@ void LoginDialog::submit()
     const QString url = serverUrl();
     if (!url.isEmpty()) {
         m_client->setServerUrl(url);
-        QSettings().setValue(QStringLiteral("sync/serverUrl"), url);
+        // Only what the person CHOSE is a preference. A fixed address came
+        // from the launcher, and saving it would make it the default the day
+        // the launcher stops passing one.
+        if (m_serverField == ServerField::Editable)
+            QSettings().setValue(QStringLiteral("sync/serverUrl"), url);
     }
 
     setBusy(true);

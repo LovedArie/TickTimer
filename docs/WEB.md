@@ -172,6 +172,12 @@ python -m http.server 8099
 Then open <http://localhost:8099/>. A plain file:// open will **not** work —
 WebAssembly needs a real HTTP origin.
 
+**Logging in from a local copy does not work, by design (31.2.1).** The page
+tells the app its server is the page's own origin, and
+`localhost:8099` is a file server with no API. A local copy is for checking
+that the app loads, lays out and stores data. Test logging in and sync on the
+deployed site.
+
 ## Putting it on the server
 
 Copy the *contents* of `build-wasm\serve\` to `/var/www/ticktimer-app/`.
@@ -283,6 +289,29 @@ passing tells us the mount logic is right, not that iOS honours it.
 on-screen keyboard is Qt-for-WebAssembly's weakest area. This is the known
 roughest edge and the one most likely to decide whether the app is pleasant.
 
+*Partly answered on 2026-09-15, from the first iPhone screenshots.* The probe
+read 390x661 at 3x, `isCompactScreen()` YES, so the phone shell works. Three
+problems showed up, and 31.2.1 addresses all three:
+
+- **The keyboard covered the field being typed into.** iOS shrinks only the
+  visible area, never the page, and Qt measured the page. The page now sizes
+  the app to the visible area, open dialogs re-fit, and a focused field in a
+  scroll area is scrolled into view. The whole chain was measured in headless
+  Chrome with a simulated keyboard (the dialog went 661 → 330 → 661px); it
+  has **not yet been seen on an iPhone**. Details in `TROUBLESHOOTING.md`.
+- **The login asked for a server address** and showed `http://localhost:8080`.
+  The web build now passes its own origin as `TICKTIMER_SERVER`, and the
+  field is gone. It is deliberately not settable from the URL: a `?server=`
+  link on the real domain could send a password elsewhere, with the field
+  that would show where it was going hidden.
+- **Qt drew a title bar with ×** on the login, and × ended the app. Full-screen
+  dialogs are frameless on a phone now.
+
+The screenshots were taken in **an app's built-in browser**, not Safari: an ×
+at the top left and a compass icon at the bottom give it away. That browser
+cannot Add to Home Screen, and it keeps saved data apart from Safari. Open
+the page in Safari (the compass icon) for anything past a first look.
+
 ---
 
 ## The first-run checklist
@@ -338,9 +367,12 @@ roughest edge and the one most likely to decide whether the app is pleasant.
   a canvas, so nothing here imitates iOS's *look*. A genuinely native-feeling
   UI would be a QML front-end over the same domain — a real project, and one
   the domain would not notice.
-- **Text input in a canvas** is the roughest part of Qt on a touchscreen. If
-  the on-screen keyboard misbehaves, that is a known Qt-for-WebAssembly
-  weakness, not something this app is doing wrong.
+- **Text input in a canvas** is the roughest part of Qt on a touchscreen.
+  One part of it was ours and is fixed: the keyboard covering the field (see
+  checklist question 3). The fix depends on the order of the page's viewport
+  listener and Qt's, so re-check it after a Qt upgrade. Anything else the
+  keyboard does wrong (autocorrect, the suggestion bar, selecting text) is
+  Qt-for-WebAssembly's input bridge, not app code.
 - **No background anything.** A closed tab runs no timers, so block alarms,
   nudges and the check-in do not fire. This used to be shared with Android
   and is not any more: **v30.6 fixed the Android half** by handing the

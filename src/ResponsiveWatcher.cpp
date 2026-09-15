@@ -2,6 +2,7 @@
 
 #include "Widgets.h"
 
+#include <QApplication> // topLevelWidgets, focusChanged
 #include <QCoreApplication>
 #include <QDialog>
 #include <QGuiApplication>
@@ -9,10 +10,12 @@
 #include <QLayout>
 #include <QPointer>
 #include <QScreen>
+#include <QScrollArea>
 #include <QStyle> // alignedRect — centring the "card" fit
 #include <QMetaObject>
 #include <QVariant>
 #include <QWidget>
+#include <QWindow> // the platform window's flags, not the widget's
 
 namespace responsive {
 const char* const kModeProperty = "responsiveMode";
@@ -162,6 +165,98 @@ void ResponsiveWatcher::deliver()
 
 namespace {
 
+// The fit itself: one dialog, one room. Pulled out of the event filter in
+// 31.2.1 because it gained a second caller. It used to run once, when a
+// dialog was shown, and that was only right while the room could not change
+// under an open dialog. The iPhone keyboard changes it: the page now shrinks
+// the app to what is visible (web/index.html), and a dialog fitted to the old
+// height keeps its bottom half under the keys.
+void fitToRoom(QDialog* dialog, const QRect& room)
+{
+    const QString fit = dialog->property("compactFit").toString();
+    if (fit == QLatin1String("none"))
+        return;
+
+    // ---- "card": a modal you can see the app BEHIND -----------------------
+    // For dialogs that sit OVER content the user is still reading — the block
+    // picker over its planner. Filling the screen for those hides the very
+    // thing being edited and reads as a page, not a decision.
+    //
+    // Why this is a declaration and not a size test: the obvious rule is
+    // "give a dialog the smaller of what it asks for and what fits", and it
+    // is wrong. LoginDialog's minimum is 234px, and shrinking it to that is
+    // precisely the "small floating panel adrift on a phone" bug the
+    // full-screen fit was introduced to cure. The difference between the two
+    // is not how big they are, it is what they ARE: login REPLACES the app
+    // for its duration, the picker sits over it. No sizeHint can answer that,
+    // so the dialog says.
+    if (fit == QLatin1String("card")) {
+        if (QLayout* l = dialog->layout())
+            l->activate();
+        const QSize want =
+            dialog->sizeHint().expandedTo(dialog->minimumSizeHint());
+        // The inset is what makes it read as a card. It is a nicety, though,
+        // and never worth clipping for: a dialog whose hard minimum needs the
+        // whole width gets the whole width.
+        const int inset = 16;
+        const QSize box(qMax(1, room.width() - 2 * inset),
+                        qMax(1, room.height() - 2 * inset));
+        QSize size = want.boundedTo(box);
+        size = size.expandedTo(dialog->minimumSizeHint().boundedTo(room.size()));
+        dialog->setGeometry(
+            QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter, size, room));
+        return;
+    }
+
+    if (fit != QLatin1String("sheet")) {
+        // NO TITLE BAR on a dialog that IS the screen (31.2.1). Android never
+        // drew one, so nobody noticed that Qt for WebAssembly does: it paints
+        // its own frame, with a close button, on every top-level window that
+        // is not frameless. On the login screen that × was a trap — closing
+        // the gate ends main(), and the tab shows "TickTimer closed".
+        //
+        // Set on the QWindow, not with QWidget::setWindowFlags(). The widget
+        // call goes through setParent(), which on an already-created window
+        // marks it uncreated and hidden, and this runs after show. QWindow::
+        // setFlags() hands the change straight to the platform window, which
+        // on WebAssembly is a CSS class and on Android nothing at all.
+        if (QWindow* handle = dialog->windowHandle())
+            handle->setFlag(Qt::FramelessWindowHint, true);
+
+        // setGeometry, not showFullScreen(): the dialog stays an ordinary
+        // dialog — exec(), reject(), the caller's result handling all
+        // unchanged — and only its rectangle differs. A window STATE would
+        // have to be undone on a tablet, and "remember to undo the platform
+        // tweak" is where these things rot.
+        dialog->setGeometry(room);
+        return;
+    }
+    // FULL WIDTH, NATURAL HEIGHT, pinned to the top. Filling the screen is
+    // right for a dialog you work inside and wrong for one you type a line
+    // into: quick capture became a screenful of white with its hint floating
+    // in the middle, spending the whole page on one text field.
+    //
+    // TAKE THE WIDTH, LEAVE THE VERTICAL POSITION ALONE.
+    //
+    // Pinning the sheet to the top looked obvious and was wrong twice. Qt
+    // reports availableGeometry().y() as 0 on this device — and the parent
+    // window's geometry as 0 too — while Android actually draws its status
+    // bar over that strip. Anchoring to either put the sheet under the clock
+    // and sliced the text field in half. Qt Widgets has no safe-area API to
+    // ask, so the honest move is not to pretend we know where the top is.
+    //
+    // The caller already chose a good y (popup() puts it in the parent's
+    // upper third — palette position, clear of any system bar), and that
+    // choice needs no help from a phone. Only the WIDTH was ever wrong here.
+    dialog->resize(room.width(), dialog->height());
+    if (QLayout* l = dialog->layout())
+        l->activate();
+    const int needed =
+        qMax(dialog->sizeHint().height(), dialog->minimumSizeHint().height());
+    dialog->setGeometry(room.x(), dialog->y(), room.width(),
+                        qMin(needed, room.height()));
+}
+
 class CompactDialogFitter : public QObject
 {
 public:
@@ -209,96 +304,35 @@ protected:
             QPointer<QDialog> guarded(dialog);
             QMetaObject::invokeMethod(
                 dialog,
-                [guarded, fit]() {
+                [guarded]() {
                     if (!guarded || !guarded->isVisible())
                         return;
-                    const QScreen* screen = QGuiApplication::primaryScreen();
-                    if (!screen)
-                        return;
-                    const QRect room = screen->availableGeometry();
-
-                    // ---- "card": a modal you can see the app BEHIND -------
-                    // For dialogs that sit OVER content the user is still
-                    // reading — the block picker over its planner. Filling
-                    // the screen for those hides the very thing being edited
-                    // and reads as a page, not a decision.
-                    //
-                    // Why this is a declaration and not a size test: the
-                    // obvious rule is "give a dialog the smaller of what it
-                    // asks for and what fits", and it is wrong. LoginDialog's
-                    // minimum is 234px, and shrinking it to that is precisely
-                    // the "small floating panel adrift on a phone" bug the
-                    // full-screen fit was introduced to cure. The difference
-                    // between the two is not how big they are, it is what
-                    // they ARE: login REPLACES the app for its duration, the
-                    // picker sits over it. No sizeHint can answer that, so
-                    // the dialog says.
-                    if (fit == QLatin1String("card")) {
-                        if (QLayout* l = guarded->layout())
-                            l->activate();
-                        const QSize want = guarded->sizeHint()
-                                               .expandedTo(guarded->minimumSizeHint());
-                        // The inset is what makes it read as a card. It is a
-                        // nicety, though, and never worth clipping for: a
-                        // dialog whose hard minimum needs the whole width
-                        // gets the whole width.
-                        const int inset = 16;
-                        const QSize box(qMax(1, room.width() - 2 * inset),
-                                        qMax(1, room.height() - 2 * inset));
-                        QSize size = want.boundedTo(box);
-                        size = size.expandedTo(
-                            guarded->minimumSizeHint().boundedTo(room.size()));
-                        guarded->setGeometry(
-                            QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter,
-                                                size, room));
-                        return;
-                    }
-
-                    if (fit != QLatin1String("sheet")) {
-                        // setGeometry, not showFullScreen(): the dialog stays
-                        // an ordinary dialog — exec(), reject(), the caller's
-                        // result handling all unchanged — and only its
-                        // rectangle differs. A window STATE would have to be
-                        // undone on a tablet, and "remember to undo the
-                        // platform tweak" is where these things rot.
-                        guarded->setGeometry(room);
-                        return;
-                    }
-                    // FULL WIDTH, NATURAL HEIGHT, pinned to the top. Filling
-                    // the screen is right for a dialog you work inside and
-                    // wrong for one you type a line into: quick capture became
-                    // a screenful of white with its hint floating in the
-                    // middle, spending the whole page on one text field.
-                    //
-                    // TAKE THE WIDTH, LEAVE THE VERTICAL POSITION ALONE.
-                    //
-                    // Pinning the sheet to the top looked obvious and was
-                    // wrong twice. Qt reports availableGeometry().y() as 0 on
-                    // this device — and the parent window's geometry as 0 too
-                    // — while Android actually draws its status bar over that
-                    // strip. Anchoring to either put the sheet under the clock
-                    // and sliced the text field in half. Qt Widgets has no
-                    // safe-area API to ask, so the honest move is not to
-                    // pretend we know where the top is.
-                    //
-                    // The caller already chose a good y (popup() puts it in
-                    // the parent's upper third — palette position, clear of
-                    // any system bar), and that choice needs no help from a
-                    // phone. Only the WIDTH was ever wrong here.
-                    guarded->resize(room.width(), guarded->height());
-                    if (QLayout* l = guarded->layout())
-                        l->activate();
-                    const int needed =
-                        qMax(guarded->sizeHint().height(),
-                             guarded->minimumSizeHint().height());
-                    guarded->setGeometry(room.x(), guarded->y(), room.width(),
-                                         qMin(needed, room.height()));
+                    if (const QScreen* screen = QGuiApplication::primaryScreen())
+                        fitToRoom(guarded, screen->availableGeometry());
                 },
                 Qt::QueuedConnection);
         }
         return QObject::eventFilter(watched, event);
     }
 };
+
+// Scroll the focused widget into view inside every QScrollArea that holds it,
+// innermost first. The loop walks the PARENT chain, so an outer area is asked
+// to reveal the inner area rather than the field — which is exactly what
+// ensureWidgetVisible() needs, since it measures against its own content.
+void keepInView(QWidget* focused)
+{
+    if (!focused || !focused->isVisible())
+        return;
+    QWidget* target = focused;
+    for (QWidget* p = focused->parentWidget(); p; p = p->parentWidget()) {
+        auto* area = qobject_cast<QScrollArea*>(p);
+        if (area && area->widget() && area->widget()->isAncestorOf(target)) {
+            area->ensureWidgetVisible(target);
+            target = area;
+        }
+    }
+}
 
 } // namespace
 
@@ -308,6 +342,54 @@ void responsive::installCompactDialogFitter(QObject* owner)
     // dialog written next year is covered without anyone remembering to call
     // anything. The alternative — a line in each of eleven constructors — is
     // eleven chances to forget and no way to notice.
-    QCoreApplication::instance()->installEventFilter(
-        new CompactDialogFitter(owner));
+    auto* fitter = new CompactDialogFitter(owner);
+    QCoreApplication::instance()->installEventFilter(fitter);
+
+    // ...and again whenever the room changes under a dialog that is already
+    // up: the iPhone keyboard, a phone turned sideways. The rect comes from
+    // the SIGNAL rather than from asking the screen again, so a test can hand
+    // it a room no offscreen screen will ever report.
+    if (QScreen* screen = QGuiApplication::primaryScreen()) {
+        QObject::connect(screen, &QScreen::availableGeometryChanged, fitter,
+                         [](const QRect& room) {
+                             if (!isCompactScreen())
+                                 return;
+                             const QWidgetList tops =
+                                 QApplication::topLevelWidgets();
+                             for (QWidget* w : tops) {
+                                 auto* dialog = qobject_cast<QDialog*>(w);
+                                 if (dialog && dialog->isVisible())
+                                     fitToRoom(dialog, room);
+                             }
+                         });
+    }
+}
+
+void responsive::installCompactFocusKeeper(QObject* owner)
+{
+    // Two moments put a focused field out of sight, and they arrive in either
+    // order on a phone: the tap that gives it focus, and the keyboard that
+    // opens because of that tap and takes the bottom of the screen away.
+    //
+    // BOTH QUEUED, for the reason the fitter above learned: the keyboard's
+    // room change is followed by the refit and the layout pass, and a scroll
+    // computed before those finish is computed against the old height.
+    // QPointer because focus can leave, and its widget can die, in one turn.
+    auto later = [owner](QWidget* w) {
+        if (!w || !isCompactScreen())
+            return;
+        QPointer<QWidget> guarded(w);
+        QMetaObject::invokeMethod(
+            owner, [guarded]() { keepInView(guarded); }, Qt::QueuedConnection);
+    };
+
+    QObject::connect(qApp, &QApplication::focusChanged, owner,
+                     [later](QWidget*, QWidget* now) { later(now); });
+
+    if (QScreen* screen = QGuiApplication::primaryScreen()) {
+        QObject::connect(screen, &QScreen::availableGeometryChanged, owner,
+                         [later](const QRect&) {
+                             later(QApplication::focusWidget());
+                         });
+    }
 }

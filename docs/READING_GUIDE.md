@@ -748,6 +748,26 @@ calendar yet.'"
   is broken. When a guard exists for one window, grep for every other reader
   of the thing it guards (`TROUBLESHOOTING.md`).
 
+- **On an iPhone the keyboard does not shrink the page, and Qt for
+  WebAssembly only notices a size change when its own listeners run.** iOS
+  Safari shrinks the *visual* viewport and draws the keys over a full-height
+  page. Qt sizes its screen from the container's CSS box, so it believed the
+  whole screen was still there and the login's lower fields sat under the
+  keys. The fix sizes the container to the visual viewport. It works only
+  because that listener is added before `qtLoad`: Qt 6.11 never installs the
+  `ResizeObserver` it defines, and re-measures only from its own `window` and
+  `visualViewport` resize listeners, which the DOM calls after ours. Resize
+  the box from anywhere else and Qt never finds out (`web/index.html`,
+  `TROUBLESHOOTING.md`).
+
+- **Qt for WebAssembly draws a title bar with a close button, and on the
+  login gate that button ends the app.** Android has no window frames, so the
+  phone shell never accounted for one. Full-screen fitted dialogs are now
+  frameless, set on the dialog's `QWindow`, because
+  `QWidget::setWindowFlags()` goes through `setParent()` and hides a window
+  that is already showing (`ResponsiveWatcher.cpp::fitToRoom`,
+  `TROUBLESHOOTING.md`).
+
 ## 5. New since v13 — landmarks worth a visit
 
 - **Event's three identities** — `activityId` / `taskId` / `title`, "at

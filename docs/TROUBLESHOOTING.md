@@ -3138,3 +3138,69 @@ multi-touch gesture on synthesised mouse events: the imitation has no second
 finger to carry. Tests can send real touch sequences
 (`QTest::createTouchDevice`, `QTest::touchEvent`), including a second finger
 that joins late.
+
+### The on-screen keyboard covers the field you are typing into, on an iPhone
+
+**SYMPTOM**
+In the web app on an iPhone, tapping a text field low on the screen (first
+seen on the login's server address) opens the keyboard over the field. You
+type blind. The same screen on Android is fine, and every test is green.
+
+**CAUSE**
+iOS Safari does not shorten the page when its keyboard opens. It shrinks only
+the *visual* viewport and draws the keys over the bottom of a full-height
+page. Qt for WebAssembly (6.11) sizes its screen from the container element's
+CSS box (`QWasmScreen::updateQScreenSize`), which did not change, so Qt
+believed the whole screen was still available. Two things in the app made it
+worse. The dialog fitter ran once, at show, so an open dialog never tracked a
+smaller room. And the login form was spread down the full height because its
+layout had no stretch.
+
+A trap inside the fix: Qt 6.11 does **not** re-measure when the container is
+resized. It defines a `ResizeObserver` and never installs it. It re-measures
+only from its own `window` resize and `visualViewport` resize listeners.
+Setting the box's height from anywhere else changes the DOM and leaves Qt's
+screen as it was (measured in headless Chrome: the box shrank to 330px, the
+dialog stayed at 661px).
+
+**FIX**
+`web/index.html` sizes `#screen` to `visualViewport.height` (and follows
+`offsetTop`) in a `visualViewport` resize listener added **before** `qtLoad`.
+The DOM calls listeners in the order they were added, so the box is resized
+when Qt's listener measures it. The dialog fitter re-fits open dialogs on
+`QScreen::availableGeometryChanged`, and `installCompactFocusKeeper` scrolls
+the focused widget into view in its `QScrollArea`. Separately, the web build
+now passes `TICKTIMER_SERVER=location.origin`, so the login has no address
+field at all.
+
+**PREVENT**
+To reproduce without a phone, override the viewport height and fire the real
+event, so the listener order is the same as on the device:
+`Object.defineProperty(visualViewport, 'height', {configurable: true, get: () => 330}); visualViewport.dispatchEvent(new Event('resize'))`.
+Setting the height directly proves nothing, because Qt is not listening there.
+After a Qt upgrade, check whether Qt still re-measures only from its own
+listeners.
+
+### Tapping × on the web app's login screen closes the whole app
+
+**SYMPTOM**
+The web build's login window has a grey title bar reading "TickTimer" with
+maximise and × buttons. Tapping × replaces the app with "TickTimer closed".
+
+**CAUSE**
+Qt for WebAssembly draws its own window frame (title bar, close button) on
+every top-level window that is not frameless. Android draws none, so the
+phone shell was never designed with one in mind. On the login gate, × rejects
+the dialog, `main()` returns, and the tab is left with nothing to run.
+
+**FIX**
+A full-screen fitted dialog is frameless: `fitToRoom` in
+`ResponsiveWatcher.cpp` sets `Qt::FramelessWindowHint` on the dialog's
+**QWindow**. It is not set with `QWidget::setWindowFlags()`, because that call
+goes through `setParent()`, which marks an already-created window uncreated
+and hidden, and the fit runs after show. On WebAssembly the QWindow change is
+a CSS class; on Android it does nothing.
+
+**PREVENT**
+When the web build shows a surface for the first time, look for chrome that
+Qt draws there but no other platform draws.

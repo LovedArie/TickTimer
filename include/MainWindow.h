@@ -25,6 +25,7 @@
 
 #include "AppData.h"
 #include "JsonStore.h"
+#include "LoginDialog.h" // ServerField: a nested enum cannot be forward-declared
 #include "TrackerService.h"
 
 #include <QMetaObject>
@@ -78,7 +79,12 @@ public:
     //
     // Safe to have never been called: a window that was never offline has no
     // timer and no retry, and enableSync() guards against running twice.
-    void beginOffline(const QString& serverUrl);
+    //
+    // `serverField` is the first login's answer, carried so the sign-in the
+    // offline banner offers later asks the same question the same way: on
+    // the web build, with no address field.
+    void beginOffline(const QString& serverUrl,
+                      LoginDialog::ServerField serverField);
 
     // v31 — the format floor (design-addendum-format-floor.md). True when the
     // planner on disk was written by a NEWER TickTimer and was therefore not
@@ -299,6 +305,8 @@ private:
     class QTimer*      m_reconnect       = nullptr;
     class AuthClient*  m_reconnectClient = nullptr;
     QString            m_offlineServerUrl;
+    LoginDialog::ServerField m_offlineServerField =
+        LoginDialog::ServerField::Editable;
     SyncService*  m_sync        = nullptr;
     ShareClient*  m_shareClient = nullptr; // share & compare (needs the token)
     QuickCaptureOverlay* m_capture = nullptr; // Ctrl+N global quick-add (v21.1)

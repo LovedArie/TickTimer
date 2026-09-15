@@ -1548,7 +1548,7 @@ void MainWindow::openSharingDialog()
 
 void MainWindow::promptSignIn()
 {
-    LoginDialog dialog(m_offlineServerUrl, this);
+    LoginDialog dialog(m_offlineServerUrl, m_offlineServerField, this);
     if (dialog.exec() != QDialog::Accepted || dialog.offline())
         return; // cancelled, or chose to stay offline again
 
@@ -1620,9 +1620,11 @@ void MainWindow::addSignInButton()
     m_navLayout->addWidget(m_signInBtn);
 }
 
-void MainWindow::beginOffline(const QString& serverUrl)
+void MainWindow::beginOffline(const QString& serverUrl,
+                              LoginDialog::ServerField serverField)
 {
-    m_offlineServerUrl = serverUrl;
+    m_offlineServerUrl   = serverUrl;
+    m_offlineServerField = serverField;
 
     const QString token = session::deviceToken(m_username);
 
