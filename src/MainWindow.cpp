@@ -755,7 +755,14 @@ MainWindow::MainWindow(const QString& username)
     reflectCurrentPage(m_pages->currentIndex());
     setCentralWidget(central);
 
-    QString startupNote = tr("Data file: %1").arg(m_store.filePath());
+    // The path is a desktop diagnostic: it tells someone at a keyboard
+    // where to look. On a phone it names a directory nobody can open
+    // (/home/web_user/... on the web build), and as a toast it covered the
+    // header for eight seconds on every launch — the first thing the first
+    // iPhone user saw (31.2.1). The rarer notes below still show: those say
+    // something happened to the planner, which every platform must hear.
+    QString startupNote =
+        m_phoneShell ? QString() : tr("Data file: %1").arg(m_store.filePath());
     if (adopted)
         startupNote = tr("Welcome — your existing planner was moved into "
                          "your account. ") + startupNote;
@@ -764,7 +771,8 @@ MainWindow::MainWindow(const QString& username)
                          "moved in with the new name.");
     if (!recoveryMessage.isEmpty())
         startupNote = recoveryMessage; // rarer and more important: it wins
-    say(startupNote, /*ms=*/8000);
+    if (!startupNote.isEmpty())
+        say(startupNote, /*ms=*/8000);
 
     // v28.10 — the seams, reachable (see DebugPanel.h for the why). Lazy:
     // most launches never press the chord, so most launches never pay for

@@ -5,7 +5,7 @@
 
 *Status: **31.2.0** (September 2026) — a working daily driver on **Windows**,
 **Android** and **iPhone** (as a web app), all built from one C++17 / Qt 6
-codebase. **567 tests** across six QTest suites, all green. Login and sync run
+codebase. **572 tests** across six QTest suites, all green. Login and sync run
 on a small self-hosted server (`ticktimer-server`) — no Google, no cloud
 account. (Formerly "Time & Focus Tracker".)*
 
@@ -309,7 +309,7 @@ stored as Qt's opaque blob rather than four numbers.
 
 - **C++17** and **Qt 6 Widgets** — no dependencies beyond Qt itself; all
   charts are custom-painted.
-- **CMake** builds; **QTest** suites: six of them, 567 tests (green at
+- **CMake** builds; **QTest** suites: six of them, 572 tests (green at
   31.2.0 — `tests/README.md` explains that figure and how to re-derive it), all
   headless (real widgets on Qt's offscreen platform — no display needed, so
   they run the same on your laptop and in CI).

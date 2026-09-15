@@ -73,7 +73,18 @@ bool ResponsiveWatcher::eventFilter(QObject* watched, QEvent* event)
 
 void ResponsiveWatcher::reclassify()
 {
-    const int w = m_container->width();
+    int w = m_container->width();
+
+    // On a phone-sized device, judge only the width a person can reach
+    // (Responsive.h::reachableWidth). Gated on the DEVICE, deliberately: a
+    // desktop window dragged wider than its monitor is a choice its owner
+    // made, and this project's rule is that phone work leaves the desktop
+    // exactly as it was.
+    if (isCompactScreen()) {
+        if (const QScreen* screen = QGuiApplication::primaryScreen())
+            w = responsive::reachableWidth(
+                w, screen->availableGeometry().width());
+    }
 
     // Hysteresis needs a previous answer; the very first call has none, so it
     // asks the memoryless overload. Everything after feeds its own last
@@ -131,6 +142,41 @@ namespace {
 // and this walk stops at its edge. Without it, a widget under two watchers
 // would receive two contradictory modes and the last one delivered would win
 // at random.
+// A HIDDEN WIDGET IS NEVER RE-LAID-OUT, AND ITS MINIMUM STILL COUNTS (31.2.1).
+//
+// Qt drops a hidden widget's layout work on the floor: updateGeometry()
+// skips a hidden widget's parent, and QLayout ignores a LayoutRequest for a
+// widget that is not visible. Sensible — until the numbers are read. A
+// QStackedWidget's minimum is the largest of ALL its pages, current or not,
+// and a top-level window is clamped up to that minimum. So a page built in
+// Expanded, then hidden, then told it is Compact keeps the minimum it had
+// under the DESKTOP stylesheet: UpcomingPage's four filter chips reported a
+// 339px row that was really 210 once recomputed, and the window's minimum
+// carried the stale figure. On a 375px iPhone that is the whole clip.
+//
+// invalidate() then activate(), in that order, on every hidden widget's
+// layout in the subtree. activate() alone returns early on a layout that
+// still believes it is activated; invalidate() clears that belief, and
+// activate() then walks every nested layout (activateRecursiveHelper) and
+// recomputes. It does not check visibility — only the event path does. Run
+// AFTER the mode signal, because the compact stylesheet is applied by a
+// handler of that signal and a recomputation before it would cache the old
+// padding a second time.
+void relayoutHidden(QWidget* parent)
+{
+    const QObjectList& children = parent->children();
+    for (QObject* child : children) {
+        auto* w = qobject_cast<QWidget*>(child);
+        if (!w)
+            continue;
+        if (!w->isVisible() && w->layout()) {
+            w->layout()->invalidate();
+            w->layout()->activate();
+        }
+        relayoutHidden(w);
+    }
+}
+
 void dispatchTo(QWidget* parent, ResponsiveModeEvent& ev)
 {
     const QObjectList& children = parent->children();
@@ -159,6 +205,9 @@ void ResponsiveWatcher::deliver()
     dispatchTo(m_container, ev);
 
     emit modeChanged(m_mode);
+
+    // Last, once every handler — including the stylesheet swap — has run.
+    relayoutHidden(m_container);
 }
 
 // ---- dialogs on a phone -----------------------------------------------------

@@ -116,6 +116,28 @@ constexpr Mode modeFor(int widthPx, Mode current)
     return modeFor(widthPx); // unreachable; keeps every compiler quiet
 }
 
+// The width a person can REACH, which is what the class must be judged on.
+//
+// THE LOOP THIS BREAKS (31.2.1, found on the web build): Qt clamps a
+// top-level window UP to its minimum and never back down. A window whose
+// pages were laid out wide acquires a wide minimum, the platform hands it
+// the 390px screen, Qt refuses and keeps it at 677 — and a watcher that
+// classifies the container's width reads 677, answers Medium, and the pages
+// stay too wide to ever let the window shrink. Nothing breaks the loop from
+// inside it, because every input the loop reads is one it produced.
+//
+// Width past the screen's edge is not room; it is content nobody can get to.
+// So the container's width is capped at the screen's before it is classified.
+// A container that already fits is unchanged, which is every desktop window
+// and every phone that laid out right first time. A non-positive screen
+// width means "no screen known" and leaves the width alone.
+constexpr int reachableWidth(int containerPx, int screenPx)
+{
+    if (screenPx <= 0)
+        return containerPx;
+    return containerPx < screenPx ? containerPx : screenPx;
+}
+
 // For test failure messages and the layout probe. Deliberately not tr()'d:
 // this is diagnostic output for developers, never user-facing text.
 constexpr const char* name(Mode m)

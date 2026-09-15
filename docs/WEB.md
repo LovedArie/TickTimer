@@ -290,8 +290,17 @@ on-screen keyboard is Qt-for-WebAssembly's weakest area. This is the known
 roughest edge and the one most likely to decide whether the app is pleasant.
 
 *Partly answered on 2026-09-15, from the first iPhone screenshots.* The probe
-read 390x661 at 3x, `isCompactScreen()` YES, so the phone shell works. Three
-problems showed up, and 31.2.1 addresses all three:
+read 390x661 at 3x, `isCompactScreen()` YES, so the phone shell works. Four
+problems showed up, and 31.2.1 addresses all four:
+
+- **The main window was wider than the phone** — the day view cut off at the
+  right edge after login. Not a wide page: a loop in which the window was
+  clamped up to its desktop-laid-out minimum and the layout class was then
+  judged on that inflated width. Underneath it, a second Qt trap: a hidden
+  page is never re-laid-out, so its stale desktop minimum kept the window
+  wide. Both are in `design-addendum-responsive.md` §3.65 and
+  `TROUBLESHOOTING.md`. The width gate now also runs in DejaVu Sans, the one
+  font this build has.
 
 - **The keyboard covered the field being typed into.** iOS shrinks only the
   visible area, never the page, and Qt measured the page. The page now sizes

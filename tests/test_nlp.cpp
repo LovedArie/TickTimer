@@ -1445,6 +1445,37 @@ private slots:
         QCOMPARE(modeFor(1150 - 190), Mode::Expanded);
     }
 
+    // 31.2.1 — the web build's window sat at 677px on a 390px screen because
+    // the class was judged on a width the window had been clamped UP to,
+    // and the class it chose kept the minimum that caused the clamp.
+    void layoutWidthIsCappedAtTheScreen()
+    {
+        using namespace responsive;
+
+        // The loop, in numbers: a 677px container on a 390px screen must be
+        // classified as 390 — Compact — or it never gets narrower.
+        QCOMPARE(reachableWidth(677, 390), 390);
+        QCOMPARE(modeFor(reachableWidth(677, 390)), Mode::Compact);
+        QCOMPARE(modeFor(reachableWidth(677, 390), Mode::Medium),
+                 Mode::Compact);
+
+        // A container that fits is left alone, including one that exactly
+        // fills the screen.
+        QCOMPARE(reachableWidth(360, 390), 360);
+        QCOMPARE(reachableWidth(390, 390), 390);
+
+        // No screen known: no opinion. A desktop's 960px page stack on a
+        // 1920px monitor is untouched either way.
+        QCOMPARE(reachableWidth(677, 0), 677);
+        QCOMPARE(reachableWidth(677, -1), 677);
+        QCOMPARE(reachableWidth(960, 1920), 960);
+        QCOMPARE(modeFor(reachableWidth(960, 1920)), Mode::Expanded);
+
+        // A widget before its first layout pass stays 0: still Compact, and
+        // still the caller's job to ignore (ResponsiveWatcher.h).
+        QCOMPARE(reachableWidth(0, 390), 0);
+    }
+
     void layoutModeIsStickyNearABreakpoint()
     {
         using namespace responsive;

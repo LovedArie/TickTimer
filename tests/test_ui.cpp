@@ -109,6 +109,7 @@
 #include <QVBoxLayout> // 31.2.0 (B8) -- the wheel tests build their own hosts
 #include <QStackedWidget>
 #include <QFontDatabase>
+#include <QFontInfo>     // 31.2.1 -- proving the web font actually resolved
 #include <QScreen>
 #include <QWindow>   // 31.2.1 -- a fitted dialog's frame is a QWindow flag
 #include <QSettings>
@@ -3843,7 +3844,12 @@ private slots:
                                 .arg(sorted.join(QStringLiteral("\n    ")))));
     }
 
-    void everyPageFitsAPhoneScreen()
+    // Not a slot (31.2.1): the measurement below is run twice, once in this
+    // machine's fonts and once in the web build's, so its body is a plain
+    // member the two slots share. moc would register a slot-section function
+    // as a test of its own, which is why the section changes here.
+private:
+    void checkEveryPageFitsAPhone()
     {
         // These live INSIDE the function, and that is a moc constraint rather
         // than a style choice: everything after `private slots:` is parsed as
@@ -3958,8 +3964,38 @@ private slots:
             const QString name =
                 QString::fromLatin1(page->metaObject()->className());
             all << QStringLiteral("%1=%2").arg(name).arg(min);
-            if (min > kPageBudgetPx)
-                over << QStringLiteral("%1 (%2px)").arg(name).arg(min);
+            if (min > kPageBudgetPx) {
+                // Name the widgets that carry the width, not just the page.
+                // A page is a sum; the failure is in one of its terms, and
+                // "UpcomingPage (385px)" sent a reader guessing at the chips
+                // when the term was a label (31.2.1).
+                // Widest first, and down to a sixth of the budget: a row of
+                // six 60px chips is over budget with no single wide widget.
+                QList<QPair<int, QString>> wide;
+                for (QWidget* c : page->findChildren<QWidget*>()) {
+                    const int cw = c->minimumSizeHint().width();
+                    if (c->isHidden() || cw <= kPageBudgetPx / 6)
+                        continue;
+                    // sizeHint too: a Minimum-policy widget (QToolButton)
+                    // is laid out at its HINT, and its min can be far less.
+                    wide << qMakePair(cw, QStringLiteral("%1#%2[min%3,hint%4]%5")
+                                .arg(QString::fromLatin1(
+                                         c->metaObject()->className()))
+                                .arg(c->objectName())
+                                .arg(cw)
+                                .arg(c->sizeHint().width())
+                                .arg(c->property("text").toString()
+                                         .simplified().left(24)));
+                }
+                std::sort(wide.begin(), wide.end(),
+                          [](const auto& a, const auto& b) { return a.first > b.first; });
+                QStringList named;
+                for (int k = 0; k < wide.size() && k < 10; ++k)
+                    named << wide[k].second;
+                over << QStringLiteral("%1 (%2px: %3)")
+                            .arg(name).arg(min)
+                            .arg(named.join(QStringLiteral(" > ")));
+            }
 
             // ---- the hole this measurement leaves (v30.7) ------------------
             // minimumSizeHint is the PAGE's promise, and a QScrollArea's
@@ -4055,6 +4091,51 @@ private slots:
         // take. Asking for a phone-sized window and being given a wider one is
         // the failure, stated in the same terms the user experiences it.
         QCOMPARE(w.width(), kPhoneWidthPx);
+    }
+
+private slots:
+    void everyPageFitsAPhoneScreen() { checkEveryPageFitsAPhone(); }
+
+    // 31.2.1 — the same budget in the font the phone actually draws. Qt for
+    // WebAssembly ships exactly one font, DejaVu Sans, and it is wider than
+    // Segoe UI: UpcomingPage measured 356px in this machine's fonts and 385
+    // in DejaVu — over a 360px budget, on a page the Windows run certified.
+    // The .ttf is the one Qt embeds (tests/fonts/, Bitstream Vera licence).
+    //
+    // The font is loaded and set at runtime rather than through
+    // QT_QPA_FONTDIR because that variable is read once, at startup, and a
+    // second ctest entry for one font would make "six suites" a lie in five
+    // documents. A QApplication font change reaches every widget built after
+    // it, and the window under test is built after it.
+    void everyPageFitsAPhoneScreenInTheWebFont()
+    {
+        const QString ttf = QFINDTESTDATA("fonts/DejaVuSans.ttf");
+        QVERIFY2(!ttf.isEmpty(), "tests/fonts/DejaVuSans.ttf is missing");
+        const int id = QFontDatabase::addApplicationFont(ttf);
+        QVERIFY2(id >= 0, "DejaVuSans.ttf did not load");
+
+        const QFont before = QApplication::font();
+        QFont web(QStringLiteral("DejaVu Sans"));
+        web.setPointSize(before.pointSize());
+        QApplication::setFont(web);
+        // Restored on every exit path, pass or fail: the tests after this
+        // one measure in the machine's own font and must not inherit this.
+        struct Restore {
+            QFont font; int id;
+            ~Restore()
+            {
+                QApplication::setFont(font);
+                QFontDatabase::removeApplicationFont(id);
+            }
+        } restore{before, id};
+
+        // Prove the swap took before trusting a number measured in it. A
+        // family that failed to resolve falls back silently, and the test
+        // would then certify Segoe UI a second time under a different name.
+        QCOMPARE(QFontInfo(QApplication::font()).family(),
+                 QStringLiteral("DejaVu Sans"));
+
+        checkEveryPageFitsAPhone();
     }
 
     // The gate above walks a MainWindow built on whatever data.json the test
@@ -5034,6 +5115,65 @@ private slots:
                      .arg(QLatin1String(responsive::name(modeNow())))));
 
         clearWindowPrefs();
+    }
+
+    // 31.2.1 — a page that is not on screen is never re-laid-out by Qt, and
+    // its stale minimum is still the stack's minimum. Two pages: A is shown,
+    // B is hidden and holds a label whose minimum is its whole text until the
+    // mode event tells it to wrap. Without the watcher's hidden-relayout
+    // pass, B's cached minimum outlives the wrap and the stack — and any
+    // window above it — stays too wide for the phone.
+    void aHiddenPagesMinimumFollowsTheModeChange()
+    {
+        struct WrapOnCompact : QObject {
+            QLabel* label;
+            explicit WrapOnCompact(QLabel* l) : QObject(l), label(l) {}
+            bool eventFilter(QObject*, QEvent* e) override
+            {
+                if (e->type() == ResponsiveModeEvent::type())
+                    label->setWordWrap(
+                        static_cast<ResponsiveModeEvent*>(e)->mode()
+                        == responsive::Mode::Compact);
+                return false;
+            }
+        };
+
+        // The stack is a CHILD, not a window: a top-level widget cannot be
+        // resized below its minimum, and its minimum is the wide page — the
+        // first draft of this test was stopped by the exact loop §3.65 fixes.
+        QWidget host;
+        auto& stack = *new QStackedWidget(&host);
+        auto* a = new QWidget(&stack);
+        stack.addWidget(a);
+        auto* b = new QWidget(&stack);
+        auto* column = new QVBoxLayout(b);
+        auto* row = new QHBoxLayout; // the nested layout is the one Qt
+        column->addLayout(row);      // leaves stale; keep it nested
+        auto* label = new QLabel(QStringLiteral(
+            "a sentence long enough that its unwrapped width is well past any "
+            "phone, so wrapping it is what makes the page fit"), b);
+        row->addWidget(label);
+        label->installEventFilter(new WrapOnCompact(label));
+        stack.addWidget(b);
+        stack.setCurrentWidget(a); // B stays hidden throughout
+
+        new ResponsiveWatcher(&stack);
+        host.resize(1000, 400);
+        stack.resize(1000, 400);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        QTest::qWait(0); // the first dispatch is queued
+        const int wide = stack.minimumSizeHint().width();
+        QVERIFY2(wide > 400, "the unwrapped label did not make page B wide");
+
+        stack.resize(360, 400);
+        QTest::qWait(0);
+        QVERIFY(label->wordWrap()); // the mode reached the hidden page...
+        QVERIFY2(stack.minimumSizeHint().width() < wide,
+                 qPrintable(QStringLiteral(
+                     "...but the hidden page still reports %1px: its layout "
+                     "was never recomputed")
+                     .arg(stack.minimumSizeHint().width())));
     }
 
     // ---- the pure policy --------------------------------------------------

@@ -1015,6 +1015,73 @@ prediction. `docs/ROLLOUT.md` Stage 4b step 1 remains the measurement that
 settles it, and it is now a *confirmation* step rather than an open question —
 which is exactly the difference the instrument was built to buy.
 
+## 3.65 The answer was read — and the window did not fit anyway (31.2.1)
+
+§3.64 owed a reading. The first iPhone screenshots supplied it: 390x661 at
+device pixel ratio 3, `isCompactScreen()` **YES**. The input is right on the
+third platform. And the main window still ran off the right edge of the
+screen, with the day view's own caption cut mid-word. Two mechanisms, both
+Qt's, both invisible from the desktop, and neither one a wide page.
+
+**The loop.** Logged from inside the web build: the window was born 390 wide,
+its pages laid out in Expanded (they are built before the watcher's first
+dispatch, and `modeOf()` on an unstamped parent answers Expanded), and Qt
+clamped the window UP to that layout's 677px minimum. The watcher then read
+the page stack's width — 677 — and answered **Medium**. In Medium `ChatPage`
+keeps its title beside its buttons (439px), so the minimum never fell below
+390, `refitToScreen()` never had a width it could grant, and nothing could
+break a loop whose every input it had itself produced. Android escaped it by
+luck: the constructor's "born the right size" (§3.44) is enough there because
+the platform re-offers the screen size on every relayout, and the web
+platform does not.
+
+*Choice:* judge the class on the width a person can **reach**.
+`responsive::reachableWidth(container, screen)` caps the container's width at
+the screen's before `modeFor()` sees it — a pure function beside the other
+two, pinned in the Core-only suite. Applied only when `isCompactScreen()`,
+because a desktop window dragged wider than its monitor is its owner's
+choice and phone work leaves the desktop alone.
+
+*Why not fix the birth order instead* (stamp the mode before the pages are
+built)? It removes this instance and leaves the loop: any page that grows a
+wide minimum later — a long label arriving from data — would inflate the
+window and re-enter Medium the same way. The clamp makes the loop impossible
+rather than unlikely.
+
+**The stale hidden page.** The web-font run of the width gate (below) then
+reported `UpcomingPage` at 385px, and naming the widgets showed the four
+filter chips' row at 339px while its own items summed to 210. Qt does not
+re-lay-out a hidden widget: `updateGeometry()` skips a hidden widget's parent
+and `QLayout` ignores a `LayoutRequest` for a widget that is not visible. A
+page built under the desktop stylesheet, then hidden behind the current page,
+then told it is Compact keeps its **desktop** minimums in every nested
+layout — and `QStackedWidget`'s minimum is the maximum over all its pages,
+hidden ones included, which is the number the window is clamped to. The gate
+had been reading those stale minimums since v30.5 and passing on them.
+
+*Choice:* after each mode delivery — and after the `modeChanged` handlers,
+because one of them swaps the stylesheet — the watcher walks its subtree and,
+for every hidden widget with a layout, calls `invalidate()` then
+`activate()`. `activate()` walks nested layouts and does not check visibility;
+only the event path does. `aHiddenPagesMinimumFollowsTheModeChange` pins it
+with a hidden page whose label wraps on Compact.
+
+*Rejected:* re-laying-out in `MainWindow` after the stylesheet swap. The stale
+minimum is a property of any stack under any watcher, and the watcher is the
+one object that knows a mode change just happened.
+
+**The font.** The gate measured in Segoe UI; Qt for WebAssembly ships one
+font, DejaVu Sans, and it is wider. The same measurement now runs twice,
+the second time with `tests/fonts/DejaVuSans.ttf` loaded and set as the
+application font at runtime — not through `QT_QPA_FONTDIR`, which is read
+once at startup and would have needed a seventh ctest entry for one font.
+Under DejaVu the true minimums fit; only the stale ones did not.
+
+**And the toast.** "Data file: /home/web_user/.local/share/…" covered the
+header for eight seconds on every launch. A path is a desktop diagnostic; on
+a phone the plain note is not shown. The rarer notes (planner adopted,
+migrated, recovered) still are.
+
 ## What changed where
 
 | Layer | File(s) | Change |

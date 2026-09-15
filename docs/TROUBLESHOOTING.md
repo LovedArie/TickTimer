@@ -3204,3 +3204,61 @@ a CSS class; on Android it does nothing.
 **PREVENT**
 When the web build shows a surface for the first time, look for chrome that
 Qt draws there but no other platform draws.
+
+### The web app's main window is wider than the phone, and the day view is cut off on the right
+
+**SYMPTOM**
+After logging in on an iPhone, the day view's "Nothing planned yet" caption
+is cut mid-word at the right edge, the `›` day button is off screen, and
+nothing scrolls sideways. The probe (`?probe`) says the layout is compact.
+
+**CAUSE**
+A loop. The window is born at screen width, but its pages are laid out in
+Expanded before the watcher's first dispatch, so the window is clamped UP to
+that layout's 677px minimum (Qt never clamps a top-level window back down).
+The watcher then classified the page stack's 677px as Medium, in which the
+pages keep a minimum above the screen, so the window could never shrink and
+the mode could never fall to Compact. Every input the loop read was one it
+had produced. Logged with temporary `qInfo` lines in the web build.
+
+**FIX**
+`ResponsiveWatcher::reclassify()` judges the width a person can reach:
+`responsive::reachableWidth()` caps the container's width at the screen's on
+a compact device. `modeFor(390)` is Compact, the pages shrink, and
+`refitToScreen()` grants the screen width.
+
+**PREVENT**
+When a phone layout is stuck wide, log the window's `size()`, its
+`minimumSizeHint()`, and the mode together. The pair "size above minimum,
+mode above Compact" is this loop.
+
+### A page fits when shown and is over budget when it is not — the stale hidden page
+
+**SYMPTOM**
+The width gate reports a page over the phone budget (UpcomingPage at 385px)
+and names a row whose items add up to far less (four chips at 210px reported
+as 339). Showing the page and measuring again gives the smaller number.
+
+**CAUSE**
+Qt does not re-lay-out a hidden widget: `QWidget::updateGeometry()` skips a
+hidden widget's parent, and `QLayout::widgetEvent()` ignores a
+`LayoutRequest` for a widget that is not visible. A page built under the
+desktop stylesheet, hidden behind the current page, then told it is Compact
+keeps its desktop minimums cached in every nested layout — and
+`QStackedWidget::minimumSizeHint()` is the maximum over all pages, hidden or
+not. That stale figure is what the window is clamped to. On a 375px iPhone
+it is the whole clip.
+
+**FIX**
+After each mode delivery, `ResponsiveWatcher::deliver()` walks its subtree
+and calls `layout()->invalidate()` then `layout()->activate()` on every
+hidden widget with a layout (`relayoutHidden`). `activate()` recomputes
+nested layouts and does not check visibility; `invalidate()` first is what
+stops it returning early. It runs after the `modeChanged` handlers, because
+one of them swaps the stylesheet.
+
+**PREVENT**
+Any number read from a hidden widget's layout may be stale. Before trusting
+one, invalidate and activate — or show the widget. The gate now names the
+widest widgets with both `minimumSizeHint` and `sizeHint`, so a row that is
+wider than its parts is visible in the failure text.

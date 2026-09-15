@@ -323,6 +323,23 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
   and × on the login gate exits the app. Fitted full-screen dialogs are
   frameless, set on the `QWindow`: `QWidget::setWindowFlags()` goes through
   `setParent()` and hides a window that is already shown.
+- **A layout class judged on a width the window was clamped UP to is a
+  loop with no exit.** The web build's window was clamped to its Expanded
+  pages' 677px minimum, the watcher read 677 and answered Medium, and
+  Medium's minimum kept it at 677 on a 390px screen. `responsive::
+  reachableWidth()` caps the container at the screen before classifying, on
+  compact devices only (`design-addendum-responsive.md` §3.65).
+- **A hidden widget is never re-laid-out, and its stale minimum still
+  counts.** Qt skips `updateGeometry()` and `LayoutRequest` for invisible
+  widgets, so a page behind the current one keeps its desktop-stylesheet
+  minimums, and `QStackedWidget`'s minimum is the max over ALL pages. The
+  phone-width gate had passed on stale numbers since v30.5.
+  `ResponsiveWatcher` calls `invalidate()` then `activate()` on every hidden
+  layout after each mode delivery. Any number read from a hidden layout may
+  be stale; invalidate and activate before trusting it.
+- **The phone draws DejaVu Sans, not Segoe UI.** The width gate runs twice,
+  the second time with `tests/fonts/DejaVuSans.ttf` set as the application
+  font at runtime (`QT_QPA_FONTDIR` is read once at startup).
 
 ## Docs worth opening before changing anything
 

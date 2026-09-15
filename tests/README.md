@@ -71,14 +71,14 @@ default platform plugin aborts on a machine with no display.
 **There are three defensible numbers, and mixing them is how this repo's
 counts drifted.** All three are correct; each answers a different question.
 
-| figure | at 31.2.0 | what it counts | how to get it |
+| figure | at 31.2.1 | what it counts | how to get it |
 |---|---|---|---|
-| **567** | the headline | QTest cases — test functions **plus** each class's `initTestCase`/`cleanupTestCase` | sum the suites' own `Totals:` lines |
-| **555** | test functions | the slots you actually wrote | `-functions`, which omits init/cleanup |
+| **572** | the headline | QTest cases — test functions **plus** each class's `initTestCase`/`cleanupTestCase` | sum the suites' own `Totals:` lines |
+| **560** | test functions | the slots you actually wrote | `-functions`, which omits init/cleanup |
 | **6** | suites | one per `add_test()` | `ctest`'s summary line |
 
-567 − 555 = 12 = two fixture slots × six suites. Per suite, QTest totals
-(measured 2026-09-15): domain 261, ui 155, nlp 82, auth 25, taskmodel 22,
+572 − 560 = 12 = two fixture slots × six suites. Per suite, QTest totals
+(measured 2026-09-15, 31.2.1): domain 261, ui 159, nlp 83, auth 25, taskmodel 22,
 login_live 22. At v29.1.0 the same three figures were 379 / 367 / 6.
 
 ```sh
@@ -89,7 +89,7 @@ done
 ```
 
 ```powershell
-# QTest cases per suite — the 567 figure (PowerShell; see the gotcha below)
+# QTest cases per suite — the 572 figure (PowerShell; see the gotcha below)
 foreach ($t in @("domain","taskmodel","nlp","ui","auth","login_live")) {
     & ".\build-release\test_$t.exe" | Where-Object { $_ -like "Totals:*" }
 }

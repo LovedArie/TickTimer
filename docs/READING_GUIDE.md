@@ -768,6 +768,32 @@ calendar yet.'"
   that is already showing (`ResponsiveWatcher.cpp::fitToRoom`,
   `TROUBLESHOOTING.md`).
 
+- **A layout class judged on a width the window was clamped UP to is a
+  loop with no exit.** The web build's window was born 390 wide, laid out
+  its pages in Expanded, was clamped to their 677px minimum, and the watcher
+  read 677 and answered Medium — whose minimum kept the window at 677. Every
+  input the loop read, it had produced. `responsive::reachableWidth()` caps
+  the container's width at the screen's before it is classified, on a
+  compact device only (`design-addendum-responsive.md` §3.65,
+  `TROUBLESHOOTING.md`).
+
+- **A hidden widget is never re-laid-out, and its stale minimum still
+  counts.** `updateGeometry()` skips a hidden widget's parent and `QLayout`
+  drops a `LayoutRequest` for an invisible widget, so a page behind the
+  current one keeps the minimums it computed under the desktop stylesheet —
+  and `QStackedWidget`'s minimum is the maximum over ALL pages. The width
+  gate had read those stale figures since v30.5. `ResponsiveWatcher` now
+  calls `invalidate()` then `activate()` on every hidden layout after each
+  mode delivery; `activate()` recomputes nested layouts and does not check
+  visibility (`design-addendum-responsive.md` §3.65, `TROUBLESHOOTING.md`).
+
+- **The gate measured in the desktop's font, and the phone draws a wider
+  one.** Qt for WebAssembly ships DejaVu Sans only. The phone-width gate now
+  runs a second time with `tests/fonts/DejaVuSans.ttf` set as the application
+  font at runtime — `QT_QPA_FONTDIR` is read once at startup, so a font
+  cannot be switched per test that way (`test_ui.cpp`,
+  `everyPageFitsAPhoneScreenInTheWebFont`).
+
 ## 5. New since v13 — landmarks worth a visit
 
 - **Event's three identities** — `activityId` / `taskId` / `title`, "at
