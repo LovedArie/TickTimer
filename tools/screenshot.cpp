@@ -2,7 +2,7 @@
 // screenshot.cpp — a developer TOOL, not part of the app: it opens the real
 // MainWindow (with whatever data.json you have), waits half a second for
 // layout and first paint, renders the window into an image, saves it, and
-// quits. Used to produce docs/screenshot.png for the README.
+// quits. Used to produce docs/screenshots/*.png for the README.
 //
 // Why a tool instead of pressing PrintScreen: a repeatable command gives
 // the same framing every time, works on machines with no screen at all
@@ -12,21 +12,142 @@
 //
 // Build it with:  cmake -B build -DBUILD_TOOLS=ON  && cmake --build build
 // Run it with:    ./build/screenshot-tool [output.png]
+//
+// TICKTIMER_DEMO=1 shoots a MADE-UP planner instead of yours. The README is
+// public, so a screenshot of real data publishes a real schedule. Demo mode
+// switches the organisation and application names first, which moves BOTH
+// the data folder (QStandardPaths) and the preferences (QSettings) somewhere
+// the real app never looks - so it cannot read, or overwrite, a real planner.
+// TICKTIMER_PLANNER_MODE=1 shows the week instead of the day.
+//
+// The README's set, from the repo root (Git Bash, Qt's bin on PATH):
+//   S=build-release/screenshot-tool.exe; export TICKTIMER_DEMO=1
+//   $S docs/screenshots/day.png 0 1280 1000
+//   TICKTIMER_PLANNER_MODE=1 $S docs/screenshots/week.png 0 1280 1000
+//   $S docs/screenshots/life-areas.png 2 1280 860
+//   $S docs/screenshots/upcoming.png 1 1280 860
+//   # phone size: offscreen, or Windows clamps the window to the screen
+//   export QT_QPA_PLATFORM=offscreen QT_QPA_FONTDIR=C:/Windows/Fonts
+//   export TICKTIMER_COMPACT=1 QT_SCALE_FACTOR=2
+//   $S docs/screenshots/phone-day.png 0 390 844
+//   $S docs/screenshots/phone-areas.png 2 390 844
+// Pages: 0 Calendar, 1 Upcoming, 2 Life areas, 3 Special days, 4 Pomodoro,
+// 5 Archive, 6 Assistant.
 // ---------------------------------------------------------------------------
 
+#include "AppData.h"
+#include "JsonStore.h"
 #include "MainWindow.h"
+#include "PlannerPage.h"
+#include "Segment.h"
 #include "Theme.h"
 
 #include <QApplication>
+#include <QColor>
+#include <QDateTime>
+#include <QFile>
 #include <QFont>
 #include <QSettings>
+#include <QStatusBar>
 #include <QStackedWidget>
 #include <QTimer>
+
+namespace {
+
+// A believable week for a student with a part-time job, built through the
+// same AppData doors the app uses, so every rule the real app enforces
+// applies here too. Anchored on TODAY: the calendar always opens on today,
+// and the now-line has to land among the blocks. Only blocks already over
+// get tracked time, so "planned vs actual" looks honest at any hour.
+void seedDemo(AppData& d)
+{
+    const QDate today = QDate::currentDate();
+    const QDateTime now = QDateTime::currentDateTime();
+
+    const QString school = d.addCategory(QStringLiteral("School"), QColor("#4C6FE0"));
+    const QString work   = d.addCategory(QStringLiteral("Work"), QColor("#E08A3C"));
+    const QString health = d.addCategory(QStringLiteral("Health"), QColor("#3FAE6A"));
+    const QString life   = d.addCategory(QStringLiteral("Personal"), QColor("#9B59B6"));
+
+    const QString lecture = d.addActivity(QStringLiteral("Algorithms lecture"), school);
+    const QString study   = d.addActivity(QStringLiteral("Study session"), school);
+    const QString shift   = d.addActivity(QStringLiteral("Cafe shift"), work);
+    const QString gym     = d.addActivity(QStringLiteral("Gym"), health);
+    const QString run     = d.addActivity(QStringLiteral("Morning run"), health);
+    const QString reading = d.addActivity(QStringLiteral("Reading"), life);
+    const QString errands = d.addActivity(QStringLiteral("Groceries"), life);
+
+    const QString lab = d.addTask(QStringLiteral("Lab 4 - graph search (5%)"), school,
+                                  today.addDays(2), QTime(23, 59));
+    d.setTaskPriority(lab, Task::Priority::Urgent);
+    d.setTaskSize(lab, 180, true);
+    d.addSubtask(lab, QStringLiteral("Implement BFS and DFS"));
+    d.addSubtask(lab, QStringLiteral("Write the complexity analysis"));
+    const QString essay = d.addTask(QStringLiteral("Essay outline - ethics in AI"), school,
+                                    today.addDays(5));
+    d.setTaskSize(essay, 90, true);
+    d.addTask(QStringLiteral("Swap Saturday shift with Sam"), work, today.addDays(1));
+    d.addTask(QStringLiteral("Renew bus pass"), life, today.addDays(1));
+    d.setTaskDone(d.addTask(QStringLiteral("Pay phone bill"), life, today), true);
+    d.addTask(QStringLiteral("Book dentist appointment"), health);
+
+    const auto track = [&](const QString& id, QDate day, int fromMin, int toMin) {
+        if (id.isEmpty())
+            return;
+        const QDateTime a(day, QTime(fromMin / 60, fromMin % 60));
+        const QDateTime b(day, QTime(toMin / 60, toMin % 60));
+        if (b > now)
+            return; // no tracked time in the future
+        Segment seg;
+        seg.start = a;
+        seg.end   = b;
+        d.appendSegment(id, seg);
+    };
+
+    // Monday to Sunday of this week.
+    const QDate monday = today.addDays(1 - today.dayOfWeek());
+    for (int i = 0; i < 7; ++i) {
+        const QDate day = monday.addDays(i);
+        const int dow = day.dayOfWeek();
+        if (dow <= 5) {
+            track(d.addEvent(day, 7 * 60, 8 * 60, run), day, 7 * 60 + 5, 7 * 60 + 52);
+            track(d.addEvent(day, 8 * 60 + 30, 10 * 60, lecture), day, 8 * 60 + 32, 9 * 60 + 58);
+            track(d.addTaskEvent(day, 10 * 60 + 30, 12 * 60, lab), day, 10 * 60 + 35, 11 * 60 + 40);
+            track(d.addEvent(day, 13 * 60, 14 * 60 + 30, study), day, 13 * 60 + 10, 14 * 60 + 20);
+        }
+        if (dow == 2 || dow == 4 || dow == 6)
+            track(d.addEvent(day, 16 * 60, 20 * 60, shift), day, 16 * 60, 20 * 60);
+        if (dow == 1 || dow == 3 || dow == 5)
+            track(d.addEvent(day, 17 * 60, 18 * 60 + 30, gym), day, 17 * 60 + 5, 18 * 60 + 15);
+        if (dow == 7)
+            track(d.addEvent(day, 10 * 60, 11 * 60, errands), day, 10 * 60, 10 * 60 + 50);
+        track(d.addEvent(day, 21 * 60, 22 * 60, reading), day, 21 * 60, 21 * 60 + 40);
+    }
+}
+
+} // namespace
 
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("TickTimer"));
+
+    // Demo mode (see the header): new names FIRST, before anything asks
+    // QStandardPaths or QSettings where things live.
+    const bool demo = qEnvironmentVariableIsSet("TICKTIMER_DEMO");
+    if (demo) {
+        QApplication::setOrganizationName(QStringLiteral("TickTimerDemo"));
+        QApplication::setApplicationName(QStringLiteral("TickTimerDemo"));
+        QSettings().clear(); // the same fresh preferences every run
+        const QString path = JsonStore::defaultFilePath();
+        QFile::remove(path);
+        AppData data;
+        seedDemo(data);
+        if (!JsonStore(path).save(data)) {
+            qWarning("could not write the demo planner to %s", qPrintable(path));
+            return 1;
+        }
+    }
     theme::applyTheme(app); // same one-call theme setup as main.cpp
 
     // TICKTIMER_FONTPT=19 reproduces a PHONE's text metrics on a desktop.
@@ -51,11 +172,19 @@ int main(int argc, char* argv[])
     const int h = argc > 4 ? QString::fromLocal8Bit(argv[4]).toInt() : 800;
     window.resize(w > 0 ? w : 1180, h > 0 ? h : 800);
     window.show();
+    // The status bar names the data file, whose path contains the Windows
+    // account name - not something a public README should carry.
+    if (demo)
+        window.statusBar()->hide();
 
     // Optional 2nd argument: which page to shoot (0 Calendar, 1 Activities,
     // 2 Pomodoro) — so the README can show more than the front page.
     if (argc > 2)
         window.showPage(QString::fromLocal8Bit(argv[2]).toInt());
+    if (qEnvironmentVariableIntValue("TICKTIMER_PLANNER_MODE") > 0)
+        if (auto* planner = window.findChild<PlannerPage*>())
+            QMetaObject::invokeMethod(planner, "setMode",
+                Q_ARG(int, qEnvironmentVariableIntValue("TICKTIMER_PLANNER_MODE")));
 
     // Layout probe (TICKTIMER_PROBE=1): print the window's minimum size and
     // every stacked page's contribution. A QStackedWidget's minimum is the
