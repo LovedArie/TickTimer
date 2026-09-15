@@ -921,3 +921,25 @@ reach three kinds of person, which version seams are checked and which are
 only procedural, and why serving is part of deploying. Runbooks:
 `docs/ANDROID.md`, `docs/WEB.md`, `docs/ROLLOUT.md`, `docs/GITHUB.md`.
 
+## 10. New since v31.2 — moving what you planned
+
+- **`BlockMove.h`** — the pure brain of the arc, and a good model for any
+  "may I?" rule: `problemWithMove` returns a **sentence**, not a bool, so the
+  refusal the drag preview shows and the refusal the domain enforces cannot
+  drift apart. Read its check ORDER — two of those lines moved under the
+  owner's hand (`design-addendum-move-and-swap.md` §M.2).
+- **`AppData::reconcileOccurrenceSkips`** — how a recurrence edge case
+  collapsed to one rule ("skipped" means "no occurrence there") instead of a
+  case per move. The shape to look for when a feature starts growing
+  `if (movedBack && wasSkipped && ...)`.
+- **`AgendaWidget` `touchPressed` / `touchMoved` / `touchReleased`** — one
+  gesture implementation reached by two routes: real touch events on a phone
+  and mouse events in the tests. Read `event()` for why the phone stopped
+  trusting Qt's mouse imitation, and §4's touch traps for what the device
+  showed.
+- **`UndoBar.h`** — a floating child with no layout, placed by an event
+  filter on its host, holding its undo as a `std::function`. Small, and the
+  cleanest example here of a widget that owns its own fade and lifetime.
+- **`WheelGuard.h`** — an app-wide event filter that fixes a CLASS of bug
+  (wheel events mutating hovered controls) in one place, and the reason an
+  *ignored* event keeps travelling to the scroll area (`LEARNING.md`).

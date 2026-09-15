@@ -87,7 +87,7 @@ one day forgets.
 | Layer | Files | Rule |
 |---|---|---|
 | domain | `AppData`, value structs (`Task`, `Event`, `Segment`, `Category`, …), `Stats`, `DayBriefing`, `TrackerService`, `PomodoroEngine` | no Qt Widgets, ever |
-| pure "brains" | `SyncPlan.h::decide`, `Compare.h`, `version::decideBanner`, `MissedBlocks.h`, `Reschedule.h`, `TaskCoverage.h`, `Affordability.h`, `DayLayout.h`, `ChatSession.h`, `LlmProvider.h`, `QuickAddParser` | each feature's one real judgement, extracted as a pure function so a table of microsecond tests can pin it |
+| pure "brains" | `SyncPlan.h::decide`, `Compare.h`, `version::decideBanner`, `MissedBlocks.h`, `Reschedule.h`, `BlockMove.h`, `TaskCoverage.h`, `Affordability.h`, `DayLayout.h`, `ChatSession.h`, `LlmProvider.h`, `QuickAddParser` | each feature's one real judgement, extracted as a pure function so a table of microsecond tests can pin it |
 | storage | `JsonStore` (atomic `QSaveFile` write-then-replace), `PlannerStore`/`AccountStore`/`ShareStore` server-side | all JSON knowledge quarantined here |
 | wire | `AuthClient`, `SyncClient`, `ShareClient`, `UpdateClient`, `ChatClient`, `LlmQuickAddClient`, `NudgeClient`, `IntakeClient` | async `QNetworkAccessManager` → typed `Outcome` signals; POST + timeouts only, no policy |
 | policy | `SyncService`, `AffordabilityService`, `CheckInService`, `BlockAlarmService` | decides; owns injection seams (`setNowProvider`, public `sweep()`) |

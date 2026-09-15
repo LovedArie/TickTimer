@@ -54,15 +54,11 @@ idea comes back on its own.
 whole section is deleted when its release ships, along with the items' own
 lines below.*
 
-**v31.2 — move and swap planned blocks.** Then test the web app (iOS) and
-Android on that release.
+**Next — delete one occurrence, asking the scope question** (owner decision
+2026-09-11, after 31.2.0 shipped move and swap).
 
-- **F18** · **F12** · **F19** (the red now-line, added 2026-09-11 after the
-  owner tried the drag) · **B8** · **H5** (phones and `/app/` to v31.2 as part
-  of the release)
-
-*Next iteration, as decided by the owner 2026-09-11:* **F6** with **F8** —
-delete one occurrence, asking the scope question.
+- **F6** · **F8** · **B9** (the same missing "only this one, or all?"
+  question, reached through the Repeats combo)
 
 ---
 
@@ -70,26 +66,13 @@ delete one occurrence, asking the scope question.
 
 *Found in use. One line: what you did, what you expected, what you saw.*
 
-- **B8** **A mouse wheel over an open block silently destroys its recurrence
-  rule.** Reported as "not a bug, but a problem" — it is a bug, and it is the
-  most destructive one open. `EventDialog`'s **Repeats** `QComboBox` is wired
-  straight to `currentIndexChanged` → `applyRepeatChoice`, and Qt's combo acts
-  on a wheel event while merely HOVERED, with no click and no focus. Scrolling
-  one notch to "Does not repeat" calls `removeSchedule()`, which drops future
-  untouched occurrences and clears `scheduleId` on every survivor — exactly
-  the reported "removes all the detail of all the existing recurring block".
-  Scrolling to a different cadence calls `updateSchedule()` and
-  re-materialises the term. **There is no wheel guard anywhere in this
-  codebase** (`grep wheelEvent` returns nothing) and combos, spin boxes and
-  date edits sit inside scrollable dialogs throughout, so this is a class of
-  bug, not one widget. The rule to adopt: **a control that mutates data must
-  ignore the wheel unless it has focus.**
 - **B9** **Changing a block's recurrence destroys a rule with no confirmation
   and no scope question.** Even by deliberate click, picking "Does not repeat"
   removes the whole Schedule instantly. This is the same missing question as
   **F8** — "only this occurrence, or all of them?" — arriving through a
-  different door, and it is why B8 is destructive rather than merely annoying.
-  Fixing B8 stops the accident; this stops the silent loss.
+  different door. The accident that made it bite — a mouse wheel over the
+  combo — was stopped in 31.2.0 (`WheelGuard`); this is the silent loss that
+  remains when the change is deliberate.
 - **B7** **The installer declares a version it does not verify it is shipping
   — and this is the root cause of B3.** `%LOCALAPPDATA%\Programs\TickTimer\`
   was installed on **4 Sep** by an installer stamped **31.0.0**, and the two
@@ -131,18 +114,6 @@ delete one occurrence, asking the scope question.
 *One line of intent only. The reasoning belongs in the design addendum you
 write when you pick it up — never here.*
 
-- **F19** **A red "now" line across the calendar.** The owner liked it in
-  `prototypes/move-and-swap.html` (2026-09-11). `AgendaWidget` never reads
-  the clock today; the line must come from `TrackerService::nowProvider`, not
-  `currentDateTime()`, so the debug panel's fake clock moves it too.
-- **F18** **Swap two planned blocks.** "Plan B at 13:00 has to happen at 10:00
-  instead, so Plan A takes 13:00." Owner decision 2026-09-11: they trade
-  START times and each keeps its own length, refused if either new spot is
-  full.
-- **F12** **Move a planned block to an open slot, on any day**, without
-  deleting and re-creating it — by drag on the calendar where it can be seen.
-  Dropping an occurrence of a recurring rule is F7 ground, so the addendum
-  has to say what happens to its `scheduleId` and the date it left.
 - **F6** Delete a single occurrence of a recurring block, leaving the rule and
   every other date alone. **The domain already does this** —
   `AppData::skipOccurrence(scheduleId, date)` exists and `Schedule::skipDates`

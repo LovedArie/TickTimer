@@ -10,6 +10,7 @@
 | Construction update | 2026-07-04 | Iterations 1–5 completed; two unplanned feature iterations recorded; backlog re-planned. | Mentor + you |
 | Roadmap review | 2026-07-18 | Arcs v12–v21.2 recorded (§3c); backlog re-planned around the AI/secretary direction (§4a); model/view and sync retired; "tasks meet the plan" and Android flagged. | Mentor + you |
 | Queue split out | 2026-09-08 | §4 was a "backlog" holding only finished work; the arcs it recorded moved to §3d as history, and the queue became `docs/BACKLOG.md`. §4b/4c retired into it. | Mentor + you |
+| 31.2.0 recorded | 2026-09-15 | §3f: move and swap planned blocks, the now-line, the wheel guard, and the phone gestures the device re-decided. | Mentor + you |
 | Record caught up | 2026-09-11 | v30.4.1–v31.1.0 recorded as §3e — six arcs had shipped with no row. The phones row's "nobody has opened it in a browser yet" annotated as superseded rather than deleted. | Mentor + you |
 
 ## 1. Introduction
@@ -148,6 +149,26 @@ v31.0–v31.3.1 as they were built in the working tree; what shipped was one
 release stamped 31.1.0. A version is what a binary says about itself, so
 31.1.0 is the number to quote in a bug report — the addendum labels date the
 reasoning, not an artefact anyone can install.
+
+## 3f. Moving what you planned *(31.2.0)*
+
+*Planned as the first iteration run from `docs/BACKLOG.md`'s "Now" list:
+F18 · F12 · F19 · B8 · H5. Built in five slices, each shown to the owner on
+the installed app before the next began.*
+
+| Slice | Outcome |
+|---|---|
+| **Domain — move and swap** | ✅ `blockmove::problemWithMove` returns the refusal as a SENTENCE the drag preview quotes; a move is in place (same id, note, links), a swap trades start times and keeps lengths, checked against the day as it would be (`blockmove::dayWith`). Recurrence reduced to one rule — for a date a rule produces, "skipped" means "no occurrence there", reconciled after every move. Record: `design-addendum-move-and-swap.md` §M.1–§M.7 |
+| **Desktop drag, now-line, undo** | ✅ Hand-rolled drag rather than `QDrag`, whose nested loop no offscreen test can drive; the week view resolves cross-column drops. The owner's first live test sent two decisions back: a PASSED block is rescheduled by the drag (the original stays, faded, *moved*), and a block with any tracked time never moves. Undo began as the reminder toast and was rejected on sight; `UndoBar` sits in the window's corner. §M.11–§M.12 |
+| **B8 — the wheel guard** | ✅ The most destructive open bug: a wheel notch over a hovered Repeats combo removed a recurrence rule. `WheelGuard`, an app-wide event filter: combos never take the wheel, spin and date edits only while focused, and the ignored event still scrolls the page |
+| **The phone's gestures** | ✅ Owner-specified: hold ½ s to lift and drag, double-tap or two-finger tap for the menu, one tap opens after ~0.3 s. **Failed all three on the device first**, with green tests. The phone's own log showed Qt's mouse imitation of a finger dropping the second tap and never carrying a second finger, so the calendar now reads touch events directly — one gesture implementation, two routes. §M.8a |
+
+**What the iteration taught.** Three of its five slices changed under the
+owner's hand — the passed block, the tracked block, the undo surface — and
+the fourth changed under the device's. None of those could have been settled
+by a longer design phase: each was a sentence nobody knew to write until the
+thing existed. Slicing to something installable every step is what made them
+cheap.
 
 ## 4. What next
 
