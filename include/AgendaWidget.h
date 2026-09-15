@@ -20,6 +20,8 @@
 
 #include <QDate>
 #include <QPoint>
+#include <QPointer> // the lifted block's picture, owned by the window
+#include <QHash>    // where each finger of a two-finger tap landed
 #include <QWidget>
 
 #include "DayLayout.h" // daylay::Slotting - which column a block draws in
@@ -95,7 +97,14 @@ public:
     // press at all. Same doctrine as TrackerService::nowProvider and
     // TICKTIMER_COMPACT: a behaviour that cannot be produced on demand is a
     // behaviour that cannot be verified.
-    void setTouchGesturesForTesting(bool on) { m_forceTouch = on; }
+    void setTouchGesturesForTesting(bool on)
+    {
+        m_forceTouch = on;
+        // A test that forces the phone's gestures gets the phone's touch
+        // delivery too - otherwise the two-finger tap could not be tested.
+        if (on)
+            setAttribute(Qt::WA_AcceptTouchEvents);
+    }
 
     // Display preference: paint the linked task's DESCRIPTION on the block
     // (indented under the task line). The widget is TOLD the preference —
@@ -190,10 +199,17 @@ signals:
     void blockDragFinished(const QString& eventId, const QPoint& globalPos,
                            int grabOffsetPx);
     void blockDragCancelled(const QString& eventId);
-    // A block HELD on a touchscreen (450ms, stationary), and the same block
-    // RIGHT-CLICKED with a mouse. Two gestures, one menu, opened by the page:
-    // a phone has no right button, and a desktop has no hold.
-    void eventHeld(const QString& eventId, const QPoint& globalPos);
+    // The block's MENU, asked for on a touchscreen - by a double-tap (on the
+    // second release) or a two-finger tap (owner spec, 2026-09-15). A mouse
+    // asks with a right-click, which arrives as eventContextMenuRequested
+    // below. Renamed from eventHeld the day a hold stopped meaning "menu" and
+    // started meaning "lift the block": a signal whose meaning changed keeps
+    // no old name for a caller to go on trusting.
+    void eventMenuRequested(const QString& eventId, const QPoint& globalPos);
+    // A block carried by a FINGER was put down where the domain refuses it.
+    // A tooltip cannot help on a phone - the finger is covering it - so the
+    // page is handed the sentence and says it where it can be read.
+    void touchDropRefused(const QString& why);
     void eventContextMenuRequested(const QString& eventId,
                                    const QPoint& globalPos);
     // "the user dragged an edge — please set this span". The widget only
@@ -213,11 +229,60 @@ protected:
 
 private:
     QString m_pickingForId; // while moving: the block a tap would place
-    // Create-once hold timer, armed by a press on a free slot OR on a block.
-    // What the hold MEANS is decided when it fires, from which of the two is
-    // pending - one threshold for the whole widget, so the two gestures
-    // cannot drift apart.
+    // Create-once hold timer for a FREE SLOT (450ms: a hold plans a block).
+    // A block has its own, longer hold below - the owner's one second.
     void armLongPress();
+
+    // ---- touch gestures on a BLOCK (owner spec, 2026-09-15; §M.8a) ---------
+    class QTimer* m_blockHold = nullptr; // 1 s: lift the block to drag it
+    class QTimer* m_singleTap = nullptr; // ~0.3 s: a lone tap opens the block
+    QString m_tapWaitingId;              // first tap released, second awaited
+    bool    m_secondTap       = false;   // this press IS that second tap
+    bool    m_touchLifted     = false;   // the hold fired: a finger carries it
+    bool    m_scrollSuspended = false;   // the page's scroller is released
+    QPoint  m_touchGrabOffset;           // finger minus the block's top-left
+    QPoint  m_twoFingerAt;               // where a two-finger tap landed
+    bool    m_twoFingerMoved  = false;   // ...and whether it wandered off
+    // The lifted block, as a picture following the finger. A child of the
+    // WINDOW rather than of this widget, so it can travel over the week
+    // view's other columns. A QPointer because the window owns it and may
+    // destroy it before this widget does - it reads as null, not dangling.
+    QPointer<class QLabel> m_ghost;
+    void armBlockHold();
+    void liftBlock();                    // the one-second hold fired
+    void moveGhostTo(const QPoint& localPos);
+    void dropLiftedBlock(const QPoint& localPos, const QPoint& globalPos);
+    void endTouchLift();                 // EVERY exit from a lift goes here
+    // Release the enclosing page's QScroller for a drag, and take it back.
+    // ReorderListView's proven pair: while a finger carries a block the page
+    // must not pan under it, and an unbalanced release leaves a page that can
+    // never scroll again - so a flag guards it, and the destructor restores.
+    void suspendPageScrolling(bool suspend);
+
+    // ONE implementation of the finger gestures, fed by two routes: real
+    // touch events on a phone (event() accepts them), and the mouse events a
+    // test sends after setTouchGesturesForTesting (the mouse handlers). The
+    // phone stopped using the mouse route when its own logs showed Qt's mouse
+    // imitation dropping a quick second tap and hiding a second finger
+    // (§M.8a). A bool return means "this gesture consumed the event".
+    void touchPressed(const QPoint& pos);
+    bool touchMoved(const QPoint& pos, const QPoint& globalPos);
+    bool touchReleased(const QPoint& pos, const QPoint& globalPos);
+    void touchCancelled();
+    // Is the enclosing page's QScroller panning or coasting right now? A hold
+    // that fires, or a finger that lifts, during a scroll is not a gesture.
+    bool pageIsScrolling() const;
+    bool m_twoFingerActive = false; // a second finger has joined this touch
+    // Where each finger of a two-finger tap first landed, by touch id. Kept
+    // here because a point's own pressPosition() is not reliable for a
+    // finger that joins a touch already under way.
+    QHash<int, QPoint> m_fingerStarts;
+
+public:
+    ~AgendaWidget() override; // gives the page its scroller back, if held
+    // True while a finger is carrying a block. The week view asks it of the
+    // column whose drag just finished, to know a refusal must be said aloud.
+    bool isTouchLifted() const { return m_touchLifted; }
 
 protected:
     // `override` (C++11) makes the compiler VERIFY we are really overriding
@@ -227,9 +292,12 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override; // commit a resize drag
+    // A touch double-click is NOT a second press - see the .cpp for the bug
+    // this override exists to prevent (found on the device, 2026-09-15).
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void leaveEvent(QEvent* event) override;
     QSize sizeHint() const override;
-    bool event(QEvent* event) override; // UngrabMouse cancels a pending tap
+    bool event(QEvent* event) override; // a phone's fingers; a mouse grab lost
 
 private:
     // ---- touch: a finger that means to SCROLL must not plan a block --------

@@ -264,13 +264,14 @@ write when you pick it up — never here.*
 
 *Documentation and process debt. Small, but it is what rots first.*
 
-- **H5** **The phone and the web app are both behind the format floor.**
-  Windows is done. **Measured 12 Sep, on the phone itself:** the Galaxy S21
-  runs **31.0.0** (versionCode 310000, installed 4 Sep) — not v30.8.1 as this
-  line claimed, but still older than 31.1.0, which is where the floor shipped,
-  so it can strip a format-16 planner through sync exactly as the Start Menu
-  copy did. `/app/` is the one on **v30.8.1** (deployed 31 Aug, Last-Modified
-  re-read 11 Sep; this absorbed B2, which claimed v30.4). The APK needs `JAVA_HOME` set from
+- **H5** **Only the web app is still behind the format floor.** Windows is
+  done (31.2.0, verified off the packaged exe). **The phone is done too:** the
+  Galaxy S21 was measured at 31.0.0 on 12 Sep — not v30.8.1 as this line
+  claimed, but still older than the floor — and was upgraded in place to
+  **31.2.0** the same afternoon, same signing key, planner kept. What remains
+  is `/app/`, the WebAssembly app, last deployed **31 Aug at v30.8.1**
+  (Last-Modified re-read 11 Sep; this item absorbed B2, which claimed v30.4).
+  It is release step 7 and nothing hard-fails on it. The APK needs `JAVA_HOME` set from
   `%APPDATA%\QtProject\QtCreator.ini` and its stamp checked with `aapt2 dump
   badging` before signing; `/app/` is release step 7 and nothing hard-fails on
   it.

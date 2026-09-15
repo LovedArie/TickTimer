@@ -44,9 +44,12 @@ signals:
     // columns report the pointer, the view resolves the drop.
     void eventMoveRequested(const QString& eventId, QDate date, int startMin);
     void eventSwapRequested(const QString& eventId, const QString& otherId);
-    // Held on a phone, right-clicked on a desktop: passed straight through,
-    // like eventClicked - the id is all the page needs (31.2.0, §M.8).
-    void eventHeld(const QString& eventId, const QPoint& globalPos);
+    // Double-tapped or two-finger-tapped on a phone, right-clicked on a
+    // desktop: passed straight through, like eventClicked (31.2.0, §M.8).
+    void eventMenuRequested(const QString& eventId, const QPoint& globalPos);
+    // A finger-carried block refused where it landed - the sentence, for the
+    // page to show, because a tooltip would sit under the finger.
+    void touchDropRefused(const QString& why);
     void eventContextMenuRequested(const QString& eventId,
                                    const QPoint& globalPos);
 

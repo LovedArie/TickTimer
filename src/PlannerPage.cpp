@@ -479,14 +479,22 @@ PlannerPage::PlannerPage(AppData* data, TrackerService* tracker,
     // §M.8): a hold on a touchscreen, a right-click with a mouse. Wired here
     // for both agendas at once - the week view is already built above - so the
     // two views cannot end up offering different menus.
-    connect(m_agenda, &AgendaWidget::eventHeld,
-            this, &PlannerPage::onEventHeld);
+    connect(m_agenda, &AgendaWidget::eventMenuRequested,
+            this, &PlannerPage::onEventMenuRequested);
     connect(m_agenda, &AgendaWidget::eventContextMenuRequested,
             this, &PlannerPage::onEventContextMenu);
-    connect(m_weekAgenda, &WeekAgendaView::eventHeld,
-            this, &PlannerPage::onEventHeld);
+    connect(m_weekAgenda, &WeekAgendaView::eventMenuRequested,
+            this, &PlannerPage::onEventMenuRequested);
     connect(m_weekAgenda, &WeekAgendaView::eventContextMenuRequested,
             this, &PlannerPage::onEventContextMenu);
+
+    // A finger-carried block refused where it landed (§M.8a): the reason goes
+    // to the corner bar, because a tooltip would sit under the finger.
+    const auto sayRefusal = [this](const QString& why) {
+        emit undoBarRequested(why, UndoAction()); // said, nothing to undo
+    };
+    connect(m_agenda, &AgendaWidget::touchDropRefused, this, sayRefusal);
+    connect(m_weekAgenda, &WeekAgendaView::touchDropRefused, this, sayRefusal);
 
     connect(m_data, &AppData::changed, this, &PlannerPage::refresh);
 
@@ -985,7 +993,8 @@ void PlannerPage::undoLastDrag()
 
 // ---- moving mode (31.2.0, §M.8) ---------------------------------------------
 
-void PlannerPage::onEventHeld(const QString& eventId, const QPoint& globalPos)
+void PlannerPage::onEventMenuRequested(const QString& eventId,
+                                       const QPoint& globalPos)
 {
     showBlockMenu(eventId, globalPos);
 }

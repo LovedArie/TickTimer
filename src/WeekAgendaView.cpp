@@ -125,10 +125,13 @@ WeekAgendaView::WeekAgendaView(const AppData* data,
         connect(col, &AgendaWidget::blockDragCancelled,
                 this, [this]() { clearDropPreviews(); });
 
-        // The hold menu and the right-click menu are the page's business, so
-        // a column's report travels straight through, exactly like a click.
-        connect(col, &AgendaWidget::eventHeld,
-                this, &WeekAgendaView::eventHeld);
+        // The block's menu (double-tap, two-finger tap, right-click) is the
+        // page's business, so a column's report travels straight through,
+        // exactly like a click - and so does a finger's refused drop.
+        connect(col, &AgendaWidget::eventMenuRequested,
+                this, &WeekAgendaView::eventMenuRequested);
+        connect(col, &AgendaWidget::touchDropRefused,
+                this, &WeekAgendaView::touchDropRefused);
         connect(col, &AgendaWidget::eventContextMenuRequested,
                 this, &WeekAgendaView::eventContextMenuRequested);
     }
@@ -299,8 +302,18 @@ void WeekAgendaView::finishDrop(const QString& eventId,
 
     const AgendaWidget::DropTarget t = target->dropTargetAt(
         target->mapFromGlobal(globalPos), eventId, grabOffsetPx);
-    if (t.unchanged || !t.why.isEmpty())
-        return; // put back where it was, or refused - the preview said why
+    if (t.unchanged)
+        return; // put back where it was
+    if (!t.why.isEmpty()) {
+        // A MOUSE drag's preview already showed the sentence as a tooltip. A
+        // FINGER covers any tooltip, so a touch-carried block's refusal is
+        // said aloud instead (§M.8a). The column that finished is the sender,
+        // and it is still lifted at this moment - it reports before letting go.
+        const auto* source = qobject_cast<AgendaWidget*>(sender());
+        if (source && source->isTouchLifted())
+            emit touchDropRefused(t.why);
+        return;
+    }
     if (!t.swapWithId.isEmpty())
         emit eventSwapRequested(eventId, t.swapWithId);
     else if (t.startMin >= 0)

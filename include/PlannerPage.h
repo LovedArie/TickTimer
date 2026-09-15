@@ -247,9 +247,10 @@ private slots:
     // Take back the last drag, if its block is still where the drag left it.
     // A slot, so the bar's button and a test reach the very same code.
     void undoLastDrag();
-    // A block held on a phone, or right-clicked on a desktop. Two gestures,
-    // one menu - so the two platforms cannot drift apart.
-    void onEventHeld(const QString& eventId, const QPoint& globalPos);
+    // The block's menu: a double-tap or a two-finger tap on a phone, a
+    // right-click on a desktop. Several gestures, ONE menu, so they cannot
+    // drift apart.
+    void onEventMenuRequested(const QString& eventId, const QPoint& globalPos);
     void onEventContextMenu(const QString& eventId, const QPoint& globalPos);
     void cancelMoving();
 };

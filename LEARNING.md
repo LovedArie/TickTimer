@@ -248,3 +248,90 @@ Worth working through next: `QEventLoop` used directly (the pattern behind
 `QSignalSpy::wait`), what "re-entrancy" costs a class whose method can be
 re-entered through a nested loop, and why Qt's own docs recommend `open()`
 with a signal over `exec()` for new code.
+
+---
+
+## A finger is not a mouse: touch events, synthesised mouse events, and the one you are allowed to take
+
+Came up in 31.2.0 (§M.8a), when the owner asked for a two-finger tap to open a
+block's menu on the phone.
+
+A touchscreen does not produce mouse events. It produces **touch events**:
+`TouchBegin` when the first finger lands, `TouchUpdate` as fingers move or more
+land, `TouchEnd` when the last one lifts. Each carries a list of *points*, one
+per finger. A plain widget never sees these unless it asks, with
+`setAttribute(Qt::WA_AcceptTouchEvents)`.
+
+Almost everything in this app is written against **mouse** events, though, and
+it still works on the phone because Qt **synthesises** them: a one-finger touch
+that no widget accepts is turned into a press, moves and a release. That is why
+`AgendaWidget` can tell a phone from a desktop by asking
+`event->source() != Qt::MouseEventNotSynthesized` — a synthesised press
+remembers it came from a finger.
+
+Here is the rule the two-finger tap had to be built around: **accepting a
+`TouchBegin` switches synthesis off for that whole sequence.** Accept every
+touch, and the one-finger tap, the hold and the drag all stop receiving the
+mouse events they are made of. So `AgendaWidget::event()` refuses a
+`TouchBegin` with one point (`ignore()`, and Qt goes on to make its mouse
+press) and accepts only a sequence that *begins* with two points already down.
+The price is honest and written into the addendum: two fingers that land far
+enough apart in time arrive as a one-point `TouchBegin` and are missed. The
+double-tap is the door that always works.
+
+**That design did not survive the device** (see the next section).
+
+### What the phone's own logs changed
+
+On the Galaxy S21 all three gestures failed, and temporary `qInfo` lines read
+back with `adb logcat` said why, instead of leaving a guess:
+
+- a quick second tap's `TouchBegin` arrived, but Qt **never synthesised its
+  mouse press** — so the double-tap code, built on presses, never saw it;
+- the second finger of a two-finger tap was **never in the `TouchBegin`**; it
+  joins in a later `TouchUpdate`, which a widget that refused the begin never
+  receives;
+- the hold likely cancelled itself: lifting releases the page's scroller, the
+  scroller gives up the **mouse grab**, the widget receives `UngrabMouse`, and
+  the code read that as "this became a scroll" and ended the lift it had just
+  started.
+
+So the calendar now **accepts every touch on a phone** and runs its gestures
+from the touch events. The logic sits in four member functions
+(`touchPressed`/`touchMoved`/`touchReleased`/`touchCancelled`) that both routes
+call: real touch events on the phone, mouse events in the older tests. That is
+the rule "one implementation, several callers" — the tests exercise the same
+code the device runs, not a copy of it.
+
+Two things are lost by leaving synthesis, and each is replaced on purpose. The
+`UngrabMouse` signal no longer means anything (there is no mouse grab), so a
+scroll is recognised by distance travelled, by `TouchCancel`, and by asking the
+scroller its `state()`. And a touch point's `pressPosition()` turned out not to
+be trustworthy for a finger that joins mid-sequence (the test helper even
+reports a *stationary* finger at (0,0)), so the widget records where each finger
+first landed itself, in a `QHash<int, QPoint>` keyed by the point's id — the
+general lesson being: when an input's history matters, keep that history
+yourself rather than trusting every sender to fill it in.
+
+There is a second layer above all of this. `QScroller`, the page's flick
+scrolling, recognises its gesture inside `QApplication::notify`, *before* any
+widget's handler runs — which is why a drag that starts from a bare press never
+reaches the calendar, and why a drag that starts from a one-second hold does
+(the scroller has ruled out a pan by then). While the finger carries the block,
+the widget releases the scroller with `QScroller::ungrabGesture`, and gives it
+back on every exit and in the destructor. Forgetting to give it back does not
+crash anything; it leaves a page that can never be scrolled again, silently.
+
+And one small tool from the same change: **`QPointer<T>`**. The lifted block's
+picture is a `QLabel` whose parent is the *window*, so the window may destroy it
+while `AgendaWidget` still holds the address. A raw `QLabel*` would then point
+at freed memory. A `QPointer` is told when its `QObject` is destroyed and reads
+as null afterwards — it cannot dangle, which is exactly the guarantee a plain
+pointer into someone else's ownership lacks.
+
+Worth working through next: `Qt::AA_SynthesizeMouseForUnhandledTouchEvents`
+and its mirror `AA_SynthesizeTouchForUnhandledMouseEvents`; how Qt's gesture
+framework (`QGestureRecognizer`) sits between touch events and widgets; and why
+`QPointer` works only for `QObject`s — what it would take to get the same
+guarantee for a plain C++ object (`std::weak_ptr`, and what that asks of the
+owner).

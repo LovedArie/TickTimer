@@ -245,6 +245,84 @@ the current view is not showing.
 `onEventMoveRequested` / `onEventSwapRequested` slots the drag uses, so a
 tap-placed block offers the same Undo (§M.12) as a dragged one.
 
+### §M.8a Revised by the owner, on the phone (2026-09-15)
+
+*"Opening the menu to click on move is not efficient nor intuitive."* The
+gestures are now the owner's own specification:
+
+| Gesture on a block | Does |
+|---|---|
+| single tap | opens it — after ~0.3 s, once no second tap has come |
+| double-tap | the menu, on the second release |
+| two-finger tap | the menu (best-effort, below) |
+| hold ½ s | a faded image of the block lifts under the finger; drag it, drop on a slot to move or on a block to swap; lift without moving and nothing happens. *First cut: 1 s, which on the phone was "a bit too long"; ½ s is what holding a task to reorder it already uses.* |
+
+*A correction this section owes first.* §M.8 said "the phone cannot drag".
+That was true of a drag that starts from a bare press, and false of one that
+starts from a HOLD — which this codebase had already proven on the owner's
+phone, in `ReorderListView`: QScroller lets a stationary press through until it
+can rule out a pan, so the moves after a hold do arrive. The menu route was
+built on a claim stronger than the evidence. The drag now uses that proven
+pattern: the page's scroller is released (`QScroller::ungrabGesture` on the
+scroll area's viewport) for the length of the drag and re-grabbed on EVERY
+exit and in the destructor, because a page that can never scroll again is far
+worse than any drag bug. It is only released where a scroller actually exists,
+so no gesture is ever grabbed on a page that did not have one.
+
+*Why a single tap waits.* A double-tap can only be told from a tap by waiting
+to see whether a second one comes — otherwise the first tap has already opened
+the block window, which swallows the second. The owner chose the ~0.3 s wait
+over making a tap merely select the block.
+
+*Why the two-finger tap is best-effort.* Qt turns a one-finger touch into the
+mouse events every other gesture here is built on, and accepting a touch
+sequence switches that off. So the widget takes a touch sequence only when it
+BEGINS with two points already down; a one-finger touch is left alone. Fingers
+that land far enough apart in time to arrive as two separate events are
+missed, and the double-tap is the door that always works. Neither a unit test
+nor adb can say how a real screen reports two fingers — only a hand can.
+
+*What the device showed, and what it changed (2026-09-15).* The first build
+of this section failed all three phone gestures, and the phone's own log —
+temporary `TickTouch` lines read back over `adb logcat` — named the cause
+instead of leaving it to a guess:
+
+- **Double-tap:** the second tap's touch arrived ~140 ms after the first, every
+  time, and Qt never turned it into a mouse press. The double-tap detection was
+  built on that press, so it never learned a second tap had happened, and the
+  single-tap timer opened the block. (A real, separate bug was also fixed on
+  the way: Qt's double-click event re-ran the press code and wiped the
+  second-tap state. Proven by a test that sends the event sequence Qt sends,
+  and still not the S21's problem — the press was simply never there.)
+- **Two-finger tap:** every attempt arrived as ONE finger. The S21 reports the
+  second finger only in a later update, and the widget — which declined touch
+  events so that Qt would imitate a mouse — never received updates at all.
+- **Hold:** it did not lift. The calendar cancelled a pending gesture whenever
+  the page's scroller took the mouse grab; the task list's reorder hold, which
+  works on the same phone, ignores that signal.
+
+All three lived in one layer: Qt's **mouse imitation of a finger**. So on a
+touchscreen `AgendaWidget` now accepts every touch and drives its gestures from
+the touch events themselves. The logic lives once, in
+`touchPressed` / `touchMoved` / `touchReleased` / `touchCancelled`, reached both
+by real touch events and by the mouse events the older tests send — one
+implementation, two routes, both tested. Two guards replace the grab signal the
+mouse route relied on: a hold that fires, or a finger that lifts, while the
+page's scroller is panning or coasting is not a gesture.
+
+*Alternative rejected:* keeping the mouse route and patching each failure —
+detecting the second tap from its touch event, ignoring the grab signal. It
+would have fixed two of the three, and it cannot fix the two-finger tap at all,
+because a mouse imitation has no second finger to carry.
+
+*On the desktop nothing changed:* a right-click opens the menu, a mouse drag
+moves the block, a click opens it at once. A desktop never asks for touch
+events, so it never reaches the touch route.
+
+*Alternative rejected:* the phone home-screen pattern — hold, then move to drag
+or lift to open the menu. It is reliable and discoverable, and it is not the
+gesture the owner wanted to use every day.
+
 ---
 
 ## §M.9 No format change — and what that costs

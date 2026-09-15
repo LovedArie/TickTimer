@@ -254,6 +254,15 @@ story; `docs/TROUBLESHOOTING.md` is symptom-indexed. The ones that recur:
   gesture and a mouse gesture collide, the touchscreen keeps scrolling and
   the rarer action finds another door — a long-press menu
   (`ReorderListView.h` §O.5; `CategoryTree` reached this in v30.7).
+- **Qt's mouse imitation of a finger drops what a double-tap and a two-finger
+  tap need.** On the Galaxy S21 a quick second tap got no synthesised press,
+  and a second finger only ever appears in a later `TouchUpdate`. So the
+  calendar accepts every touch on a phone and runs ONE set of gesture
+  functions from both touch and mouse routes; the scroller still pans (it sees
+  touches upstream, per the trap above). On that route `UngrabMouse` means
+  nothing — releasing the scroller for a lift can send one and cancel your own
+  gesture — and `pressPosition()` is unreliable for a late finger, so record
+  landing points yourself (`AgendaWidget`, §M.8a, verified on the device).
 - **When a view and its delegate divide one row, divide it by RECT and
   declare the rect once.** A delegate acts on `MouseButtonRelease`; a view
   that swallows a PRESS (to start a drag from a grip) must swallow the

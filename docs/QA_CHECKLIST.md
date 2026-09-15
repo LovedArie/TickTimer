@@ -241,21 +241,36 @@ is a finger on glass and a wheel under a hand, so those are the steps here.*
 - [ ] Click INTO a time or number box, then scroll over it: it nudges the
       value, because you asked for it by clicking in.
 
-**The phone — with a real finger (§M.8)**
+**The phone — with a real finger (§M.8, as revised in §M.8a)**
 
 *`adb` gestures are not evidence here: a synthesized swipe is not a thumb.
 Every line below is a hand on the device.*
 
-- [ ] Hold a block (about half a second): the **Open / Move or swap…** menu
-      appears. A hold that MOVES scrolls the day instead, and opens nothing.
-- [ ] Tap a block: it opens, as before.
-- [ ] **Move or swap…**: the banner appears and the block is outlined.
-- [ ] ONE tap on a free slot puts it there (not two, as planning needs).
-- [ ] One tap on another block swaps them; a tap on the outlined block cancels.
-- [ ] Use ‹ › while holding a block: it can land on another day.
+- [ ] **FIRST: scroll the calendar**, day view and week view, up and down,
+      starting the swipe ON a block and on empty time. The calendar reads
+      fingers directly on a phone since §M.8a, so scrolling is the thing most
+      at risk. A fling then a tap to stop it must not open a block.
+- [ ] **Hold a block half a second**: a faded picture of it lifts under your
+      finger. Drag it onto a free slot and let go — it moves there. Drag it
+      onto another block — they swap.
+- [ ] While you drag, the day does NOT scroll under the block; after you let
+      go, the day scrolls normally again. *Check this one twice — a page that
+      stops scrolling is the failure this design is most afraid of.*
+- [ ] Hold, then let go without moving: nothing happens.
+- [ ] A finger that starts moving BEFORE the second is up scrolls the day and
+      lifts nothing.
+- [ ] Drop somewhere refused (into the past, onto a full slot): the block goes
+      back, and the reason appears in the corner bar.
+- [ ] **Single tap**: the block opens, a moment later than before (~0.3 s).
+- [ ] **Double-tap**: the **Open / Move or swap…** menu — and the block does
+      NOT also open.
+- [ ] **Two-finger tap**: the same menu. *Best-effort: if it misses, note how
+      the two fingers landed. The double-tap is the door that always works.*
+- [ ] **Move or swap…** from the menu: banner, outline; ONE tap on a free slot
+      places it, a tap on another block swaps, a tap on the outlined block
+      cancels, ‹ › reaches another day.
 - [ ] The Undo bar appears inside the app, clear of the capture **+** button
       and the bottom bar, and Undo works.
-- [ ] A refused target keeps the block in hand and explains in the banner.
 
 **Recurrence, overnight**
 

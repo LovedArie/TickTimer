@@ -1879,7 +1879,15 @@ private slots:
 
     // ---- 31.2.0 §M.8: a phone cannot drag, so a block is picked UP ----------
 
-    void holdingABlockAsksForItsMenuAndSwallowsTheTap()
+    // ---- §M.8 as the owner revised it on the phone (2026-09-15) -------------
+    // Hold ONE second to lift a block and drag it; double-tap or two-finger
+    // tap for its menu; a single tap still opens it, once the double-tap
+    // window has passed. Every event below is built by hand and sent straight
+    // to the widget (the aSecondTapOnAFreeSlotPlansIt technique): QTest's own
+    // mouse helpers can fold two quick presses into a double-CLICK event,
+    // which would test Qt's timing instead of ours.
+
+    void aTapOnABlockOpensItOnceTheDoubleTapWindowHasPassed()
     {
         AppData data;
         const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
@@ -1895,25 +1903,438 @@ private slots:
         agenda.setTouchGesturesForTesting(true);
         agenda.resize(600, agenda.minimumHeight());
 
+        const auto send = [&agenda](QEvent::Type type, const QPoint& p) {
+            QMouseEvent e(type, p, agenda.mapToGlobal(p),
+                          type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                          Qt::NoModifier, QPointingDevice::primaryPointingDevice());
+            QCoreApplication::sendEvent(&agenda, &e);
+        };
         const QPoint onBlock(300, AgendaWidget::kTopPad
                                       + 8 * AgendaWidget::slotHeight() + 20);
-        QSignalSpy held(&agenda, &AgendaWidget::eventHeld);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+        QSignalSpy menu(&agenda, &AgendaWidget::eventMenuRequested);
+
+        send(QEvent::MouseButtonPress, onBlock);
+        send(QEvent::MouseButtonRelease, onBlock);
+        QCOMPARE(clicked.count(), 0);     // not yet: a second tap may follow
+        QTRY_COMPARE(clicked.count(), 1); // ...and none did, so it opens
+        QCOMPARE(clicked.first().first().toString(), ev);
+        QCOMPARE(menu.count(), 0);
+    }
+
+    void aDoubleTapOnABlockAsksForItsMenuInsteadOfOpeningIt()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+
+        const auto send = [&agenda](QEvent::Type type, const QPoint& p) {
+            QMouseEvent e(type, p, agenda.mapToGlobal(p),
+                          type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                          Qt::NoModifier, QPointingDevice::primaryPointingDevice());
+            QCoreApplication::sendEvent(&agenda, &e);
+        };
+        const QPoint onBlock(300, AgendaWidget::kTopPad
+                                      + 8 * AgendaWidget::slotHeight() + 20);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+        QSignalSpy menu(&agenda, &AgendaWidget::eventMenuRequested);
+
+        send(QEvent::MouseButtonPress, onBlock);
+        send(QEvent::MouseButtonRelease, onBlock);
+        send(QEvent::MouseButtonPress, onBlock);
+        send(QEvent::MouseButtonRelease, onBlock); // the menu, on this release
+        QCOMPARE(menu.count(), 1);
+        QCOMPARE(menu.first().at(0).toString(), ev);
+        QTest::qWait(500);            // well past the single-tap window
+        QCOMPARE(clicked.count(), 0); // the menu answered; nothing opened
+    }
+
+    void holdingABlockForASecondLiftsItAndADropMovesIt()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        tracker.nowProvider = [] {
+            return QDateTime(QDate(2026, 7, 1), QTime(9, 30));
+        };
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.setBlockDragEnabled(true); // PlannerPage turns this on
+        agenda.resize(600, agenda.minimumHeight());
+
+        const auto send = [&agenda](QEvent::Type type, const QPoint& p) {
+            QMouseEvent e(type, p, agenda.mapToGlobal(p),
+                          type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                          Qt::NoModifier, QPointingDevice::primaryPointingDevice());
+            QCoreApplication::sendEvent(&agenda, &e);
+        };
+        const auto yAt = [](int minutes) {
+            return AgendaWidget::kTopPad
+                   + (minutes - plan::kDayStartMinutes) / plan::kSlotMinutes
+                         * AgendaWidget::slotHeight();
+        };
+        const auto ghostShowing = [&agenda]() {
+            auto* ghost = agenda.findChild<QLabel*>(QStringLiteral("dragGhost"));
+            return ghost && !ghost->isHidden();
+        };
+        QSignalSpy moved(&agenda, &AgendaWidget::eventMoveRequested);
         QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
 
-        QTest::mousePress(&agenda, Qt::LeftButton, {}, onBlock);
-        QTRY_COMPARE(held.count(), 1); // the 450ms hold fired
-        QCOMPARE(held.first().at(0).toString(), ev);
-        QTest::mouseRelease(&agenda, Qt::LeftButton, {}, onBlock);
-        QCOMPARE(clicked.count(), 0); // the hold already answered for it
+        const QPoint grab(300, yAt(10 * 60) + 20);
+        const QPoint drop(300, yAt(14 * 60) + 20);
+        send(QEvent::MouseButtonPress, grab);
+        QTest::qWait(200);
+        QVERIFY(!ghostShowing());    // a fifth of a second is not a hold yet
+        QTRY_VERIFY(ghostShowing()); // half a second is: the block lifts
 
-        // A finger that MOVES was scrolling: no menu, and no tap either.
-        held.clear();
-        QTest::mousePress(&agenda, Qt::LeftButton, {}, onBlock);
-        QTest::mouseMove(&agenda, onBlock + QPoint(0, 40));
-        QTest::qWait(600);
-        QCOMPARE(held.count(), 0);
-        QTest::mouseRelease(&agenda, Qt::LeftButton, {}, onBlock + QPoint(0, 40));
+        send(QEvent::MouseMove, drop);
+        send(QEvent::MouseButtonRelease, drop);
+        QCOMPARE(moved.count(), 1);
+        QCOMPARE(moved.first().at(0).toString(), ev);
+        QCOMPARE(moved.first().at(2).toInt(), 14 * 60); // kept where it was held
+        QVERIFY(!ghostShowing());    // put down: the lifted image is gone
+        QTest::qWait(500);
+        QCOMPARE(clicked.count(), 0); // and a drag was never also a tap
+    }
+
+    void liftingAHeldBlockWithoutMovingDoesNothing()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        tracker.nowProvider = [] {
+            return QDateTime(QDate(2026, 7, 1), QTime(9, 30));
+        };
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.setBlockDragEnabled(true);
+        agenda.resize(600, agenda.minimumHeight());
+
+        const auto send = [&agenda](QEvent::Type type, const QPoint& p) {
+            QMouseEvent e(type, p, agenda.mapToGlobal(p),
+                          type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                          Qt::NoModifier, QPointingDevice::primaryPointingDevice());
+            QCoreApplication::sendEvent(&agenda, &e);
+        };
+        const auto ghostShowing = [&agenda]() {
+            auto* ghost = agenda.findChild<QLabel*>(QStringLiteral("dragGhost"));
+            return ghost && !ghost->isHidden();
+        };
+        QSignalSpy moved(&agenda, &AgendaWidget::eventMoveRequested);
+        QSignalSpy swapped(&agenda, &AgendaWidget::eventSwapRequested);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+        QSignalSpy menu(&agenda, &AgendaWidget::eventMenuRequested);
+
+        const QPoint onBlock(300, AgendaWidget::kTopPad
+                                      + 8 * AgendaWidget::slotHeight() + 20);
+        send(QEvent::MouseButtonPress, onBlock);
+        QTRY_VERIFY(ghostShowing());
+        send(QEvent::MouseButtonRelease, onBlock); // lifted, then set back down
+        QTest::qWait(500);
+        QVERIFY(!ghostShowing());
+        QCOMPARE(moved.count(), 0);
+        QCOMPARE(swapped.count(), 0);
+        QCOMPARE(clicked.count(), 0); // a hold is not a tap
+        QCOMPARE(menu.count(), 0);    // and not a menu, either
+    }
+
+    void aTwoFingerTapOnABlockAsksForItsMenu()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+        agenda.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&agenda));
+
+        const QPoint first(300, AgendaWidget::kTopPad
+                                    + 8 * AgendaWidget::slotHeight() + 20);
+        const QPoint second = first + QPoint(40, 0);
+        QSignalSpy menu(&agenda, &AgendaWidget::eventMenuRequested);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+
+        // Both fingers land in the same touch event and lift together. This
+        // pins OUR handling of a two-point touch; whether a real Android
+        // screen reports the two fingers that way is for a real hand to say.
+        QPointingDevice* device = QTest::createTouchDevice();
+        QTest::touchEvent(&agenda, device).press(0, first).press(1, second);
+        QTest::touchEvent(&agenda, device).release(0, first).release(1, second);
+        QTRY_COMPARE(menu.count(), 1);
+        QCOMPARE(menu.first().at(0).toString(), ev);
+        QTest::qWait(500);
+        QCOMPARE(clicked.count(), 0); // two fingers are not also a tap
+    }
+
+    // FOUND ON THE DEVICE (2026-09-15): a double-tap never opened the menu.
+    // On a real screen the second tap arrives as a PRESS and then a
+    // DOUBLE-CLICK, and QWidget's default double-click handler calls
+    // mousePressEvent a second time - so the second tap was pressed twice,
+    // and the second pass forgot it had been a second tap. The test above
+    // sends two plain presses and could not see it: a test that supplies its
+    // own input can never validate that input. These two send what Qt sends.
+    void aRealDoubleTapWithItsDoubleClickEventOpensTheMenu()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+
+        const auto send = [&agenda](QEvent::Type type, const QPoint& p) {
+            QMouseEvent e(type, p, agenda.mapToGlobal(p),
+                          type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                          Qt::NoModifier, QPointingDevice::primaryPointingDevice());
+            QCoreApplication::sendEvent(&agenda, &e);
+        };
+        const QPoint onBlock(300, AgendaWidget::kTopPad
+                                      + 8 * AgendaWidget::slotHeight() + 20);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+        QSignalSpy menu(&agenda, &AgendaWidget::eventMenuRequested);
+
+        send(QEvent::MouseButtonPress, onBlock);
+        send(QEvent::MouseButtonRelease, onBlock);
+        send(QEvent::MouseButtonPress, onBlock);
+        send(QEvent::MouseButtonDblClick, onBlock); // what Qt adds on a device
+        send(QEvent::MouseButtonRelease, onBlock);
+        QCOMPARE(menu.count(), 1);
+        QCOMPARE(menu.first().at(0).toString(), ev);
+        QTest::qWait(500);
         QCOMPARE(clicked.count(), 0);
+    }
+
+    void aRealQuickDoubleTapOnAFreeSlotPlansIt()
+    {
+        AppData data;
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(QDate(2026, 7, 2));
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+
+        const auto send = [&agenda](QEvent::Type type, const QPoint& p) {
+            QMouseEvent e(type, p, agenda.mapToGlobal(p),
+                          type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                          Qt::NoModifier, QPointingDevice::primaryPointingDevice());
+            QCoreApplication::sendEvent(&agenda, &e);
+        };
+        QSignalSpy planned(&agenda, &AgendaWidget::emptySlotClicked);
+        const QPoint freeSlot(AgendaWidget::kDefaultGutter + 40, 120);
+
+        send(QEvent::MouseButtonPress, freeSlot);
+        send(QEvent::MouseButtonRelease, freeSlot); // arms the slot
+        send(QEvent::MouseButtonPress, freeSlot);
+        send(QEvent::MouseButtonDblClick, freeSlot); // what Qt adds on a device
+        send(QEvent::MouseButtonRelease, freeSlot);
+        QCOMPARE(planned.count(), 1); // a FAST second tap plans too
+    }
+
+    // ---- the phone reads fingers directly (§M.8a, after the device logs) ----
+    // These drive REAL touch events through the window, the route a phone now
+    // takes. The one that matters most reproduces the Galaxy S21's own
+    // report: the second finger arriving in a later update, never together
+    // with the first.
+
+    void aRealTouchTapOpensABlockOnceTheDoubleTapWindowHasPassed()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+        agenda.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&agenda));
+
+        const QPoint onBlock(300, AgendaWidget::kTopPad
+                                      + 8 * AgendaWidget::slotHeight() + 20);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+        QSignalSpy menu(&agenda, &AgendaWidget::eventMenuRequested);
+        QPointingDevice* device = QTest::createTouchDevice();
+
+        QTest::touchEvent(&agenda, device).press(0, onBlock);
+        QTest::touchEvent(&agenda, device).release(0, onBlock);
+        QCOMPARE(clicked.count(), 0);     // a second tap may still follow
+        QTRY_COMPARE(clicked.count(), 1); // none did: it opens
+        QCOMPARE(clicked.first().first().toString(), ev);
+        QCOMPARE(menu.count(), 0);
+    }
+
+    void aRealTouchDoubleTapOpensTheMenu()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+        agenda.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&agenda));
+
+        const QPoint onBlock(300, AgendaWidget::kTopPad
+                                      + 8 * AgendaWidget::slotHeight() + 20);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+        QSignalSpy menu(&agenda, &AgendaWidget::eventMenuRequested);
+        QPointingDevice* device = QTest::createTouchDevice();
+
+        QTest::touchEvent(&agenda, device).press(0, onBlock);
+        QTest::touchEvent(&agenda, device).release(0, onBlock);
+        QTest::touchEvent(&agenda, device).press(0, onBlock);
+        QTest::touchEvent(&agenda, device).release(0, onBlock);
+        QCOMPARE(menu.count(), 1);
+        QCOMPARE(menu.first().at(0).toString(), ev);
+        QTest::qWait(500);
+        QCOMPARE(clicked.count(), 0);
+    }
+
+    void aTwoFingerTapWhoseSecondFingerArrivesLateOpensTheMenu()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+        agenda.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&agenda));
+
+        const QPoint first(300, AgendaWidget::kTopPad
+                                    + 8 * AgendaWidget::slotHeight() + 20);
+        const QPoint second = first + QPoint(40, 0);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+        QSignalSpy menu(&agenda, &AgendaWidget::eventMenuRequested);
+        QPointingDevice* device = QTest::createTouchDevice();
+
+        // Exactly the S21's shape: one finger lands alone, the second joins
+        // in a LATER event, then both lift.
+        QTest::touchEvent(&agenda, device).press(0, first);
+        QTest::touchEvent(&agenda, device).stationary(0).press(1, second);
+        QTest::touchEvent(&agenda, device).release(0, first).release(1, second);
+        QCOMPARE(menu.count(), 1);
+        QCOMPARE(menu.first().at(0).toString(), ev);
+        QTest::qWait(700);            // past the hold AND the single-tap window
+        QCOMPARE(clicked.count(), 0); // the lone first finger did not open it
+        auto* ghost = agenda.findChild<QLabel*>(QStringLiteral("dragGhost"));
+        QVERIFY(!ghost || ghost->isHidden()); // ...and did not lift it either
+    }
+
+    void aRealTouchHoldLiftsTheBlockAndADropMovesIt()
+    {
+        AppData data;
+        const QString cat = data.addCategory("Work", QColor("#4C6FE0"));
+        const QString act = data.addActivity("Study", cat);
+        const QDate day(2026, 7, 2);
+        const QString ev = data.addEvent(day, 10 * 60, 11 * 60, act);
+        TrackerService tracker(&data);
+        tracker.nowProvider = [] {
+            return QDateTime(QDate(2026, 7, 1), QTime(9, 30));
+        };
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(day);
+        agenda.setTouchGesturesForTesting(true);
+        agenda.setBlockDragEnabled(true);
+        agenda.resize(600, agenda.minimumHeight());
+        agenda.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&agenda));
+
+        const auto yAt = [](int minutes) {
+            return AgendaWidget::kTopPad
+                   + (minutes - plan::kDayStartMinutes) / plan::kSlotMinutes
+                         * AgendaWidget::slotHeight();
+        };
+        const auto ghostShowing = [&agenda]() {
+            auto* ghost = agenda.findChild<QLabel*>(QStringLiteral("dragGhost"));
+            return ghost && !ghost->isHidden();
+        };
+        QSignalSpy moved(&agenda, &AgendaWidget::eventMoveRequested);
+        QSignalSpy clicked(&agenda, &AgendaWidget::eventClicked);
+        QPointingDevice* device = QTest::createTouchDevice();
+
+        const QPoint grab(300, yAt(10 * 60) + 20);
+        const QPoint drop(300, yAt(14 * 60) + 20);
+        QTest::touchEvent(&agenda, device).press(0, grab);
+        QTest::qWait(200);
+        QVERIFY(!ghostShowing());
+        QTRY_VERIFY(ghostShowing()); // half a second on a still finger: lifted
+        QTest::touchEvent(&agenda, device).move(0, drop);
+        QTest::touchEvent(&agenda, device).release(0, drop);
+        QCOMPARE(moved.count(), 1);
+        QCOMPARE(moved.first().at(0).toString(), ev);
+        QCOMPARE(moved.first().at(2).toInt(), 14 * 60);
+        QVERIFY(!ghostShowing());
+        QTest::qWait(500);
+        QCOMPARE(clicked.count(), 0);
+    }
+
+    void aRealTouchOnAFreeSlotStillPlansWithTwoTaps()
+    {
+        AppData data;
+        TrackerService tracker(&data);
+        AgendaWidget agenda(&data, &tracker);
+        agenda.setDate(QDate(2026, 7, 2));
+        agenda.setTouchGesturesForTesting(true);
+        agenda.resize(600, agenda.minimumHeight());
+        agenda.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&agenda));
+
+        QSignalSpy planned(&agenda, &AgendaWidget::emptySlotClicked);
+        QPointingDevice* device = QTest::createTouchDevice();
+        const QPoint freeSlot(AgendaWidget::kDefaultGutter + 40, 120);
+
+        QTest::touchEvent(&agenda, device).press(0, freeSlot);
+        QTest::touchEvent(&agenda, device).release(0, freeSlot);
+        QCOMPARE(planned.count(), 0); // the first tap only arms it
+        QTest::touchEvent(&agenda, device).press(0, freeSlot);
+        QTest::touchEvent(&agenda, device).release(0, freeSlot);
+        QCOMPARE(planned.count(), 1); // the second plans - fast or slow
     }
 
     void whileMovingABlockOneTapPutsItDown()

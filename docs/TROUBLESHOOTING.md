@@ -3098,3 +3098,43 @@ is invisible to every test and to every desktop run — the only instrument is
 a screenshot from the device, which is the same conclusion the touch-gesture
 work reached from the other direction.
 
+---
+
+### A double-tap or two-finger tap does nothing on the phone, and every test passes
+
+**SYMPTOM**
+On the Galaxy S21 a double-tap on a calendar block opened the block instead
+of its menu, a two-finger tap did nothing, and a half-second hold did not lift
+the block. The desktop suite, including tests that replay the exact event
+sequence Qt documents for a double-tap, stayed green.
+
+**CAUSE**
+The gestures were built on the mouse events Qt synthesises from a finger. The
+phone's own log (temporary `qInfo` lines read with `adb logcat`) showed:
+- the second tap's `TouchBegin` arrived ~140 ms after the first, and **no
+  synthesised mouse press followed it**;
+- every `TouchBegin` had ONE point — the second finger joins in a later
+  `TouchUpdate`, which a widget that ignored the begin never receives;
+- the hold most likely cancelled itself: lifting releases the page's
+  `QScroller`, which gives up the mouse grab, and the widget's
+  `UngrabMouse` handler read that as "this became a scroll".
+
+**FIX**
+On a phone `AgendaWidget` accepts every touch (`WA_AcceptTouchEvents`,
+`TouchBegin` accepted) and drives its gestures from the touch events, through
+`touchPressed` / `touchMoved` / `touchReleased` / `touchCancelled` — the same
+functions the mouse-route tests call. `UngrabMouse` no longer cancels anything
+on a touch-reading widget; a scroll is recognised by travel, `TouchCancel`,
+and `QScroller::state()`. Each finger's landing point is recorded by id,
+because `pressPosition()` is not reliable for a finger that joins late (the
+QTest helper even reports a stationary finger at (0,0)). Scrolling kept
+working, because the scroller sees the touches in `QApplication::notify`
+before the widget does. Confirmed by hand on the device.
+
+**PREVENT**
+When a gesture fails only on the device, log what the device delivers before
+choosing a fix — here, three guesses in a row were wrong. And do not build a
+multi-touch gesture on synthesised mouse events: the imitation has no second
+finger to carry. Tests can send real touch sequences
+(`QTest::createTouchDevice`, `QTest::touchEvent`), including a second finger
+that joins late.

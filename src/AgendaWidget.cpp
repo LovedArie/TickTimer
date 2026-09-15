@@ -12,6 +12,10 @@
 #include <QPainter>
 #include <QScrollArea> // autoScrollTo: the page that holds this widget
 #include <QToolTip>    // the drag's sentence, under the pointer
+#include <QGraphicsOpacityEffect> // the lifted block's picture, faded
+#include <QLabel>                 // ...which is a label holding a pixmap
+#include <QScroller>              // released for a finger's drag, taken back
+#include <QTouchEvent>            // the phone reads fingers directly
 #include <QTextLayout>
 #include <QTextOption>
 
@@ -164,6 +168,13 @@ AgendaWidget::AgendaWidget(const AppData* data, const TrackerService* tracker,
     // Without this, mouseMoveEvent only fires while a button is held.
     // We want hover feedback ("+ plan"), so track all movement.
     setMouseTracking(true);
+
+    // A two-finger tap opens a block's menu on a phone (§M.8a), and a widget
+    // receives touch events only when it asks for them. Asked ONLY on a
+    // phone, so a desktop - even one with a touch display - keeps exactly the
+    // mouse delivery it had.
+    if (isCompactScreen())
+        setAttribute(Qt::WA_AcceptTouchEvents);
     syncHeight();
 
     // Observe the data we paint — for GEOMETRY, not policy. The shown
@@ -908,35 +919,9 @@ void AgendaWidget::mousePressEvent(QMouseEvent* event)
     const bool touch =
         m_forceTouch || event->source() != Qt::MouseEventNotSynthesized;
     if (touch) {
-        // Captured BEFORE anything clears it: "was this press on the slot the
-        // last tap armed?" is the whole question the second tap asks.
-        const int wasArmed = m_armedSlot;
-        cancelPendingTouch();
-        disarm();
-        m_touchPressPos = event->pos();
-
-        // Edge-resize is skipped entirely on touch, which is not a new
-        // decision — the Android addendum already accepted that a drag on the
-        // agenda scrolls rather than resizes, because scrolling is the vastly
-        // more common gesture. Blocks are still adjusted from the block
-        // dialog's nudge buttons.
-        for (const Event* e : m_data->eventsOn(m_date)) {
-            if (eventRect(*e).contains(event->pos())) {
-                m_pendingEventId = e->id; // a tap, decided on release...
-                armLongPress();           // ...or a HOLD: the block's menu
-                return;
-            }
-        }
-        const int touchedSlot = slotAt(event->pos());
-        if (touchedSlot < 0)
-            return;
-        const int startMin =
-            plan::kDayStartMinutes + touchedSlot * plan::kSlotMinutes;
-        if (!m_data->isFree(m_date, startMin, startMin + plan::kSlotMinutes))
-            return;
-        m_pendingSlot = touchedSlot;
-        m_pressWasArmed = (wasArmed == touchedSlot);
-        armLongPress();
+        // A test forcing the phone's gestures sends mouse events; a real
+        // phone sends touch events (event()). Both reach ONE place.
+        touchPressed(event->pos());
         return;
     }
 
@@ -993,13 +978,10 @@ void AgendaWidget::mousePressEvent(QMouseEvent* event)
 
 void AgendaWidget::mouseMoveEvent(QMouseEvent* event)
 {
-    // Past the platform's drag threshold this is a scroll, not a tap.
-    if ((m_pendingSlot >= 0 || !m_pendingEventId.isEmpty())
-        && (event->pos() - m_touchPressPos).manhattanLength()
-               >= QApplication::startDragDistance()) {
-        cancelPendingTouch();
-        disarm(); // a scroll means the finger was never aiming at that slot
-    }
+    // A finger's movement - the lifted drag, or the travel that turns a
+    // press into a scroll. Shared with the touch route (touchMoved).
+    if (touchMoved(event->pos(), event->globalPosition().toPoint()))
+        return;
 
     // ---- 0) A block being carried (31.2.0) ---------------------------------
     // Pressed on a body: nothing happens until the mouse has moved as far as
@@ -1106,9 +1088,12 @@ void AgendaWidget::cancelPendingTouch()
 {
     if (m_longPress)
         m_longPress->stop();
+    if (m_blockHold)
+        m_blockHold->stop(); // a press that became a scroll lifts nothing
     m_pendingSlot = -1;
     m_pressWasArmed = false;
     m_pendingEventId.clear();
+    m_secondTap = false;     // and a second tap that scrolled is no double-tap
 }
 
 void AgendaWidget::disarm()
@@ -1129,18 +1114,18 @@ void AgendaWidget::armLongPress()
         // which for a gesture people repeat all day reads as slow.
         m_longPress->setInterval(450);
         connect(m_longPress, &QTimer::timeout, this, [this]() {
-            // WHAT was pending decides what the hold meant: a block asks for
-            // its menu (31.2.0), a free slot plans. cancelPendingTouch()
-            // clears both, which is also what makes the release that follows
-            // do nothing - the hold has already answered for this press.
-            const int     slot    = m_pendingSlot;
-            const QString eventId = m_pendingEventId;
-            const QPoint  where   = mapToGlobal(m_touchPressPos);
+            // A hold on a FREE SLOT plans a block. (A block has its own,
+            // longer hold - armBlockHold, §M.8a.) cancelPendingTouch() is
+            // also what makes the release that follows do nothing: the hold
+            // has already answered for this press.
+            const int slot = m_pendingSlot;
+            const bool scrolling = pageIsScrolling();
             cancelPendingTouch();
             disarm(); // a hold must not leave an armed slot behind
-            if (!eventId.isEmpty())
-                emit eventHeld(eventId, where);
-            else if (slot >= 0)
+            if (scrolling) {
+                return;
+            }
+            if (slot >= 0)
                 emit emptySlotClicked(slot);
         });
     }
@@ -1171,60 +1156,473 @@ void AgendaWidget::contextMenuEvent(QContextMenuEvent* event)
     QWidget::contextMenuEvent(event);
 }
 
-bool AgendaWidget::event(QEvent* e)
-{
-    // QScroller announces "I have taken this gesture over to pan" by taking
-    // the mouse grab away. That is the only reliable signal that a press has
-    // become a scroll — without cancelling here, the long-press timer would
-    // still fire in the middle of a flick and plan a block nobody asked for.
-    if (e->type() == QEvent::UngrabMouse) {
-        cancelPendingTouch();
-        disarm();
-        cancelBlockDrag(); // a carried block whose grab was taken: not dropped
-    }
+// ---- the finger gestures, one implementation for both routes (§M.8a) -----
 
-    return QWidget::event(e);
-}
-
-void AgendaWidget::mouseReleaseEvent(QMouseEvent* event)
+void AgendaWidget::touchPressed(const QPoint& pos)
 {
-    // A stationary tap on an existing block opens it. Movement already
-    // cleared the pending id in mouseMoveEvent, so reaching here with one
-    // still set means the finger stayed put.
-    if (!m_pendingEventId.isEmpty()) {
-        const QString id = m_pendingEventId;
-        cancelPendingTouch();
-        emit eventClicked(id);
-        return;
-    }
-    // An empty slot takes TWO taps, and the decision is made on release so
-    // that a flick which merely started here scrolls instead of planning.
-    //   first tap  -> arm it, and say so ("+ plan · tap again")
-    //   second tap -> open the planner
-    // A long press still short-circuits both (see the timer above); two
-    // gestures, one door.
-    if (m_pendingSlot >= 0) {
-        const int slot = m_pendingSlot;
-        const bool secondTap = m_pressWasArmed;
-        cancelPendingTouch();
-        // While a block is being moved (31.2.0, §M.8) one stationary tap is
-        // the whole gesture: the block is already chosen, so there is nothing
-        // for an arming tap to disambiguate - and asking twice to put down
-        // something you are already holding reads as the app not noticing.
-        if (!m_pickingForId.isEmpty()) {
-            disarm();
-            emit emptySlotClicked(slot);
+    // Captured BEFORE anything clears it: "was this press on the slot the
+    // last tap armed?" is the whole question the second tap asks.
+    const int wasArmed = m_armedSlot;
+    cancelPendingTouch();
+    disarm();
+    m_touchPressPos = pos;
+
+    // Edge-resize is skipped entirely on touch, which is not a new decision -
+    // the Android addendum already accepted that a drag on the agenda scrolls
+    // rather than resizes, because scrolling is the vastly more common
+    // gesture. Blocks are still adjusted from the block dialog's nudge buttons.
+    for (const Event* e : m_data->eventsOn(m_date)) {
+        if (eventRect(*e).contains(pos)) {
+            m_pendingEventId = e->id; // a tap, decided on release...
+            // ...unless this press lands on the block whose first tap is
+            // still waiting: then it IS the second tap of a double-tap, and
+            // that first tap must not open the block after all. A press on a
+            // DIFFERENT block also cancels the waiting open - the finger has
+            // moved on to something else.
+            m_secondTap = (m_tapWaitingId == e->id);
+            if (m_singleTap)
+                m_singleTap->stop();
+            m_tapWaitingId.clear();
+            if (!m_secondTap)
+                armBlockHold(); // ...or a half-second HOLD that lifts it
             return;
         }
-        if (secondTap) {
+    }
+    const int touchedSlot = slotAt(pos);
+    if (touchedSlot < 0)
+        return;
+    const int startMin =
+        plan::kDayStartMinutes + touchedSlot * plan::kSlotMinutes;
+    if (!m_data->isFree(m_date, startMin, startMin + plan::kSlotMinutes))
+        return;
+    m_pendingSlot = touchedSlot;
+    m_pressWasArmed = (wasArmed == touchedSlot);
+    armLongPress();
+}
+
+bool AgendaWidget::touchMoved(const QPoint& pos, const QPoint& globalPos)
+{
+    // After the hold this movement IS the drag, not a scroll - and the page's
+    // scroller has already been released, so nothing else is claiming it.
+    if (m_touchLifted) {
+        moveGhostTo(pos);
+        if (!m_resolvesOwnDrops)
+            emit blockDragMoved(m_dragEventId, globalPos, m_dragGrabPx);
+        else
+            setDropPreview(dropTargetAt(pos, m_dragEventId, m_dragGrabPx));
+        autoScrollTo(pos);
+        return true;
+    }
+    // Past the platform's drag threshold this is a scroll, not a tap.
+    if ((m_pendingSlot >= 0 || !m_pendingEventId.isEmpty())
+        && (pos - m_touchPressPos).manhattanLength()
+               >= QApplication::startDragDistance()) {
+        cancelPendingTouch();
+        disarm(); // a scroll means the finger was never aiming at that slot
+    }
+    return false;
+}
+
+bool AgendaWidget::touchReleased(const QPoint& pos, const QPoint& globalPos)
+{
+    // ---- a finger-carried block, put down ----------------------------------
+    if (m_touchLifted) {
+        dropLiftedBlock(pos, globalPos);
+        return true;
+    }
+
+    // A finger that lifts at the end of a SCROLL is not a tap, even when none
+    // of its movement reached this widget - the scroller may have eaten it.
+    if ((!m_pendingEventId.isEmpty() || m_pendingSlot >= 0)
+        && pageIsScrolling()) {
+        cancelPendingTouch();
+        disarm();
+        return true;
+    }
+
+    // ---- a stationary TAP on a block ---------------------------------------
+    // Movement already cleared the pending id, so reaching here with one
+    // still set means the finger stayed put.
+    if (!m_pendingEventId.isEmpty()) {
+        const QString id     = m_pendingEventId;
+        const bool    second = m_secondTap;
+        cancelPendingTouch();
+        m_secondTap = false;
+        if (second) {
+            emit eventMenuRequested(id, globalPos);
+            return true;
+        }
+        // The first tap of what may yet be a double-tap. It opens the block
+        // only once ~0.3 s pass with no second tap - the owner's choice over
+        // making a single tap merely select.
+        m_tapWaitingId = id;
+        if (!m_singleTap) {
+            m_singleTap = new QTimer(this);
+            m_singleTap->setSingleShot(true);
+            m_singleTap->setInterval(300);
+            connect(m_singleTap, &QTimer::timeout, this, [this]() {
+                const QString waiting = m_tapWaitingId;
+                m_tapWaitingId.clear();
+                if (!waiting.isEmpty())
+                    emit eventClicked(waiting);
+            });
+        }
+        m_singleTap->start();
+        return true;
+    }
+
+    // ---- a tap on a FREE SLOT ----------------------------------------------
+    // An empty slot takes TWO taps, and the decision is made on release so
+    // that a flick which merely started here scrolls instead of planning:
+    //   first tap  -> arm it, and say so ("+ plan - tap again")
+    //   second tap -> open the planner
+    // A long press still short-circuits both (armLongPress); two gestures,
+    // one door. While a block is being MOVED (31.2.0, §M.8) one tap is the
+    // whole gesture: the block is already chosen, so there is nothing for an
+    // arming tap to disambiguate.
+    if (m_pendingSlot >= 0) {
+        const int  slot      = m_pendingSlot;
+        const bool secondTap = m_pressWasArmed;
+        cancelPendingTouch();
+        if (!m_pickingForId.isEmpty() || secondTap) {
             disarm();
             emit emptySlotClicked(slot);
         } else {
             m_armedSlot = slot;
             update();
         }
+        return true;
+    }
+    return false;
+}
+
+void AgendaWidget::touchCancelled()
+{
+    cancelPendingTouch();
+    disarm();
+    if (m_touchLifted)
+        endTouchLift(); // a lift the system took away is put back, not dropped
+    m_twoFingerActive = false;
+}
+
+bool AgendaWidget::pageIsScrolling() const
+{
+    for (QWidget* w = parentWidget(); w; w = w->parentWidget()) {
+        auto* area = qobject_cast<QScrollArea*>(w);
+        if (!area)
+            continue;
+        QWidget* target = area->viewport();
+        if (!QScroller::hasScroller(target))
+            return false; // a page with no scroller never scrolls under a finger
+        const QScroller::State state = QScroller::scroller(target)->state();
+        return state == QScroller::Dragging || state == QScroller::Scrolling;
+    }
+    return false;
+}
+
+// ---- touch gestures on a BLOCK (owner spec, 2026-09-15; §M.8a) -------------
+
+AgendaWidget::~AgendaWidget()
+{
+    // The one exit a lift cannot talk its way out of. Without this, a widget
+    // destroyed mid-drag - a sync pull rebuilding the page, the app closing -
+    // would leave the page's scroller released for good.
+    suspendPageScrolling(false);
+    // The picture is the WINDOW's child, so nobody else knows it belongs to
+    // this widget. If this widget is its own window (a test), Qt deletes it
+    // as an ordinary child and it must not be deleted twice.
+    if (m_ghost && m_ghost->parent() != this)
+        delete m_ghost.data();
+}
+
+void AgendaWidget::armBlockHold()
+{
+    if (!m_blockHold) {
+        m_blockHold = new QTimer(this);
+        m_blockHold->setSingleShot(true);
+        // HALF a second (owner, 2026-09-15). The first cut used the owner's
+        // "after 1 second", and on the phone that was "a bit too long". 500ms
+        // is what holding a task to reorder it already uses, so every hold in
+        // the app now feels the same under the thumb.
+        m_blockHold->setInterval(500);
+        connect(m_blockHold, &QTimer::timeout, this, &AgendaWidget::liftBlock);
+    }
+    m_blockHold->start();
+}
+
+void AgendaWidget::liftBlock()
+{
+    // A hold that "fires" while the page is panning or coasting was never a
+    // hold: the finger was scrolling, and the movement that would have
+    // cancelled the timer went to the scroller instead of here.
+    if (pageIsScrolling()) {
+        cancelPendingTouch();
         return;
     }
+    const Event* e = m_data->eventById(m_pendingEventId);
+    if (!e || !m_blockDragEnabled) {
+        // Nothing to carry (it vanished under the finger), or a host that
+        // does not move blocks - the Compare dialog. The press ends here.
+        cancelPendingTouch();
+        return;
+    }
+    const QRect r = eventRect(*e);
+
+    // The picture FIRST, while the block is still drawn at full strength:
+    // once m_dragging is set, paint fades the block where it was.
+    const QPixmap picture = grab(r);
+
+    m_dragEventId     = e->id;
+    m_dragGrabPx      = m_touchPressPos.y() - r.top();
+    m_touchGrabOffset = m_touchPressPos - r.topLeft();
+    m_dragging        = true;   // paint fades the block in place
+    m_touchLifted     = true;
+    m_pendingEventId.clear();   // the release no longer means "tap"
+    m_secondTap       = false;
+    suspendPageScrolling(true); // the finger moves the BLOCK now, not the page
+
+    QWidget* host = window();
+    if (!m_ghost) {
+        m_ghost = new QLabel(host);
+        m_ghost->setObjectName(QStringLiteral("dragGhost"));
+        // Never a target: the finger's events must keep reaching this widget
+        // even while the picture sits right under it.
+        m_ghost->setAttribute(Qt::WA_TransparentForMouseEvents);
+        auto* fade = new QGraphicsOpacityEffect(m_ghost);
+        fade->setOpacity(0.8);
+        m_ghost->setGraphicsEffect(fade);
+    }
+    m_ghost->setPixmap(picture);
+    m_ghost->resize(r.size());
+    moveGhostTo(m_touchPressPos);
+    m_ghost->show();
+    m_ghost->raise();
+    update();
+}
+
+void AgendaWidget::moveGhostTo(const QPoint& localPos)
+{
+    if (!m_ghost)
+        return;
+    // The point where the block was picked up stays under the finger, so the
+    // picture does not jump its corner to the fingertip.
+    m_ghost->move(mapTo(m_ghost->parentWidget(), localPos - m_touchGrabOffset));
+}
+
+void AgendaWidget::dropLiftedBlock(const QPoint& localPos,
+                                   const QPoint& globalPos)
+{
+    const QString id     = m_dragEventId;
+    const int     grabPx = m_dragGrabPx;
+    if (!m_resolvesOwnDrops) {
+        // A week column: the view decides which day this landed on. Told
+        // BEFORE the lift ends, so it can still ask isTouchLifted() and know
+        // that a refusal has to be said aloud rather than tooltipped.
+        emit blockDragFinished(id, globalPos, grabPx);
+        endTouchLift();
+        return;
+    }
+    const DropTarget t = dropTargetAt(localPos, id, grabPx);
+    endTouchLift();
+    if (t.unchanged)
+        return; // set back down where it was: nothing happened, nothing said
+    if (!t.why.isEmpty()) {
+        emit touchDropRefused(t.why);
+        return;
+    }
+    if (!t.swapWithId.isEmpty())
+        emit eventSwapRequested(id, t.swapWithId);
+    else if (t.startMin >= 0)
+        emit eventMoveRequested(id, m_date, t.startMin);
+}
+
+void AgendaWidget::endTouchLift()
+{
+    suspendPageScrolling(false); // ALWAYS, and first - see the header
+    if (m_ghost)
+        m_ghost->hide();
+    const bool wasLifted = m_touchLifted;
+    m_touchLifted = false;
+    if (wasLifted) {
+        m_dragEventId.clear();
+        m_dragging = false;
+        clearDropPreview();
+        update(); // the faded block comes back to full strength
+    }
+}
+
+void AgendaWidget::suspendPageScrolling(bool suspend)
+{
+    if (suspend == m_scrollSuspended)
+        return;
+    QScrollArea* area = nullptr;
+    for (QWidget* w = parentWidget(); w && !area; w = w->parentWidget())
+        area = qobject_cast<QScrollArea*>(w);
+    if (!area) {
+        m_scrollSuspended = false; // nothing was taken, nothing to give back
+        return;
+    }
+    QWidget* target = area->viewport();
+    if (suspend) {
+        // Only a page that HAS a scroller gives one up. Releasing on a page
+        // that never grabbed would, on the way back, GRAB a gesture that page
+        // never had - a desktop page suddenly panning under a mouse.
+        if (!QScroller::hasScroller(target))
+            return;
+        QScroller::scroller(target)->stop(); // no fling coasting under the block
+        QScroller::ungrabGesture(target);
+    } else {
+        // Exactly what makeTouchScrollable(QScrollArea*) grabs, so the page
+        // comes back with the behaviour it had before.
+        QScroller::grabGesture(target, QScroller::TouchGesture);
+    }
+    m_scrollSuspended = suspend;
+}
+
+bool AgendaWidget::event(QEvent* e)
+{
+    // QScroller announces "I have taken this gesture over to pan" by taking
+    // the mouse grab away. For a MOUSE-driven gesture that is the only
+    // reliable signal that a press has become a scroll - without cancelling
+    // here, the long-press timer would still fire in the middle of a flick
+    // and plan a block nobody asked for.
+    //
+    // A widget that reads FINGERS directly (a phone) is not holding a mouse
+    // grab for its gesture, so a grab going away says nothing about it - and
+    // lifting a block itself releases the page's scroller, which can take the
+    // grab on its way out. Answering that by cancelling ended every lift the
+    // instant it began, which is what the owner's half-second hold did on the
+    // phone. Scrolls are recognised there by travel, by TouchCancel, and by
+    // asking the scroller (pageIsScrolling).
+    if (e->type() == QEvent::UngrabMouse) {
+        if (!testAttribute(Qt::WA_AcceptTouchEvents)) {
+            cancelPendingTouch();
+            disarm();
+            cancelBlockDrag(); // a carried block whose grab was taken: not dropped
+            endTouchLift();
+        }
+    }
+
+    // ---- the phone reads FINGERS, not Qt's mouse imitation (§M.8a) -------
+    // Found on the owner's Galaxy S21, in its own logs (2026-09-15): a quick
+    // second tap's imitated mouse press never arrived; a second finger was
+    // only ever reported in a LATER update, never in the first touch event;
+    // and the half-second hold did not survive. All three lived in the mouse
+    // imitation, so on a touchscreen this widget accepts every touch and
+    // drives its gestures from the touch events - through the same
+    // touchPressed/Moved/Released the mouse-route tests exercise. A desktop
+    // never asks for touch events, so it never reaches this block.
+    if (testAttribute(Qt::WA_AcceptTouchEvents)) {
+        switch (e->type()) {
+        case QEvent::TouchBegin:
+        case QEvent::TouchUpdate:
+        case QEvent::TouchEnd: {
+            const auto* touch = static_cast<QTouchEvent*>(e);
+            const QList<QEventPoint>& points = touch->points();
+            e->accept(); // accepted: this sequence is ours, with no mouse imitation
+            if (points.isEmpty())
+                return true;
+
+            // A SECOND finger, whenever it arrives, makes this a two-finger
+            // tap candidate and ends any one-finger gesture already under way.
+            // A block already lifted keeps its drag: the extra finger is noise.
+            if (e->type() == QEvent::TouchBegin)
+                m_touchPressPos = points.first().position().toPoint();
+            if (points.size() >= 2 && !m_touchLifted && !m_twoFingerActive) {
+                cancelPendingTouch();
+                disarm();
+                if (m_singleTap)
+                    m_singleTap->stop();
+                m_tapWaitingId.clear();
+                m_twoFingerActive = true;
+                m_twoFingerMoved  = false;
+                m_twoFingerAt     = m_touchPressPos; // where the FIRST finger landed
+                m_fingerStarts.clear();
+                // A finger that was already down started where the touch
+                // began; a finger landing now starts wherever it is seen first.
+                for (const QEventPoint& p : points)
+                    if (p.state() != QEventPoint::Pressed)
+                        m_fingerStarts.insert(p.id(), m_touchPressPos);
+            }
+            if (m_twoFingerActive) {
+                for (const QEventPoint& p : points) {
+                    // A finger the system calls stationary did not move - and
+                    // its reported position is not always filled in.
+                    if (p.state() == QEventPoint::Stationary)
+                        continue;
+                    const QPoint at = p.position().toPoint();
+                    if (!m_fingerStarts.contains(p.id())) {
+                        m_fingerStarts.insert(p.id(), at); // first sight of it
+                        continue;
+                    }
+                    if ((at - m_fingerStarts.value(p.id())).manhattanLength()
+                        > 2 * QApplication::startDragDistance())
+                        m_twoFingerMoved = true; // a pinch or a two-finger scroll
+                }
+                if (e->type() == QEvent::TouchEnd) {
+                    m_twoFingerActive = false;
+                    m_fingerStarts.clear();
+                    if (m_twoFingerMoved) {
+                        return true;
+                    }
+                    for (const Event* block : m_data->eventsOn(m_date)) {
+                        if (eventRect(*block).contains(m_twoFingerAt)) {
+                            emit eventMenuRequested(block->id,
+                                                    mapToGlobal(m_twoFingerAt));
+                            break;
+                        }
+                    }
+                }
+                return true;
+            }
+
+            const QEventPoint& p = points.first();
+            const QPoint pos    = p.position().toPoint();
+            const QPoint global = p.globalPosition().toPoint();
+            if (e->type() == QEvent::TouchBegin)
+                touchPressed(pos);
+            else if (e->type() == QEvent::TouchUpdate)
+                touchMoved(pos, global);
+            else
+                touchReleased(pos, global);
+            return true;
+        }
+        case QEvent::TouchCancel:
+            touchCancelled();
+            e->accept();
+            return true;
+        default:
+            break;
+        }
+    }
+
+    return QWidget::event(e);
+}
+
+void AgendaWidget::mouseDoubleClickEvent(QMouseEvent* event)
+{
+    // A real second tap arrives as a PRESS and then this DOUBLE-CLICK, and
+    // QWidget's default here calls mousePressEvent a second time. On the
+    // touch path that second pass wiped the "this is a second tap" state the
+    // first pass had just set - so on the device a double-tap never opened
+    // the menu, and a quick second tap on a free slot never planned (found
+    // 2026-09-15; aRealDoubleTapWithItsDoubleClickEventOpensTheMenu). The
+    // press has already done everything a second tap needs, so on a
+    // touchscreen a double-click is simply not a new press.
+    const bool touch =
+        m_forceTouch || event->source() != Qt::MouseEventNotSynthesized;
+    if (touch) {
+        return;
+    }
+    QWidget::mouseDoubleClickEvent(event); // a mouse: exactly as before
+}
+
+void AgendaWidget::mouseReleaseEvent(QMouseEvent* event)
+{
+    // A finger's release - the lifted drop, a tap, a double-tap, a tap on a
+    // free slot. Shared with the touch route (touchReleased).
+    if (touchReleased(event->pos(), event->globalPosition().toPoint()))
+        return;
 
     // ---- a carried block, put down (31.2.0) --------------------------------
     if (!m_dragEventId.isEmpty()) {

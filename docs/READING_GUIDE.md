@@ -347,7 +347,10 @@ calendar yet.'"
   start identically, so acting on press means every attempt to scroll opens
   something. Defer: long-press to create, release-without-movement to open, and
   cancel on `QEvent::UngrabMouse` — which is how `QScroller` says it has taken
-  the gesture to pan (`AgendaWidget`).
+  the gesture to pan. That last signal belongs to the MOUSE route only: a
+  widget that reads touch events directly holds no mouse grab, and releasing
+  the scroller itself can deliver an `UngrabMouse` that cancels your own
+  gesture (`AgendaWidget::event`, 31.2.0).
 - **Qt reports `availableGeometry().y()` as 0 on Android** while the status bar
   is drawn over that strip, and there is no safe-area API to ask. Anything
   pinned to the screen's top lands underneath it
@@ -526,6 +529,18 @@ calendar yet.'"
   resolution is not a cleverer filter but a different door: on a touchscreen
   the scroll gesture wins (`ReorderListView.h`, `CategoryTree` v30.7,
   responsive §3.31).
+- **Qt's mouse imitation of a finger is lossy, and the loss is invisible to
+  every test.** On the Galaxy S21 a quick second tap arrived as a
+  `TouchBegin` with **no synthesised mouse press**, and a second finger was
+  never in the `TouchBegin` — it joins in a later `TouchUpdate`, which a
+  widget that refused the begin never receives. Double-tap and two-finger tap
+  cannot be built on mouse events there. The calendar accepts every touch on
+  a phone and runs one set of gesture functions from both routes; the
+  scroller still pans, because it sees the touches upstream (the bullet
+  above), and after a hold the widget releases it and receives the moves.
+  Also: a touch point's `pressPosition()` is unreliable for a finger that
+  joins mid-sequence, so record landing points yourself (`AgendaWidget`
+  `touchPressed`/`touchMoved`/`touchReleased`, §M.8a).
 - **`deleteLater()` is not processed inside a nested event loop.** Qt only
   delivers DeferredDelete at the loop level that posted it, so anything
   discarded before `exec()` outlives the modal it was making room for. Worse,
