@@ -114,7 +114,11 @@ that PROVES it took — skip the proofs and you'll ship ghosts.
 6. Announce it: **`tools\publish-version.bat`**. No restart, and nothing
    to retype — it reads the number out of `Version.h`, rewrites the
    `latest` line of `server/version.json`, copies that to the box, and
-   then reads the public `/version` back.
+   then reads the public `/version` back. **Write the `notes` line in
+   `server/version.json` first** — the script rewrites only `latest`, so
+   the banner otherwise announces the new number with the previous
+   release's highlights (31.2.0 went out that way for a minute; the
+   script prints the notes it confirmed, which is where it was caught).
    *Proof: the script's own exit code. It stops before touching anything
    if `Version.h` and the `.iss` disagree, or if the GitHub release tag
    doesn't exist yet with files attached; and it fails at the end unless

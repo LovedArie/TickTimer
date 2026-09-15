@@ -235,17 +235,6 @@ write when you pick it up — never here.*
 
 *Documentation and process debt. Small, but it is what rots first.*
 
-- **H5** **Only the web app is still behind the format floor.** Windows is
-  done (31.2.0, verified off the packaged exe). **The phone is done too:** the
-  Galaxy S21 was measured at 31.0.0 on 12 Sep — not v30.8.1 as this line
-  claimed, but still older than the floor — and was upgraded in place to
-  **31.2.0** the same afternoon, same signing key, planner kept. What remains
-  is `/app/`, the WebAssembly app, last deployed **31 Aug at v30.8.1**
-  (Last-Modified re-read 11 Sep; this item absorbed B2, which claimed v30.4).
-  It is release step 7 and nothing hard-fails on it. The APK needs `JAVA_HOME` set from
-  `%APPDATA%\QtProject\QtCreator.ini` and its stamp checked with `aapt2 dump
-  badging` before signing; `/app/` is release step 7 and nothing hard-fails on
-  it.
 - **H1** `docs/05_RiskList.md` is stamped "reflects the shipped v11 app" and
   declares itself "re-ranked at the start of each iteration". It has not been
   touched in twenty versions. Either re-rank it against v31 (risks #1, #3 and
